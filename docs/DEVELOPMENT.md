@@ -37,3 +37,8 @@ Workflow `Triage issues` переводит связанный с Issue гото
 ## Метки
 
 Метки описаны в `.github/labels.json` и синхронизируются workflow `Sync labels`. Workflow создаёт и обновляет перечисленные метки, но не удаляет остальные. В каждой из групп `status:*`, `priority:*` и `milestone:*` у Issue должна быть ровно одна метка.
+
+## Codex и экономия контекста
+
+Вначале выбрать конкретный GitHub Issue и его acceptance criteria; затем читать лишь относящиеся к нему разделы нормативных документов (маршруты указаны в AGENTS.md). При изменении контрактов синхронизировать ARCHITECTURE.md и REQUIREMENTS.md, не добавляя отдельные ADR или backlog. Использовать соответствующий skill из .agents/skills/, а не все сразу. Для проверки: bash scripts/verify-changed.sh; при отсутствии реализации зависимых компонентов явно отмечать пропуски. Настройка клиента и MCP — в [CODEX.md](CODEX.md).
+

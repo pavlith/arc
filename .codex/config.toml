@@ -1,0 +1,29 @@
+# Shared, non-secret Codex defaults for the trusted Arc repository.
+# https://developers.openai.com/codex/config-reference
+# Personal overrides and OAuth credentials belong to ~/.codex/.
+model_reasoning_effort = "medium"
+model_verbosity = "low"
+project_doc_max_bytes = 8192
+tool_output_token_limit = 4000
+web_search = "cached"
+
+[skills]
+max_context_tokens = 1600
+
+# Enable only while working on Codex/OpenAI integration or documentation.
+[mcp_servers.openaiDeveloperDocs]
+url = "https://developers.openai.com/mcp"
+enabled = false
+required = false
+
+# Opt-in: authenticate in your local Codex session before enabling.
+# Narrow toolsets instead of exposing every GitHub tool.
+[mcp_servers.github]
+url = "https://api.githubcopilot.com/mcp/"
+enabled = false
+required = false
+default_tools_approval_mode = "writes"
+
+[mcp_servers.github.http_headers]
+X-MCP-Toolsets = "repos,issues,pull_requests"
+X-MCP-Lockdown = "true"

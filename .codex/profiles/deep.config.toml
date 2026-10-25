@@ -1,0 +1,4 @@
+# Copy to ~/.codex/deep.config.toml for: codex --profile deep
+model_reasoning_effort = "high"
+model_verbosity = "low"
+tool_output_token_limit = 6000

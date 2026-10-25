@@ -1,0 +1,15 @@
+[
+  {"name":"type: bug","color":"d73a4a","description":"Дефект в реализованном поведении"},
+  {"name":"type: task","color":"1d76db","description":"Задача реализации или сопровождения"},
+  {"name":"type: proposal","color":"a371f7","description":"Предложение по требованиям или архитектуре"},
+  {"name":"area: core","color":"0e8a16","description":"Identity, ACL и ядро Arc"},
+  {"name":"area: sdk-fabric","color":"0e8a16","description":"Arc SDK, NATS и Service Fabric"},
+  {"name":"area: gate","color":"0e8a16","description":"Публичный ingress и маршрутизация"},
+  {"name":"area: tasks","color":"0e8a16","description":"Tasks, Projects и Notifications"},
+  {"name":"area: office","color":"0e8a16","description":"Pages, Calendar, Contacts и Files"},
+  {"name":"area: automation","color":"0e8a16","description":"Connectors, Workflows и Agents"},
+  {"name":"area: runtime","color":"0e8a16","description":"Runtime Control и Infrastructure Agent"},
+  {"name":"area: docs","color":"0075ca","description":"Требования, архитектура и документация"},
+  {"name":"security","color":"b60205","description":"Изменение или риск безопасности"},
+  {"name":"blocked","color":"000000","description":"Требуется внешнее решение или зависимость"}
+]

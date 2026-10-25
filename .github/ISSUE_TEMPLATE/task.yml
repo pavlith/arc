@@ -1,0 +1,59 @@
+name: Задача
+description: Реализация согласованной части Arc
+title: "[Task]: "
+labels: ["type: task"]
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Результат
+      description: Какой проверяемый результат должен быть получен?
+      placeholder: После выполнения...
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Что входит и явно не входит в задачу?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Критерии приёмки
+      description: Перечислите наблюдаемые условия завершения.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+  - type: dropdown
+    id: milestone
+    attributes:
+      label: Этап
+      options: [M0, M1, M2, M3, M4, M5, M6, M7]
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Приоритет
+      options: [P0, P1, P2, P3]
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: Связанные требования
+      description: Ссылки на разделы REQUIREMENTS/ARCHITECTURE и зависимые Issues.
+      placeholder: docs/REQUIREMENTS.md §...
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Минимальная проверка
+      description: Какие проверки обязательны на текущем этапе?
+    validations:
+      required: true

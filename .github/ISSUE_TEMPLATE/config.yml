@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Требования Arc
+    url: https://github.com/pavlith/arc/blob/main/docs/REQUIREMENTS.md
+    about: Проверьте границы продукта и этап реализации до создания задачи.
+  - name: Архитектура Arc
+    url: https://github.com/pavlith/arc/blob/main/docs/ARCHITECTURE.md
+    about: Нормативные архитектурные решения и guardrails.

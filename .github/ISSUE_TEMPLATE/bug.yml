@@ -1,0 +1,49 @@
+name: Дефект
+description: Ошибка в реализованном поведении Arc
+title: "[Bug]: "
+labels: ["type: bug"]
+body:
+  - type: textarea
+    id: observed
+    attributes:
+      label: Фактическое поведение
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Ожидаемое поведение
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Воспроизведение
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Критичность
+      options:
+        - Blocker — блокирует этап или нарушает security guardrail
+        - High — ломает основной сценарий без обхода
+        - Medium — есть обходной путь
+        - Low — ограниченное влияние
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Окружение
+      description: Commit, ОС, браузер/клиент и значимая конфигурация.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Диагностика
+      description: Логи и скриншоты без секретов и персональных данных.

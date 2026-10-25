@@ -88,6 +88,6 @@ else
 fi
 
 if $migrations_changed; then
-  echo "NOTICE: migration changes require empty-DB/restart smoke using the future project migration harness"
+  echo "NOTICE: migration changes require empty-DB/restart smoke: bash scripts/test-m0-01.sh"
 fi
 echo "Focused checks complete; M7 full regression not implied."

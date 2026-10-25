@@ -1,0 +1,109 @@
+name: arc
+
+services:
+  nats:
+    image: nats:2.15.1-alpine3.22
+    command: ["--config", "/run/secrets/nats_server_config"]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: ["ALL"]
+    ports:
+      - "127.0.0.1:4222:4222"
+      - "127.0.0.1:8222:8222"
+    volumes:
+      - nats-data:/data/jetstream
+    secrets:
+      - nats_server_config
+      - nats_server_cert
+      - nats_server_key
+      - nats_ca_cert
+
+  postgres:
+    image: postgres:18.6-alpine3.23
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: arc
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_admin_password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d arc"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro
+    secrets:
+      - postgres_admin_password
+      - postgres_migrator_password
+      - postgres_core_password
+
+  migrate:
+    image: postgres:18.6-alpine3.23
+    profiles: ["tools"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: arc
+      PGUSER: arc_migrator
+    entrypoint: ["/bin/sh", "/scripts/migrate.sh"]
+    read_only: true
+    cap_drop: ["ALL"]
+    volumes:
+      - ./migrations:/migrations:ro
+      - ./scripts/migrate.sh:/scripts/migrate.sh:ro
+    secrets:
+      - postgres_migrator_password
+
+  rpc-smoke:
+    build:
+      context: ./sdk
+      dockerfile: Dockerfile.smoke
+    profiles: ["tools"]
+    depends_on:
+      - nats
+    command:
+      - -url=tls://nats:4222
+      - -ca=/run/secrets/nats_ca_cert
+      - -service-seed=/run/secrets/nats_echo_service_seed
+      - -client-seed=/run/secrets/nats_smoke_client_seed
+      - -jetstream-seed=/run/secrets/nats_jetstream_admin_seed
+    read_only: true
+    cap_drop: ["ALL"]
+    secrets:
+      - nats_ca_cert
+      - nats_echo_service_seed
+      - nats_smoke_client_seed
+      - nats_jetstream_admin_seed
+
+volumes:
+  nats-data:
+  postgres-data:
+
+secrets:
+  nats_server_config:
+    file: ./.secrets/dev/nats-server.conf
+  nats_server_cert:
+    file: ./.secrets/dev/nats-server.crt
+  nats_server_key:
+    file: ./.secrets/dev/nats-server.key
+  nats_ca_cert:
+    file: ./.secrets/dev/ca.crt
+  nats_echo_service_seed:
+    file: ./.secrets/dev/nats-echo-service.seed
+  nats_smoke_client_seed:
+    file: ./.secrets/dev/nats-smoke-client.seed
+  nats_jetstream_admin_seed:
+    file: ./.secrets/dev/nats-jetstream-admin.seed
+  postgres_admin_password:
+    file: ./.secrets/dev/postgres-admin-password
+  postgres_migrator_password:
+    file: ./.secrets/dev/postgres-migrator-password
+  postgres_core_password:
+    file: ./.secrets/dev/postgres-core-password

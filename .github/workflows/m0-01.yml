@@ -1,0 +1,43 @@
+name: M0-01 bootstrap smoke
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - ".github/workflows/m0-01.yml"
+      - "Makefile"
+      - "compose.yaml"
+      - "deploy/postgres/**"
+      - "migrations/**"
+      - "scripts/migrate.sh"
+      - "scripts/test-m0-01.sh"
+      - "scripts/verify-changed.sh"
+      - "sdk/**"
+  pull_request:
+    branches: [dev]
+    paths:
+      - ".github/workflows/m0-01.yml"
+      - "Makefile"
+      - "compose.yaml"
+      - "deploy/postgres/**"
+      - "migrations/**"
+      - "scripts/migrate.sh"
+      - "scripts/test-m0-01.sh"
+      - "scripts/verify-changed.sh"
+      - "sdk/**"
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.3"
+          cache-dependency-path: sdk/go.sum
+      - run: bash scripts/verify-changed.sh --all
+      - run: make m0-01-smoke

@@ -8,4 +8,4 @@ Arc — русскоязычная self-hosted платформа для сов�
 - [Архитектура](docs/ARCHITECTURE.md)
 - [Процесс разработки](docs/DEVELOPMENT.md)
 
-Актуальная работа ведётся в GitHub Issues, а её состояние и порядок — в GitHub Projects. Отдельный backlog в репозитории не поддерживается.
+Актуальная работа и её состояние ведутся только в GitHub Issues. Статус, приоритет и этап задаются метками; отдельные GitHub Projects, Notion и Markdown-backlog не используются.

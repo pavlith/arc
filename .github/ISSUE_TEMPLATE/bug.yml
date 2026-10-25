@@ -35,6 +35,20 @@ body:
         - Low — ограниченное влияние
     validations:
       required: true
+  - type: dropdown
+    id: milestone
+    attributes:
+      label: Этап
+      options: [M0, M1, M2, M3, M4, M5, M6, M7]
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Приоритет
+      options: [P0, P1, P2, P3]
+    validations:
+      required: true
   - type: textarea
     id: environment
     attributes:

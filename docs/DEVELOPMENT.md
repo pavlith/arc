@@ -2,45 +2,38 @@
 
 ## Источники истины
 
-- GitHub Issues — задачи, дефекты и предложения.
-- GitHub Projects — статус, приоритет, этап и порядок выполнения.
+- GitHub Issues — задачи, дефекты, предложения и их состояние.
+- Метки Issue — статус, приоритет, этап, область и тип работы.
 - `docs/REQUIREMENTS.md` — требования и границы продукта.
 - `docs/ARCHITECTURE.md` — архитектура и долговременные решения.
 
-Notion и дублирующие Markdown-backlog-файлы не используются.
+GitHub Projects, Notion и дублирующие Markdown-backlog-файлы не используются.
 
-## GitHub Project
+## Представления Issues
 
-Создайте user project `Arc` и подключите репозиторий `pavlith/arc`. Рекомендуемые поля:
+Основные очереди открываются стандартными фильтрами GitHub:
 
-| Поле | Тип | Значения |
-|---|---|---|
-| Status | Single select | Backlog, Ready, In progress, In review, Done |
-| Priority | Single select | P0, P1, P2, P3 |
-| Milestone | Single select | M0, M1, M2, M3, M4, M5, M6, M7 |
+- [Backlog](https://github.com/pavlith/arc/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+backlog%22)
+- [Ready](https://github.com/pavlith/arc/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+ready%22)
+- [In progress](https://github.com/pavlith/arc/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+in-progress%22)
+- [In review](https://github.com/pavlith/arc/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+review%22)
+- [Blocked](https://github.com/pavlith/arc/issues?q=is%3Aissue+is%3Aopen+label%3Ablocked)
+- [M0 / P0](https://github.com/pavlith/arc/issues?q=is%3Aissue+is%3Aopen+label%3A%22milestone%3A+M0%22+label%3A%22priority%3A+P0%22)
 
-Представления:
-
-- `Roadmap`: группировка по Milestone, сортировка по Priority.
-- `Board`: колонки Status, фильтр по активному Milestone.
-- `Backlog`: таблица открытых задач, сортировка Priority → Milestone.
-
-Автоматизация Project:
-
-- новый Issue или PR → `Backlog`;
-- PR, связанный с Issue → `In review`;
-- закрытый Issue или merged PR → `Done`.
+`blocked` — независимый признак блокировки и может сочетаться с текущим статусом.
 
 ## Жизненный цикл задачи
 
 1. Создать Issue через подходящую форму и указать критерии приёмки.
-2. Заполнить в Project поля Priority и Milestone.
-3. Перед началом перевести задачу в `In progress` и назначить исполнителя.
+2. Проверить автоматически назначенные метки `priority:*`, `milestone:*` и `status: backlog`.
+3. Перед началом заменить статус на `status: in-progress` и назначить исполнителя.
 4. В PR указать `Closes #<номер>` и фактически выполненные проверки.
 5. Архитектурные или нормативные изменения одновременно внести в `docs/`.
+
+Workflow `Triage issues` переводит связанный с Issue готовый PR в `status: review`, закрытый Issue — в `status: done`, а повторно открытый — в `status: backlog`. Статус `ready` и признак `blocked` назначаются вручную.
 
 Во время M0–M6 выполняется минимальная проверка затронутого контура согласно требованиям. Полная матрица M7 не считается пройденной до её фактического выполнения.
 
 ## Метки
 
-Метки описаны в `.github/labels.json` и синхронизируются workflow `Sync labels`. Workflow создаёт и обновляет перечисленные метки, но не удаляет остальные.
+Метки описаны в `.github/labels.json` и синхронизируются workflow `Sync labels`. Workflow создаёт и обновляет перечисленные метки, но не удаляет остальные. В каждой из групп `status:*`, `priority:*` и `milestone:*` у Issue должна быть ровно одна метка.

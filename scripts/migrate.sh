@@ -23,8 +23,7 @@ for migration in /migrations/*.up.sql; do
   esac
   checksum=$(sha256sum "$migration" | cut -d ' ' -f 1)
   applied=$(psql --set=ON_ERROR_STOP=1 --tuples-only --no-align \
-    --set=version="$version" \
-    -c "SELECT checksum FROM system.schema_migrations WHERE version = :'version'")
+    -c "SELECT checksum FROM system.schema_migrations WHERE version = '$version'")
 
   if [ -n "$applied" ]; then
     if [ "$applied" != "$checksum" ]; then

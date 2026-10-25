@@ -12,6 +12,13 @@ func TestRunCreatesStablePrivateCredentialsWithoutEmbeddingSecrets(t *testing.T)
 	if err := run(output); err != nil {
 		t.Fatal(err)
 	}
+	directory, err := os.Stat(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if directory.Mode().Perm() != 0o700 {
+		t.Fatalf("secret directory mode = %o", directory.Mode().Perm())
+	}
 
 	secretFiles := append([]string{}, passwordFiles...)
 	for _, identity := range identities {
@@ -43,7 +50,7 @@ func TestRunCreatesStablePrivateCredentialsWithoutEmbeddingSecrets(t *testing.T)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if info.Mode().Perm()&0o077 != 0 {
+		if info.Mode().Perm() != 0o644 {
 			t.Fatalf("%s mode = %o", name, info.Mode().Perm())
 		}
 		contents, err := os.ReadFile(path)

@@ -102,7 +102,7 @@ func ensureNKeys(output string) (map[string]string, error) {
 				return nil, fmt.Errorf("encode %s NKey: %w", identity.name, err)
 			}
 			seed = append(seed, '\n')
-			if err := writeExclusive(filepath.Join(output, identity.file), seed, 0o600); err != nil {
+			if err := writeExclusive(filepath.Join(output, identity.file), seed, 0o644); err != nil {
 				pair.Wipe()
 				return nil, err
 			}
@@ -116,7 +116,7 @@ func ensureNKeys(output string) (map[string]string, error) {
 	publicKeys := make(map[string]string, len(identities))
 	for _, identity := range identities {
 		path := filepath.Join(output, identity.file)
-		if err := requirePrivateMode(path); err != nil {
+		if err := requireContainerSecretMode(path); err != nil {
 			return nil, err
 		}
 		seed, err := os.ReadFile(path)
@@ -150,7 +150,7 @@ func ensureTLS(output string) error {
 	exists, err := setState(paths)
 	if err != nil || exists {
 		if exists {
-			return requirePrivateMode(paths[2])
+			return requireContainerSecretMode(paths[2])
 		}
 		return err
 	}
@@ -211,7 +211,7 @@ func ensureTLS(output string) error {
 	if err := writeExclusive(paths[1], pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: serverDER}), 0o644); err != nil {
 		return err
 	}
-	return writeExclusive(paths[2], pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: serverKeyDER}), 0o600)
+	return writeExclusive(paths[2], pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: serverKeyDER}), 0o644)
 }
 
 func ensurePasswords(output string) error {
@@ -223,7 +223,7 @@ func ensurePasswords(output string) error {
 	if err != nil || exists {
 		if exists {
 			for _, path := range paths {
-				if err := requirePrivateMode(path); err != nil {
+				if err := requireContainerSecretMode(path); err != nil {
 					return err
 				}
 			}
@@ -239,7 +239,7 @@ func ensurePasswords(output string) error {
 		for index := range raw {
 			raw[index] = 0
 		}
-		if err := writeExclusive(path, password, 0o600); err != nil {
+		if err := writeExclusive(path, password, 0o644); err != nil {
 			return err
 		}
 		for index := range password {
@@ -314,7 +314,7 @@ authorization {
 		publicKeys["nats-smoke-client.seed"],
 		publicKeys["nats-jetstream-admin.seed"],
 	)
-	return writeAtomic(filepath.Join(output, "nats-server.conf"), []byte(config), 0o600)
+	return writeAtomic(filepath.Join(output, "nats-server.conf"), []byte(config), 0o644)
 }
 
 func setState(paths []string) (bool, error) {
@@ -338,13 +338,16 @@ func setState(paths []string) (bool, error) {
 	return found == len(paths), nil
 }
 
-func requirePrivateMode(path string) error {
+func requireContainerSecretMode(path string) error {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return fmt.Errorf("inspect private file: %w", err)
 	}
-	if !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
-		return fmt.Errorf("private file must be regular and mode 0600: %s", path)
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("container secret must be a regular file: %s", path)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		return fmt.Errorf("set container-readable secret mode: %w", err)
 	}
 	return nil
 }

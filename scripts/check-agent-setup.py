@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import re
 import sys
 import tomllib
@@ -40,7 +41,9 @@ for profile in (ROOT / ".codex/profiles").glob("*.toml"):
         fail(f"invalid profile {profile.name}: {exc}")
 
 skill_root = ROOT / ".agents/skills"
-expected = {"arc-issue", "arc-contract", "arc-verify", "arc-go-service", "arc-svelte-ui"}
+local_skills = {"arc-issue", "arc-contract", "arc-verify", "arc-go-service", "arc-svelte-ui"}
+third_party_skills = {"shadcn-svelte"}
+expected = local_skills | third_party_skills
 actual = {p.name for p in skill_root.iterdir() if p.is_dir()} if skill_root.is_dir() else set()
 if actual != expected:
     fail(f"skill directories mismatch: {sorted(actual ^ expected)}")
@@ -58,6 +61,23 @@ for name in sorted(expected):
     if fields.get("name") != name or len(fields.get("description", "")) < 24:
         fail(f"invalid skill metadata: {name}")
 
+# The vendored UI skill remains managed by the skills CLI, not copied into Arc skills.
+lock_path = ROOT / "skills-lock.json"
+try:
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+except (OSError, ValueError) as exc:
+    fail(f"invalid skills-lock.json: {exc}")
+    lock = {}
+installed = lock.get("skills", {}).get("shadcn-svelte")
+if not isinstance(installed, dict) or installed.get("source") != "huntabyte/shadcn-svelte" or installed.get("skillPath") != "skills/shadcn-svelte/SKILL.md":
+    fail("shadcn-svelte lock entry source/path mismatch")
+if set(lock.get("skills", {})) != third_party_skills:
+    fail("unexpected external skills in skills-lock.json")
+vendor = skill_root / "shadcn-svelte"
+for relative in ("cli.md", "customization.md", "rules/forms.md", "rules/composition.md", "rules/icons.md", "rules/styling.md"):
+    if not (vendor / relative).is_file():
+        fail(f"shadcn-svelte reference missing: {relative}")
+
 if (ROOT / "AGENTS.md").stat().st_size > config.get("project_doc_max_bytes", 8192):
     fail("AGENTS.md exceeds project_doc_max_bytes")
 for filename, headings in {
@@ -73,4 +93,4 @@ if errors:
     for error in errors:
         print(f"ERROR: {error}", file=sys.stderr)
     sys.exit(1)
-print(f"Codex setup OK: {len(expected)} skills, TOML, docs routing, MCP off by default")
+print(f"Codex setup OK: {len(expected)} skills ({len(local_skills)} Arc + {len(third_party_skills)} upstream), lock, TOML, docs routing, MCP off by default")

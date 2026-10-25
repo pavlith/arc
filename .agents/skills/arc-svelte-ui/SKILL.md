@@ -1,12 +1,13 @@
 ---
 name: arc-svelte-ui
-description: Develop Arc user interfaces with Svelte 5 and shadcn-svelte. Use when changing UI components, routes, forms, state or client-side API integration.
+description: Build Arc-specific Svelte 5 workflows, routes, state, API integration, access-aware UX and Russian localization. Use for Arc product flows; use shadcn-svelte for component details, CLI, styling and form composition.
 ---
 
-# Arc Svelte UI workflow
+# Arc-specific UI workflow
 
-1. Inspect existing UI package, Svelte version and component conventions before editing; the stack is Svelte 5 + shadcn-svelte.
-2. Prefer existing UI primitives and existing form/API utilities; do not add another component library or reinvent shared widgets.
-3. Use Svelte 5 idioms consistent with the current codebase; preserve accessibility, loading/error states and localized Russian UX.
-4. Never implement a client-side authorization assumption as a replacement for server ACL checks.
-5. Keep changes scoped to the requested flow. Run affected UI check/build via arc-verify; leave browser E2E and full UX matrix for M7 unless a regression requires it.
+1. Read the active Issue and only its affected requirements. Inspect the existing UI package, routes, store conventions and Svelte version. Do not initialize UI infrastructure unless it is in scope.
+2. Model Arc workflows using Svelte 5 patterns consistent with existing code, including loading, empty, error and offline states when relevant.
+3. Integrate with Arc Gate/API contracts. Keep client-side permission-aware UX separate from authoritative server-side ACL checks; never trust UI state as authorization.
+4. Preserve Russian-first UX, accessibility and approved shared navigation/interaction conventions.
+5. For shadcn-svelte components, imports, forms, icons, CLI or theme details, delegate to the vendor `shadcn-svelte` skill. Do not copy its rules into this skill or invent a replacement design system.
+6. Keep code changes scoped to the Issue. Use `arc-verify` for affected UI checks; defer broad browser E2E/M7 scenarios unless a focused guardrail requires them.

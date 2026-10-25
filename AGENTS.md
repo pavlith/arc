@@ -31,7 +31,7 @@
 - ACL/resource roots: architecture §4; requirements §2.2.
 - Fabric, SDK, NATS: architecture §5; requirements §2.3.
 - Gate/API: architecture §6; requirements §2.4.
-- Runtime/agent: architecture §7; requirements §2.10 where applicable.
+- Runtime/agent: architecture §7; requirements §2.13.
 - Verification policy: architecture §10; M0 deliveries: requirements §7.
 - Process, issue labels, PR: docs/DEVELOPMENT.md.
 - Locate headings before reading documents; retrieve only relevant sections. Do not ingest both normative documents in full for a narrow issue.

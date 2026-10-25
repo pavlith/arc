@@ -1,7 +1,7 @@
 # Shared, non-secret Codex defaults for the trusted Arc repository.
 # https://developers.openai.com/codex/config-reference
 # Personal overrides and OAuth credentials belong to ~/.codex/.
-model_reasoning_effort = "medium"
+# Reasoning effort intentionally left to user profiles (fast/deep).
 model_verbosity = "low"
 project_doc_max_bytes = 8192
 tool_output_token_limit = 4000

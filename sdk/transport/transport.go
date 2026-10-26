@@ -166,10 +166,13 @@ func (s *Service) identitySnapshot() Identity {
 }
 
 func validSubject(subject string) bool {
-    if subject=="" || strings.ContainsAny(subject," 
-	*>") ||
-       strings.HasPrefix(subject,".") || strings.HasSuffix(subject,".") ||
-       strings.Contains(subject,"..") {return false}
+    if subject == "" ||
+       strings.ContainsAny(subject, " *>") ||
+       strings.ContainsAny(subject, string([]byte{9,10,13})) ||
+       strings.HasPrefix(subject, ".") || strings.HasSuffix(subject, ".") ||
+       strings.Contains(subject, "..") {
+        return false
+    }
     return true
 }
 func (s *Service) AddEndpoint(name string, handler Handler, opts ...EndpointOpt) error {

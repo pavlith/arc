@@ -83,12 +83,11 @@ func (c *Core) approveGORM(ctx context.Context, signed SignedInstallation) (stri
 			if !errors.Is(err, sql.ErrNoRows) {
 				return security.ErrUnavailable
 			}
-			var previous SignedInstallation
-			err = tx.Raw(
+			previous, err := scanSignedInstallation(tx.Raw(
 				`SELECT installation,signature FROM fabric_contracts
 				WHERE service_name=? AND api_major=? ORDER BY approved_at DESC LIMIT 1`,
 				definition, compiled.Manifest.Service.APIMajor,
-			).Row().Scan(&previous.Payload, &previous.Signature)
+			).Row())
 			if err == nil {
 				prior, _, checkErr := c.verify(previous)
 				if checkErr != nil || !contract.Compatible(prior.Artifact, installation.Artifact) {
@@ -105,8 +104,8 @@ func (c *Core) approveGORM(ctx context.Context, signed SignedInstallation) (stri
 				return security.ErrUnavailable
 			}
 			for rows.Next() {
-				var oldSigned SignedInstallation
-				if rows.Scan(&oldSigned.Payload, &oldSigned.Signature) != nil {
+				oldSigned, scanErr := scanSignedInstallation(rows)
+				if scanErr != nil {
 					rows.Close()
 					return security.ErrUnavailable
 				}
@@ -243,11 +242,10 @@ func (c *Core) revokeGORM(ctx context.Context, raw, sig []byte) error {
 			if err := tx.Exec("UPDATE fabric_route_state SET revision=revision WHERE singleton=1").Error; err != nil {
 				return security.ErrUnavailable
 			}
-			var approved SignedInstallation
-			err := tx.Raw(
+			approved, err := scanSignedInstallation(tx.Raw(
 				`SELECT installation,signature FROM fabric_contracts
 				WHERE digest=? AND revoked_at IS NULL`, request.Digest,
-			).Row().Scan(&approved.Payload, &approved.Signature)
+			).Row())
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil
 			}

@@ -8,9 +8,9 @@ import (
 
 	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/events"
-	"github.com/pavlith/arc/sdk/testcontract"
 	"github.com/pavlith/arc/sdk/module"
 	"github.com/pavlith/arc/sdk/security"
+	"github.com/pavlith/arc/sdk/testcontract"
 )
 
 func TestTypedEventRequiresDomainTransaction(t *testing.T) {

@@ -7,9 +7,9 @@ import (
 
 	"github.com/pavlith/arc/sdk/client"
 	"github.com/pavlith/arc/sdk/contract"
-	"github.com/pavlith/arc/sdk/testcontract"
 	"github.com/pavlith/arc/sdk/module"
 	"github.com/pavlith/arc/sdk/rpc"
+	"github.com/pavlith/arc/sdk/testcontract"
 )
 
 func TestTypedCallRejectsWrongOperationBeforeTransport(t *testing.T) {

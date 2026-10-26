@@ -3,22 +3,22 @@ package main
 import (
 	"context"
 	"crypto/ed25519"
-		"encoding/base64"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
-		"log"
-		"net/netip"
+	"log"
+	"net/netip"
 	"os"
 	"os/signal"
 	"syscall"
-"time"
-	
+	"time"
+
 	"github.com/pavlith/arc/sdk"
-	gate "github.com/pavlith/arc/services/gate"
- edge "github.com/pavlith/arc/services/gate/modules/http"
-	"github.com/pavlith/arc/services/core/modules/identity"
 	"github.com/pavlith/arc/sdk/rpc"
+	"github.com/pavlith/arc/services/core/modules/identity"
+	gate "github.com/pavlith/arc/services/gate"
+	edge "github.com/pavlith/arc/services/gate/modules/http"
 )
 
 type config struct {
@@ -102,26 +102,30 @@ func run(file string) error {
 		return e
 	}
 
- remote := &edge.Remote{Client: identity.Client{
-    RPC:client,ServiceID:cfg.ServiceID,Kid:cfg.Kid,PrivateKey:key,
- },TrustRoot:root}
- g,err := gate.New(gate.Config{
-   HTTP:edge.Config{
-     Backend:remote,
-     PublicOrigin:cfg.PublicOrigin,
-     AllowedOrigins:cfg.AllowedOrigins,
-     TrustedProxies:proxies,
-   },
-   Listen:cfg.Listen,
-   TLSCertFile:cfg.TLSCertFile,
-   TLSKeyFile:cfg.TLSKeyFile,
-   NATS:nc,
- })
- if err!=nil{return err}
- if err=g.Start(ctx);err!=nil{return err}
- log.Printf("Arc Gate listening on %s",cfg.Listen)
- <-ctx.Done()
- shutdown,cancel:=context.WithTimeout(context.Background(),10*time.Second)
- defer cancel()
- return g.Stop(shutdown)
+	remote := &edge.Remote{Client: identity.Client{
+		RPC: client, ServiceID: cfg.ServiceID, Kid: cfg.Kid, PrivateKey: key,
+	}, TrustRoot: root}
+	g, err := gate.New(gate.Config{
+		HTTP: edge.Config{
+			Backend:        remote,
+			PublicOrigin:   cfg.PublicOrigin,
+			AllowedOrigins: cfg.AllowedOrigins,
+			TrustedProxies: proxies,
+		},
+		Listen:      cfg.Listen,
+		TLSCertFile: cfg.TLSCertFile,
+		TLSKeyFile:  cfg.TLSKeyFile,
+		NATS:        nc,
+	})
+	if err != nil {
+		return err
+	}
+	if err = g.Start(ctx); err != nil {
+		return err
+	}
+	log.Printf("Arc Gate listening on %s", cfg.Listen)
+	<-ctx.Done()
+	shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return g.Stop(shutdown)
 }

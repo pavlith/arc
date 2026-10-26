@@ -9,10 +9,10 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/pavlith/arc/sdk"
 	"github.com/pavlith/arc/sdk/events"
-	"github.com/pavlith/arc/sdk/testcontract"
 	"github.com/pavlith/arc/sdk/module"
 	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/sdk/service"
+	"github.com/pavlith/arc/sdk/testcontract"
 )
 
 type denyRegistry struct{ calls int }

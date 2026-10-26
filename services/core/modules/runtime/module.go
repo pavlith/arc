@@ -8,8 +8,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/pavlith/arc/pkgs"
-	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/sdk"
+	"github.com/pavlith/arc/sdk/security"
 )
 
 var ErrConflict = errors.New("runtime: revision conflict")
@@ -38,7 +38,7 @@ func (m *Module) ID() string { return "runtime" }
 
 // Runtime exposes no privileged NATS/Docker endpoint in M0. It is an in-process
 // Core module; any future RPC must use a separately approved protected contract.
-func (m *Module) Bind(_ *pkgs.Service) (func(), error) {
+func (m *Module) Bind(_ *sdk.Service) (func(), error) {
 	if m == nil || m.DB == nil || m.Authorize == nil {
 		return nil, security.ErrUnavailable
 	}

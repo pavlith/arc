@@ -1,6 +1,6 @@
 package v1
 
-import "github.com/pavlith/arc/pkgs/module"
+import "github.com/pavlith/arc/sdk/module"
 
 type Empty struct{}
 

@@ -6,8 +6,13 @@ on:
     paths:
       - ".github/workflows/m0-05.yml"
       - "sdk/**"
+      - "cmd/**"
+      - "internal/**"
+      - "services/**"
+      - "go.mod"
+      - "go.sum"
       - "deploy/gate/**"
-      - "migrations/**"
+      - "services/**"
       - "scripts/migrate.sh"
       - "scripts/test-m0-02.sh"
       - "scripts/test-m0-05.sh"
@@ -16,8 +21,13 @@ on:
     paths:
       - ".github/workflows/m0-05.yml"
       - "sdk/**"
+      - "cmd/**"
+      - "internal/**"
+      - "services/**"
+      - "go.mod"
+      - "go.sum"
       - "deploy/gate/**"
-      - "migrations/**"
+      - "services/**"
       - "scripts/migrate.sh"
       - "scripts/test-m0-02.sh"
       - "scripts/test-m0-05.sh"
@@ -34,17 +44,14 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: "1.27.3"
-          cache-dependency-path: sdk/go.sum
+          cache-dependency-path: go.sum
       - run: bash scripts/verify-changed.sh --all
       - run: go build -o "$RUNNER_TEMP/arc-gate" ./cmd/arc-gate
-        working-directory: sdk
       - run: go vet ./...
-        working-directory: sdk
       - name: Install isolated integration tools
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y postgresql postgresql-client
           echo "$(pg_config --bindir)" >> "$GITHUB_PATH"
-          cd sdk
           go install github.com/nats-io/nats-server/v2@v2.15.1
       - run: bash scripts/test-m0-05.sh

@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pavlith/arc/pkgs"
-	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/sdk"
+	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/core/modules/access"
 	"github.com/pavlith/arc/services/core/modules/fabric"
 	"github.com/pavlith/arc/services/core/modules/identity"
@@ -26,12 +26,12 @@ var ErrInvalid = errors.New("core: invalid bootstrap configuration")
 // No internal Core->Core NATS request is needed: all four modules share Go objects.
 type Module interface {
 	ID() string
-	Bind(*pkgs.Service) (func(), error)
+	Bind(*sdk.Service) (func(), error)
 }
 
 type Config struct {
 	DB                      *sql.DB
-	NATS                    pkgs.Config
+	NATS                    sdk.Config
 	Version                 string
 	IdentitySigningKid      string
 	IdentitySigningKey      ed25519.PrivateKey
@@ -50,11 +50,11 @@ type Service struct {
 	Fabric   *fabric.Core
 	Runtime  *runtime.Module
 
-	connection pkgs.Config
+	connection sdk.Config
 	version    string
 	modules    []Module
 	mu         sync.Mutex
-	transport  *pkgs.Service
+	transport  *sdk.Service
 	closes     []func()
 	stopped    bool
 	started    bool
@@ -114,7 +114,7 @@ func (s *Service) Start(ctx context.Context) error {
 	if err := s.Identity.DB.PingContext(ctx); err != nil {
 		return security.ErrUnavailable
 	}
-	transport, err := pkgs.NewService(ctx, pkgs.ServiceConfig{
+	transport, err := sdk.NewService(ctx, sdk.ServiceConfig{
 		Connection: s.connection, Name: "arc-core", Version: s.version,
 		Description: "Identity, Access, Fabric and Runtime Control",
 	})

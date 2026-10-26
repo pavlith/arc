@@ -3,7 +3,7 @@ package contract_test
 import (
 	"encoding/json"
 	"github.com/pavlith/arc/sdk/contract"
-	"github.com/pavlith/arc/sdk/internal/testcontract"
+	"github.com/pavlith/arc/sdk/testcontract"
 	"testing"
 )
 

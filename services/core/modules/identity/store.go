@@ -15,7 +15,7 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/sdk/security"
 )
 
 var ErrUnauthenticated = security.ErrUnauthenticated

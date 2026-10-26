@@ -9,10 +9,10 @@ import (
 	"testing"
 
 	"github.com/nats-io/nats.go"
-	"github.com/pavlith/arc/pkgs"
-	"github.com/pavlith/arc/pkgs/contract"
-	"github.com/pavlith/arc/pkgs/rpc"
-	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/sdk"
+	"github.com/pavlith/arc/sdk/contract"
+	"github.com/pavlith/arc/sdk/rpc"
+	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/core/modules/fabric"
 	"github.com/pavlith/arc/services/core/modules/identity"
 	"github.com/pavlith/arc/services/notify"
@@ -23,19 +23,19 @@ import (
 
 type closedRegistry struct{ calls int }
 
-func (r *closedRegistry) Register(context.Context, *nats.Conn, pkgs.Registration) error {
+func (r *closedRegistry) Register(context.Context, *nats.Conn, sdk.Registration) error {
 	r.calls++
 	return security.ErrDenied
 }
-func (r *closedRegistry) Ready(context.Context, pkgs.Registration, pkgs.ReadyEvidence) error {
+func (r *closedRegistry) Ready(context.Context, sdk.Registration, sdk.ReadyEvidence) error {
 	r.calls++
 	return security.ErrDenied
 }
-func (r *closedRegistry) Check(context.Context, pkgs.Registration) error {
+func (r *closedRegistry) Check(context.Context, sdk.Registration) error {
 	r.calls++
 	return security.ErrDenied
 }
-func (r *closedRegistry) EventPermit(context.Context, pkgs.Registration, fabric.EventSubscription) error {
+func (r *closedRegistry) EventPermit(context.Context, sdk.Registration, fabric.EventSubscription) error {
 	r.calls++
 	return security.ErrDenied
 }
@@ -48,7 +48,7 @@ func TestTaskNotifyComposeNoNetworkAndExactSubscription(t *testing.T) {
 	reg := &closedRegistry{}
 	id := identity.Client{RPC: &rpc.Client{}, ServiceID: "instance-uuid", Kid: "instance-key", PrivateKey: private}
 	tasks, err := task.New(task.Config{
-		DB: &sql.DB{}, Runtime: pkgs.AppConfig{Registry: reg, Instance: "tasks-instance"},
+		DB: &sql.DB{}, Runtime: sdk.AppConfig{Registry: reg, Instance: "tasks-instance"},
 		Identity: id, CoreTrust: pub,
 	})
 	if err != nil {
@@ -63,7 +63,7 @@ func TestTaskNotifyComposeNoNetworkAndExactSubscription(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := notify.Config{
-		DB: &sql.DB{}, Runtime: pkgs.AppConfig{Instance: "notify-instance"},
+		DB: &sql.DB{}, Runtime: sdk.AppConfig{Instance: "notify-instance"},
 		Identity: id, CoreTrust: pub, Registry: reg,
 		Subscription: fabric.EventSubscription{
 			Provider: "publisher-uuid", Digest: source.Digest,

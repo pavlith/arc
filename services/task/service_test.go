@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pavlith/arc/pkgs/contract"
+	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/services/task"
 	tasksv1 "github.com/pavlith/arc/services/task/api/v1"
 )

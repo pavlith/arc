@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/task/modules/tasks"
 )
 

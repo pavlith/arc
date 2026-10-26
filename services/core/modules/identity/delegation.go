@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/sdk/security"
 )
 
 type Delegation struct {

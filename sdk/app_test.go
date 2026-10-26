@@ -5,7 +5,7 @@ import (
 	"errors"
 	"github.com/nats-io/nats.go"
 	"github.com/pavlith/arc/sdk"
-	"github.com/pavlith/arc/sdk/internal/testcontract"
+	"github.com/pavlith/arc/sdk/testcontract"
 	"testing"
 )
 

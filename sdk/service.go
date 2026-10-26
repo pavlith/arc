@@ -25,7 +25,7 @@ type Service struct {
 
 func NewService(ctx context.Context, cfg ServiceConfig) (*Service, error) {
 	if cfg.Name == "" || cfg.Version == "" {
-		return nil, errors.New("sdk: service name and version are required")
+		return nil, errors.New("pkgs: service name and version are required")
 	}
 	connectionCfg := cfg.Connection
 	if connectionCfg.Name == "" {
@@ -42,17 +42,17 @@ func NewService(ctx context.Context, cfg ServiceConfig) (*Service, error) {
 	})
 	if err != nil {
 		nc.Close()
-		return nil, fmt.Errorf("sdk: add micro service: %w", err)
+		return nil, fmt.Errorf("pkgs: add micro service: %w", err)
 	}
 	return &Service{connection: nc, micro: service}, nil
 }
 
 func (s *Service) AddEndpoint(name string, handler micro.Handler, opts ...micro.EndpointOpt) error {
 	if s == nil || s.micro == nil {
-		return errors.New("sdk: service is not initialized")
+		return errors.New("pkgs: service is not initialized")
 	}
 	if err := s.micro.AddEndpoint(name, handler, opts...); err != nil {
-		return fmt.Errorf("sdk: add endpoint: %w", err)
+		return fmt.Errorf("pkgs: add endpoint: %w", err)
 	}
 	return nil
 }

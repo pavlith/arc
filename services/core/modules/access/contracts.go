@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/core/modules/identity"
 )
 

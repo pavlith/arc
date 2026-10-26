@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pavlith/arc/pkgs"
-	"github.com/pavlith/arc/pkgs/rpc"
-	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/sdk"
+	"github.com/pavlith/arc/sdk/rpc"
+	"github.com/pavlith/arc/sdk/security"
 )
 
 type LoginRequest struct {
@@ -68,7 +68,7 @@ func wireError(e error) error {
 	}
 	return &rpc.Error{Code: rpc.CodeInternal, Message: "internal error"}
 }
-func bind[Req, Res any](service *pkgs.Service, c *Core, name string, h func(context.Context, Req) (Res, error)) error {
+func bind[Req, Res any](service *sdk.Service, c *Core, name string, h func(context.Context, Req) (Res, error)) error {
 	id := "identity.v1." + name
 	mutation := name == "delegations.create" || name == "delegations.revoke"
 	return rpc.Handle(service, rpc.Operation{ID: id, Endpoint: strings.ReplaceAll(name, ".", "_"), Subject: "rpc." + id, QueueGroup: "q.identity.v1", Timeout: 10 * time.Second, Protected: true, Mutation: mutation, Authorize: rpc.AssertionAuthorizer(c.Verifier(), func(ctx context.Context, caller, op string) error {
@@ -90,7 +90,7 @@ func bind[Req, Res any](service *pkgs.Service, c *Core, name string, h func(cont
 
 // BindInternal registers only NATS endpoints, on a preconfigured private service
 // connection. Deployment must restrict subjects to approved internal credentials.
-func (c *Core) BindInternal(s *pkgs.Service) error {
+func (c *Core) BindInternal(s *sdk.Service) error {
 	if e := c.ready(); e != nil {
 		return e
 	}

@@ -3,7 +3,7 @@ package access
 import (
 	"context"
 
-	"github.com/pavlith/arc/pkgs/rpc"
+	"github.com/pavlith/arc/sdk/rpc"
 )
 
 // Client uses the existing transport. The caller supplies an invocation, proof,

@@ -19,15 +19,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pavlith/arc/pkgs"
-	"github.com/pavlith/arc/pkgs/contract"
-	"github.com/pavlith/arc/pkgs/events"
-	"github.com/pavlith/arc/pkgs/rpc"
-	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/sdk"
+	"github.com/pavlith/arc/sdk/contract"
+	"github.com/pavlith/arc/sdk/events"
+	"github.com/pavlith/arc/sdk/rpc"
+	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/core/modules/access"
 	"github.com/pavlith/arc/services/core/modules/fabric"
 	"github.com/pavlith/arc/services/core/modules/identity"
-	"github.com/pavlith/arc/services/internal/testcontract"
+	"github.com/pavlith/arc/sdk/testcontract"
 )
 
 func testKey(b byte) ed25519.PrivateKey { return ed25519.NewKeyFromSeed(bytes.Repeat([]byte{b}, 32)) }
@@ -128,10 +128,10 @@ func TestM0Gate(t *testing.T) {
 	acl.ContractSource = f
 	dir := os.Getenv("ARC_IDENTITY_NATS_SECRETS")
 	natsURL := os.Getenv("ARC_IDENTITY_NATS_URL")
-	cfg := func(name, seed string) pkgs.Config {
-		return pkgs.Config{URL: natsURL, Name: name, NKeySeedFile: filepath.Join(dir, seed), TLSCAFile: filepath.Join(dir, "ca.crt")}
+	cfg := func(name, seed string) sdk.Config {
+		return sdk.Config{URL: natsURL, Name: name, NKeySeedFile: filepath.Join(dir, seed), TLSCAFile: filepath.Join(dir, "ca.crt")}
 	}
-	coreSvc, e := pkgs.NewService(ctx, pkgs.ServiceConfig{Name: "arc-bootstrap", Version: "0.0.5", Connection: cfg("m005-core", "nats-echo-service.seed")})
+	coreSvc, e := sdk.NewService(ctx, sdk.ServiceConfig{Name: "arc-bootstrap", Version: "0.0.5", Connection: cfg("m005-core", "nats-echo-service.seed")})
 	must(e)
 	defer coreSvc.Stop()
 	must(id.BindInternal(coreSvc))
@@ -140,7 +140,7 @@ func TestM0Gate(t *testing.T) {
 	must(e)
 	defer closeControl()
 	must(coreSvc.Connection().Flush())
-	accessSvc, e := pkgs.NewService(ctx, pkgs.ServiceConfig{Name: "arc-access", Version: "0.0.5", Connection: cfg("m005-access", "nats-echo-service.seed")})
+	accessSvc, e := sdk.NewService(ctx, sdk.ServiceConfig{Name: "arc-access", Version: "0.0.5", Connection: cfg("m005-access", "nats-echo-service.seed")})
 	must(e)
 	defer accessSvc.Stop()
 	must(acl.BindInternal(accessSvc))
@@ -168,7 +168,7 @@ func TestM0Gate(t *testing.T) {
 	root := "d0000000-0000-4000-8000-000000000001"
 	_, e = db.ExecContext(ctx, `INSERT INTO access.resources(id,type,provider_service,owner_kind,owner_id,owner_user_id,inherit_acl,state,policy_revision) VALUES($1,$2,$3,'user',$4,$4,true,'active',1)`, root, r.Type, provider, owner)
 	must(e)
-	gateNC, e := pkgs.Connect(ctx, cfg("m005-gate", "nats-smoke-client.seed"))
+	gateNC, e := sdk.Connect(ctx, cfg("m005-gate", "nats-smoke-client.seed"))
 	must(e)
 	defer gateNC.Close()
 	client, e := rpc.NewClient(gateNC)
@@ -180,7 +180,7 @@ func TestM0Gate(t *testing.T) {
 	var lastRequestID atomic.Value
 	var lastTrace atomic.Value
 	var businessCalls atomic.Int64
-	app, e := pkgs.NewApp(pkgs.AppConfig{Connection: cfg("m005-tasks", "nats-echo-service.seed"), Artifact: a, Instance: "m005-tasks-instance", Registry: registry, SelfCheck: func(context.Context) error { return nil }, Authorize: rpc.InvocationAuthorizer(id.Verifier(), "tasks/v1"), Resource: func(ctx context.Context, requested, action string) error {
+	app, e := sdk.NewApp(sdk.AppConfig{Connection: cfg("m005-tasks", "nats-echo-service.seed"), Artifact: a, Instance: "m005-tasks-instance", Registry: registry, SelfCheck: func(context.Context) error { return nil }, Authorize: rpc.InvocationAuthorizer(id.Verifier(), "tasks/v1"), Resource: func(ctx context.Context, requested, action string) error {
 		if requested != root {
 			return security.ErrDenied
 		}
@@ -225,7 +225,7 @@ func TestM0Gate(t *testing.T) {
 	}})
 	must(e)
 	defer app.Stop()
-	must(pkgs.Handle(app, "tasks.read", func(ctx context.Context, q taskRequest) (taskResponse, error) {
+	must(sdk.Handle(app, "tasks.read", func(ctx context.Context, q taskRequest) (taskResponse, error) {
 		executions.Add(1)
 		cl, _ := rpc.VerifiedClaims(ctx)
 		lastActor.Store(cl.Subject)
@@ -251,7 +251,7 @@ func TestM0Gate(t *testing.T) {
 	}))
 	store := events.Store{DB: db, Schema: "gate_fixture"}
 	for _, op := range []string{"tasks.create", "tasks.accept"} {
-		must(pkgs.HandleCommand(app, op, store, func(ctx context.Context, tx *sql.Tx, q taskRequest) (taskResponse, error) {
+		must(sdk.HandleCommand(app, op, store, func(ctx context.Context, tx *sql.Tx, q taskRequest) (taskResponse, error) {
 			executions.Add(1)
 			_, e := tx.ExecContext(ctx, `INSERT INTO gate_fixture.items(value) VALUES($1)`, q.Value)
 			return taskResponse{Value: q.Value}, e

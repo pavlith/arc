@@ -17,7 +17,7 @@ initdb -D "$scratch/db" -A trust -U postgres --no-locale -E UTF8 >"$scratch/init
 pg_ctl -D "$scratch/db" -l "$scratch/postgres.log" -o "-k $scratch -h ''" -w start >/dev/null
 export PGHOST="$scratch" PGUSER=postgres PGDATABASE=postgres
 psql -X -v ON_ERROR_STOP=1 -c 'CREATE ROLE arc_migrator LOGIN;' -c 'CREATE ROLE arc_core LOGIN;' -c 'CREATE ROLE arc_tasks LOGIN;' -c 'CREATE ROLE arc_notifications LOGIN;' -c 'CREATE DATABASE arc OWNER arc_migrator;' >/dev/null
-export PGUSER=arc_migrator PGDATABASE=arc PGPASSWORD_FILE="$scratch/password" MIGRATIONS_DIR="$PWD/migrations"
+export PGUSER=arc_migrator PGDATABASE=arc PGPASSWORD_FILE="$scratch/password" MIGRATIONS_DIR="$PWD/services"
 touch "$PGPASSWORD_FILE"
 sh scripts/migrate.sh
 sh scripts/migrate.sh
@@ -30,7 +30,7 @@ fi
 export ARC_IDENTITY_TEST_DSN="host=$scratch user=arc_core dbname=arc sslmode=disable"
 export ARC_ACCESS_TEST_DSN="$ARC_IDENTITY_TEST_DSN"
 # Use the existing M0-01 TLS/NKey bootstrap and smoke client unchanged.
-(cd sdk && go run ./cmd/arc-dev-bootstrap -out "$scratch/secrets" -runtime-dir "$scratch/secrets" -store-dir "$scratch/jetstream")
+(go run ./cmd/arc-dev-bootstrap -out "$scratch/secrets" -runtime-dir "$scratch/secrets" -store-dir "$scratch/jetstream")
 # Bind an ephemeral port; the generated config has port 4222, replaced below.
 port=$(python3 - <<'PY'
 import socket
@@ -58,7 +58,7 @@ PY
   return 1
 }
 start_nats
-(cd sdk && go run ./cmd/arc-rpc-smoke -url="tls://localhost:$port" -ca="$scratch/secrets/ca.crt" -service-seed="$scratch/secrets/nats-echo-service.seed" -client-seed="$scratch/secrets/nats-smoke-client.seed" -jetstream-seed="$scratch/secrets/nats-jetstream-admin.seed")
+(go run ./cmd/arc-rpc-smoke -url="tls://localhost:$port" -ca="$scratch/secrets/ca.crt" -service-seed="$scratch/secrets/nats-echo-service.seed" -client-seed="$scratch/secrets/nats-smoke-client.seed" -jetstream-seed="$scratch/secrets/nats-jetstream-admin.seed")
 kill "$nats_pid"
 wait "$nats_pid" || true
 nats_pid=
@@ -107,24 +107,24 @@ p.write_text(s)
 PYTHON_GATE
 fi
 if [[ ${ARC_TEST_TASKS:-0} == 1 ]]; then
-  (cd sdk && go run ./cmd/arc-m0-06-credentials -dir "$scratch/secrets")
+  (go run ./cmd/arc-m0-06-credentials -dir "$scratch/secrets")
 fi
 start_nats
 export ARC_IDENTITY_NATS_URL="tls://localhost:$port" ARC_IDENTITY_NATS_SECRETS="$scratch/secrets"
 if [[ ${ARC_TEST_TASKS_ONLY:-0} != 1 ]]; then
-(cd sdk && go test -count=1 -run TestM0Identity -v ./identity)
+(go test -count=1 -run TestM0Identity -v ./services/core/modules/identity)
 if [[ ${ARC_TEST_ACCESS:-0} == 1 ]]; then
-  (cd sdk && go test -race -count=1 -run TestM0Access -v ./access)
+  (go test -race -count=1 -run TestM0Access -v ./services/core/modules/access)
 fi
 if [[ ${ARC_TEST_FABRIC:-0} == 1 ]]; then
-  (cd sdk && go test -race -count=1 -run TestM0Fabric -v ./fabric)
+  (go test -race -count=1 -run TestM0Fabric -v ./services/core/modules/fabric)
 fi
 if [[ ${ARC_TEST_GATE:-0} == 1 ]]; then
-  (cd sdk && ARC_ACCESS_TEST_DSN="host=$scratch user=arc_core dbname=arc_gate sslmode=disable" go test -race -count=1 -run TestM0Gate -v ./gate)
+  (ARC_ACCESS_TEST_DSN="host=$scratch user=arc_core dbname=arc_gate sslmode=disable" go test -race -count=1 -run TestM0Gate -v ./services/gate/modules/http)
 fi
 fi
 if [[ ${ARC_TEST_TASKS:-0} == 1 ]]; then
- (cd sdk && go build -race -o "$scratch/arc-tasks" ./cmd/arc-tasks && go build -race -o "$scratch/arc-notifications" ./cmd/arc-notifications)
- (cd sdk && ARC_TASKS_TEST_DSN="host=$scratch user=arc_core dbname=arc_tasks_proof sslmode=disable" ARC_DOMAIN_BIN_DIR="$scratch" go test -race -count=1 -timeout=3m -run TestM006 -v ./tasks)
+ (go build -race -o "$scratch/arc-tasks" ./cmd/arc-tasks && go build -race -o "$scratch/arc-notifications" ./cmd/arc-notifications)
+ (ARC_TASKS_TEST_DSN="host=$scratch user=arc_core dbname=arc_tasks_proof sslmode=disable" ARC_DOMAIN_BIN_DIR="$scratch" go test -race -count=1 -timeout=3m -run TestM006 -v ./services/task)
 fi
 echo 'Requested M0 integration guardrails passed; M7 not run.'

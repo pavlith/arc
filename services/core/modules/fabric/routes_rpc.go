@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/pavlith/arc/pkgs"
-	"github.com/pavlith/arc/pkgs/rpc"
-	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/sdk"
+	"github.com/pavlith/arc/sdk/rpc"
+	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/core/modules/identity"
 )
 
@@ -38,7 +38,7 @@ func VerifyBundle(root ed25519.PublicKey, b RouteBundle, requestID string) error
 }
 
 // BindRoutes exposes an exact authenticated control operation, never public HTTP.
-func (c *Core) BindRoutes(s *pkgs.Service) error {
+func (c *Core) BindRoutes(s *sdk.Service) error {
 	if e := c.ready(); e != nil {
 		return e
 	}

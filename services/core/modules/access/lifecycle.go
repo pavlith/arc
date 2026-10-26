@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/sdk/security"
 )
 
 func (c *Core) RegisterType(ctx context.Context, q RegisterRequest) (MutationResult, error) {

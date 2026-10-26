@@ -3,7 +3,7 @@ GO ?= go
 .PHONY: bootstrap-dev verify m0-01-smoke m0-03-smoke m0-04-smoke m0-05-smoke
 
 bootstrap-dev:
-	cd sdk && $(GO) run ./cmd/arc-dev-bootstrap -out ../.secrets/dev
+	$(GO) run ./cmd/arc-dev-bootstrap -out ../.secrets/dev
 
 verify:
 	bash scripts/verify-changed.sh
@@ -25,7 +25,7 @@ m0-06-smoke:
 	bash scripts/test-m0-06.sh
 
 m0-06-build:
-	cd sdk && $(GO) build ./cmd/arc-tasks ./cmd/arc-notifications
+	$(GO) build ./cmd/arc-tasks ./cmd/arc-notifications
 
 m0-06-up:
 	docker compose -f compose.yaml -f compose.m0-06.yaml --profile m0-06 up --build tasks notifications

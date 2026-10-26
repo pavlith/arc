@@ -8,18 +8,18 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
-	"github.com/pavlith/arc/pkgs"
-	"github.com/pavlith/arc/pkgs/contract"
-	"github.com/pavlith/arc/pkgs/events"
-	"github.com/pavlith/arc/pkgs/module"
-	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/sdk"
+	"github.com/pavlith/arc/sdk/contract"
+	"github.com/pavlith/arc/sdk/events"
+	"github.com/pavlith/arc/sdk/module"
+	"github.com/pavlith/arc/sdk/security"
 )
 
 type Module struct {
 	DB           *sql.DB
 	Contract     *contract.Compiled
-	Registry     pkgs.Registry
-	Registration pkgs.Registration
+	Registry     sdk.Registry
+	Registration sdk.Registration
 	Connection   func() *nats.Conn
 }
 

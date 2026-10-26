@@ -18,9 +18,9 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
-	"github.com/pavlith/arc/pkgs"
-	"github.com/pavlith/arc/pkgs/rpc"
-	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/sdk"
+	"github.com/pavlith/arc/sdk/rpc"
+	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/core/modules/identity"
 )
 
@@ -90,7 +90,7 @@ type fixture struct {
 	acl                           *Core
 	client                        *rpc.Client
 	nconn                         *nats.Conn
-	service                       *pkgs.Service
+	service                       *sdk.Service
 	owner, member, gate, provider string
 	gateKid, providerKid          string
 	ownerAuth, memberAuth         identity.UserSession
@@ -222,7 +222,7 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatal("NATS test broker fixtures required")
 	}
 	seed := filepath.Join(dir, "nats-echo-service.seed")
-	service, e := pkgs.NewService(ctx, pkgs.ServiceConfig{Name: "arc-access", Version: "0.0.3", Connection: pkgs.Config{URL: url, Name: "arc-access", NKeySeedFile: seed, TLSCAFile: filepath.Join(dir, "ca.crt")}})
+	service, e := sdk.NewService(ctx, sdk.ServiceConfig{Name: "arc-access", Version: "0.0.3", Connection: sdk.Config{URL: url, Name: "arc-access", NKeySeedFile: seed, TLSCAFile: filepath.Join(dir, "ca.crt")}})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -233,7 +233,7 @@ func newFixture(t *testing.T) *fixture {
 	if e = service.Connection().Flush(); e != nil {
 		t.Fatal(e)
 	}
-	nc, e := pkgs.Connect(ctx, pkgs.Config{URL: url, Name: "access-test-client", NKeySeedFile: filepath.Join(dir, "nats-smoke-client.seed"), TLSCAFile: filepath.Join(dir, "ca.crt")})
+	nc, e := sdk.Connect(ctx, sdk.Config{URL: url, Name: "access-test-client", NKeySeedFile: filepath.Join(dir, "nats-smoke-client.seed"), TLSCAFile: filepath.Join(dir, "ca.crt")})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -445,7 +445,7 @@ func TestM0Access(t *testing.T) {
 	f.acl = &replacement
 	f.id.Policy = f.acl
 	dir := os.Getenv("ARC_IDENTITY_NATS_SECRETS")
-	f.service, e = pkgs.NewService(f.ctx, pkgs.ServiceConfig{Name: "arc-access", Version: "0.0.3", Connection: pkgs.Config{URL: os.Getenv("ARC_IDENTITY_NATS_URL"), Name: "access-restarted", NKeySeedFile: filepath.Join(dir, "nats-echo-service.seed"), TLSCAFile: filepath.Join(dir, "ca.crt")}})
+	f.service, e = sdk.NewService(f.ctx, sdk.ServiceConfig{Name: "arc-access", Version: "0.0.3", Connection: sdk.Config{URL: os.Getenv("ARC_IDENTITY_NATS_URL"), Name: "access-restarted", NKeySeedFile: filepath.Join(dir, "nats-echo-service.seed"), TLSCAFile: filepath.Join(dir, "ca.crt")}})
 	if e != nil {
 		t.Fatal(e)
 	}

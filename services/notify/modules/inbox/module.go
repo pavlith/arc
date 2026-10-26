@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
-	"github.com/pavlith/arc/pkgs/contract"
-	"github.com/pavlith/arc/pkgs/events"
-	"github.com/pavlith/arc/pkgs/module"
-	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/sdk/contract"
+	"github.com/pavlith/arc/sdk/events"
+	"github.com/pavlith/arc/sdk/module"
+	"github.com/pavlith/arc/sdk/security"
 	tasksv1 "github.com/pavlith/arc/services/task/api/v1"
 )
 

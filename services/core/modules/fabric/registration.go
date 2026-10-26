@@ -12,10 +12,10 @@ import (
 	"fmt"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/micro"
-	"github.com/pavlith/arc/pkgs"
-	"github.com/pavlith/arc/pkgs/contract"
-	"github.com/pavlith/arc/pkgs/rpc"
-	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/sdk"
+	"github.com/pavlith/arc/sdk/contract"
+	"github.com/pavlith/arc/sdk/rpc"
+	"github.com/pavlith/arc/sdk/security"
 	"strings"
 )
 
@@ -29,7 +29,7 @@ type controlRequest struct {
 	RequestID    string             `json:"request_id"`
 	Assertion    string             `json:"assertion"`
 	Proof        security.Proof     `json:"proof"`
-	Registration pkgs.Registration  `json:"registration"`
+	Registration sdk.Registration  `json:"registration"`
 }
 type controlResponse struct {
 	Subject   string     `json:"subject"`
@@ -40,7 +40,7 @@ type controlResponse struct {
 }
 type probe struct {
 	Challenge    string            `json:"challenge"`
-	Registration pkgs.Registration `json:"registration"`
+	Registration sdk.Registration `json:"registration"`
 	MicroID      string            `json:"micro_id,omitempty"`
 	Signature    []byte            `json:"signature,omitempty"`
 }
@@ -58,7 +58,7 @@ func probeBytes(p probe) []byte {
 	b, _ = security.CanonicalJSON(b)
 	return b
 }
-func probeSubject(r pkgs.Registration) string { return "ctl.arc.fabric.probe." + r.Instance }
+func probeSubject(r sdk.Registration) string { return "ctl.arc.fabric.probe." + r.Instance }
 
 // BindControl binds only the three exact control subjects. It does not trust NATS headers.
 func (c *Core) BindControl(nc *nats.Conn) (func(), error) {
@@ -228,7 +228,7 @@ func (c *Core) control(ctx context.Context, nc *nats.Conn, subject string, raw [
 	}
 	return security.ErrDenied
 }
-func (c *Core) touch(ctx context.Context, account string, r pkgs.Registration, ready bool) error {
+func (c *Core) touch(ctx context.Context, account string, r sdk.Registration, ready bool) error {
 	res, e := c.DB.ExecContext(ctx, `UPDATE fabric.instances SET ready=true,lease_until=now()+interval '30 seconds',observed_at=now() WHERE instance_id=$1 AND service_account_id::text=$2 AND digest=$3 AND build_version=$4 AND lease_until>now() AND ($5 OR ready)`, r.Instance, account, r.Digest, r.Build, ready)
 	if e != nil {
 		return security.ErrUnavailable
@@ -248,16 +248,16 @@ type Client struct {
 	NC       *nats.Conn
 	mu       sync.Mutex
 	probes   map[string]*nats.Subscription
-	evidence map[string]pkgs.ReadyEvidence
+	evidence map[string]sdk.ReadyEvidence
 }
 
-func (c *Client) invoke(ctx context.Context, subject string, r pkgs.Registration) error {
+func (c *Client) invoke(ctx context.Context, subject string, r sdk.Registration) error {
 	return c.invokeSubscription(ctx, subject, r, nil)
 }
-func (c *Client) EventPermit(ctx context.Context, r pkgs.Registration, sub EventSubscription) error {
+func (c *Client) EventPermit(ctx context.Context, r sdk.Registration, sub EventSubscription) error {
 	return c.invokeSubscription(ctx, EventPermitSubject, r, &sub)
 }
-func (c *Client) invokeSubscription(ctx context.Context, subject string, r pkgs.Registration, subscription *EventSubscription) error {
+func (c *Client) invokeSubscription(ctx context.Context, subject string, r sdk.Registration, subscription *EventSubscription) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if c.NC == nil || len(c.Key) != 64 || len(c.CoreKey) != 32 {
@@ -296,7 +296,7 @@ func (c *Client) invokeSubscription(ctx context.Context, subject string, r pkgs.
 	}
 	return nil
 }
-func (c *Client) Register(ctx context.Context, nc *nats.Conn, r pkgs.Registration) error {
+func (c *Client) Register(ctx context.Context, nc *nats.Conn, r sdk.Registration) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.NC == nil {
@@ -332,20 +332,20 @@ func (c *Client) Register(ctx context.Context, nc *nats.Conn, r pkgs.Registratio
 	c.probes[r.Instance] = sub
 	return nc.FlushWithContext(ctx)
 }
-func (c *Client) Ready(ctx context.Context, r pkgs.Registration, e pkgs.ReadyEvidence) error {
+func (c *Client) Ready(ctx context.Context, r sdk.Registration, e sdk.ReadyEvidence) error {
 	c.mu.Lock()
 	if c.evidence == nil {
-		c.evidence = map[string]pkgs.ReadyEvidence{}
+		c.evidence = map[string]sdk.ReadyEvidence{}
 	}
 	c.evidence[r.Instance] = e
 	c.mu.Unlock()
 	return c.invoke(ctx, ReadySubject, r)
 }
-func (c *Client) Check(ctx context.Context, r pkgs.Registration) error {
+func (c *Client) Check(ctx context.Context, r sdk.Registration) error {
 	return c.invoke(ctx, CheckSubject, r)
 }
 
-var _ pkgs.Registry = (*Client)(nil)
+var _ sdk.Registry = (*Client)(nil)
 
 func controlResponseBytes(r controlResponse) []byte {
 	r.Signature = nil

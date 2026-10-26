@@ -3,7 +3,7 @@ package v1
 import (
 	"embed"
 	"encoding/json"
-	"github.com/pavlith/arc/pkgs/contract"
+	"github.com/pavlith/arc/sdk/contract"
 )
 
 //go:embed contract/manifest.json contract/schemas/*.json

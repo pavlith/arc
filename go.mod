@@ -3,7 +3,6 @@ module github.com/pavlith/arc
 go 1.27.0
 
 require (
-	github.com/pavlith/arc/pkgs v0.0.0
 	github.com/cyberphone/json-canonicalization v0.0.0-20261011152517-32a48195b9b2
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/nats-io/nats.go v1.55.0
@@ -23,4 +22,3 @@ require (
 	golang.org/x/text v0.42.0 // indirect
 )
 
-replace github.com/pavlith/arc/pkgs => ./pkgs

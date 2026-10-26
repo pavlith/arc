@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/sdk/security"
 )
 
 func (c *Core) lockSession(ctx context.Context, t *sql.Tx, s Session) error {

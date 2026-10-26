@@ -4,8 +4,8 @@ services:
   tasks:
     profiles: ["m0-06"]
     build:
-      context: ./sdk
-      dockerfile: Dockerfile.domain
+      context: .
+      dockerfile: deploy/docker/Dockerfile.domain
       args: {SERVICE: tasks}
     read_only: true
     cap_drop: ["ALL"]
@@ -17,8 +17,8 @@ services:
   notifications:
     profiles: ["m0-06"]
     build:
-      context: ./sdk
-      dockerfile: Dockerfile.domain
+      context: .
+      dockerfile: deploy/docker/Dockerfile.domain
       args: {SERVICE: notifications}
     read_only: true
     cap_drop: ["ALL"]

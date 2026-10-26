@@ -18,14 +18,14 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
-	"github.com/pavlith/arc/pkgs"
-	"github.com/pavlith/arc/pkgs/contract"
-	"github.com/pavlith/arc/pkgs/events"
-	"github.com/pavlith/arc/pkgs/rpc"
-	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/sdk"
+	"github.com/pavlith/arc/sdk/contract"
+	"github.com/pavlith/arc/sdk/events"
+	"github.com/pavlith/arc/sdk/rpc"
+	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/core/modules/access"
 	"github.com/pavlith/arc/services/core/modules/identity"
-	"github.com/pavlith/arc/services/internal/testcontract"
+	"github.com/pavlith/arc/sdk/testcontract"
 )
 
 func key(b byte) ed25519.PrivateKey { return ed25519.NewKeyFromSeed(bytes.Repeat([]byte{b}, 32)) }
@@ -136,26 +136,26 @@ func TestM0Fabric(t *testing.T) {
 	acl.ContractSource = f
 	dir := os.Getenv("ARC_IDENTITY_NATS_SECRETS")
 	url := os.Getenv("ARC_IDENTITY_NATS_URL")
-	cfg := func(name, seed string) pkgs.Config {
-		return pkgs.Config{URL: url, Name: name, NKeySeedFile: filepath.Join(dir, seed), TLSCAFile: filepath.Join(dir, "ca.crt")}
+	cfg := func(name, seed string) sdk.Config {
+		return sdk.Config{URL: url, Name: name, NKeySeedFile: filepath.Join(dir, seed), TLSCAFile: filepath.Join(dir, "ca.crt")}
 	}
-	coreNC, e := pkgs.Connect(ctx, cfg("fabric-core", "nats-echo-service.seed"))
+	coreNC, e := sdk.Connect(ctx, cfg("fabric-core", "nats-echo-service.seed"))
 	must(e)
 	defer coreNC.Close()
 	closeControl, e := f.BindControl(coreNC)
 	must(e)
 	defer closeControl()
-	accessSvc, e := pkgs.NewService(ctx, pkgs.ServiceConfig{Name: "arc-access", Version: "0.0.4", Connection: cfg("fabric-access", "nats-echo-service.seed")})
+	accessSvc, e := sdk.NewService(ctx, sdk.ServiceConfig{Name: "arc-access", Version: "0.0.4", Connection: cfg("fabric-access", "nats-echo-service.seed")})
 	must(e)
 	defer accessSvc.Stop()
 	must(acl.BindInternal(accessSvc))
 	must(accessSvc.Connection().Flush())
-	callerNC, e := pkgs.Connect(ctx, cfg("fabric-caller", "nats-smoke-client.seed"))
+	callerNC, e := sdk.Connect(ctx, cfg("fabric-caller", "nats-smoke-client.seed"))
 	must(e)
 	defer callerNC.Close()
 	caller, e := rpc.NewClient(callerNC)
 	must(e)
-	jsNC, e := pkgs.Connect(ctx, cfg("fabric-events", "nats-jetstream-admin.seed"))
+	jsNC, e := sdk.Connect(ctx, cfg("fabric-events", "nats-jetstream-admin.seed"))
 	must(e)
 	defer jsNC.Close()
 	js, e := jsNC.JetStream(nats.MaxWait(time.Second))
@@ -201,13 +201,13 @@ func TestM0Fabric(t *testing.T) {
 	}
 	var executed atomic.Int64
 	store := events.Store{DB: db, Schema: "books_fixture"}
-	start := func(artifact contract.Artifact, account, kid string, priv ed25519.PrivateKey, instance, expectedRoot string) (*pkgs.App, *Client) {
+	start := func(artifact contract.Artifact, account, kid string, priv ed25519.PrivateKey, instance, expectedRoot string) (*sdk.App, *Client) {
 		t.Helper()
 		registry := &Client{CoreKey: f.SnapshotKey.Public().(ed25519.PublicKey), Account: account, Kid: kid, Key: priv}
 		compiled, e := contract.Compile(artifact)
 		must(e)
 		major := compiled.Manifest.Service.APIMajor
-		app, e := pkgs.NewApp(pkgs.AppConfig{Connection: cfg("books-"+instance, "nats-echo-service.seed"), Artifact: artifact, Instance: instance, Registry: registry, SelfCheck: func(context.Context) error { return nil }, Authorize: rpc.InvocationAuthorizer(id.Verifier(), fmt.Sprintf("books/v%d", major)), Resource: func(ctx context.Context, root, action string) error {
+		app, e := sdk.NewApp(sdk.AppConfig{Connection: cfg("books-"+instance, "nats-echo-service.seed"), Artifact: artifact, Instance: instance, Registry: registry, SelfCheck: func(context.Context) error { return nil }, Authorize: rpc.InvocationAuthorizer(id.Verifier(), fmt.Sprintf("books/v%d", major)), Resource: func(ctx context.Context, root, action string) error {
 			// A real owner resolves file/event IDs in its own DB; this fixture pins the root.
 			if root != expectedRoot {
 				return security.ErrDenied
@@ -239,14 +239,14 @@ func TestM0Fabric(t *testing.T) {
 			return nil
 		}})
 		must(e)
-		must(pkgs.Handle(app, "books.read", func(_ context.Context, q request) (response, error) {
+		must(sdk.Handle(app, "books.read", func(_ context.Context, q request) (response, error) {
 			executed.Add(1)
 			if q.Value == "invalid-response" {
 				return response{}, nil
 			}
 			return response{fmt.Sprintf("v%d:%s", major, q.Value)}, nil
 		}))
-		must(pkgs.HandleCommand(app, "books.create", store, func(ctx context.Context, tx *sql.Tx, q request) (response, error) {
+		must(sdk.HandleCommand(app, "books.create", store, func(ctx context.Context, tx *sql.Tx, q request) (response, error) {
 			if _, e := tx.ExecContext(ctx, `INSERT INTO books_fixture.items(value) VALUES($1)`, q.Value); e != nil {
 				return response{}, e
 			}
@@ -274,7 +274,7 @@ func TestM0Fabric(t *testing.T) {
 		return tok
 	}
 	makeControl := func(audience string) controlRequest {
-		q := controlRequest{RequestID: randomID(), Assertion: ctlAssertion(audience), Registration: pkgs.Registration{Service: "books", Instance: "proof-test-instance", Build: "1.0.0", Digest: digest}}
+		q := controlRequest{RequestID: randomID(), Assertion: ctlAssertion(audience), Registration: sdk.Registration{Service: "books", Instance: "proof-test-instance", Build: "1.0.0", Digest: digest}}
 		parts := strings.Split(q.Assertion, ".")
 		b, _ := decodeTokenPart(parts[1])
 		var cl security.Claims
@@ -333,7 +333,7 @@ func TestM0Fabric(t *testing.T) {
 		t.Fatal("discovery did not isolate ready instances", liveInstances)
 	}
 	wrongCore := &Client{Account: provider, Kid: "fabric-provider-key", Key: providerKey, NC: app.Connection(), CoreKey: key(107).Public().(ed25519.PublicKey)}
-	if e = wrongCore.Check(ctx, pkgs.Registration{Service: "books", Instance: "books-instance-v1", Build: "1.0.0", Digest: digest}); !errors.Is(e, security.ErrUnauthenticated) {
+	if e = wrongCore.Check(ctx, sdk.Registration{Service: "books", Instance: "books-instance-v1", Build: "1.0.0", Digest: digest}); !errors.Is(e, security.ErrUnauthenticated) {
 		t.Fatal("untrusted Core response accepted", e)
 	}
 	tok := token(1, "books.read")
@@ -401,7 +401,7 @@ func TestM0Fabric(t *testing.T) {
 	compiled, e := contract.Compile(a)
 	must(e)
 	delivery := events.Delivery{Store: store, Contract: compiled, Permit: func(ctx context.Context) error {
-		return registry.Check(ctx, pkgs.Registration{Service: "books", Instance: "books-instance-v1", Build: "1.0.0", Digest: digest})
+		return registry.Check(ctx, sdk.Registration{Service: "books", Instance: "books-instance-v1", Build: "1.0.0", Digest: digest})
 	}}
 	n, e := delivery.PublishBatch(ctx, js, 100)
 	if e != nil || n != 1 {
@@ -457,11 +457,11 @@ func TestM0Fabric(t *testing.T) {
 	}
 	// Unknown digest and stolen account cannot register business instances.
 	bad := &Client{CoreKey: f.SnapshotKey.Public().(ed25519.PublicKey), Account: provider, Kid: "fabric-provider-key", Key: providerKey, NC: app.Connection()}
-	e = bad.Register(ctx, app.Connection(), pkgs.Registration{Service: "books", Instance: "rogue", Build: "1.0.0", Digest: strings.Repeat("0", 64)})
+	e = bad.Register(ctx, app.Connection(), sdk.Registration{Service: "books", Instance: "rogue", Build: "1.0.0", Digest: strings.Repeat("0", 64)})
 	if !errors.Is(e, security.ErrDenied) {
 		t.Fatal("rogue digest", e)
 	}
-	e = bad.Register(ctx, app.Connection(), pkgs.Registration{Service: "books", Instance: "rogue", Build: "1.0.0", Digest: digest2})
+	e = bad.Register(ctx, app.Connection(), sdk.Registration{Service: "books", Instance: "rogue", Build: "1.0.0", Digest: digest2})
 	if !errors.Is(e, security.ErrDenied) {
 		t.Fatal("foreign account registration", e)
 	}

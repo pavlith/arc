@@ -2,7 +2,7 @@ package v1
 
 import (
 	"encoding/json"
-	"github.com/pavlith/arc/pkgs/contract"
+	"github.com/pavlith/arc/sdk/contract"
 )
 
 const Health = "notifications.health"

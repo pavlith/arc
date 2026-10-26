@@ -9,10 +9,10 @@ import (
 	"errors"
 
 	"github.com/nats-io/nats.go"
-	"github.com/pavlith/arc/pkgs"
-	"github.com/pavlith/arc/pkgs/contract"
-	"github.com/pavlith/arc/pkgs/module"
-	"github.com/pavlith/arc/pkgs/service"
+	"github.com/pavlith/arc/sdk"
+	"github.com/pavlith/arc/sdk/contract"
+	"github.com/pavlith/arc/sdk/module"
+	"github.com/pavlith/arc/sdk/service"
 	"github.com/pavlith/arc/services/core/modules/identity"
 	tasksv1 "github.com/pavlith/arc/services/task/api/v1"
 	"github.com/pavlith/arc/services/task/modules/outbox"
@@ -23,7 +23,7 @@ var ErrInvalid = errors.New("task: invalid service dependencies")
 
 type Config struct {
 	DB        *sql.DB
-	Runtime   pkgs.AppConfig
+	Runtime   sdk.AppConfig
 	Identity  identity.Client
 	CoreTrust ed25519.PublicKey
 }
@@ -67,7 +67,7 @@ func New(cfg Config) (*Service, error) {
 		DB: cfg.DB, Identity: cfg.Identity, Contract: compiled,
 		Check: tasks.OnlineCheck(cfg.Identity),
 	}
-	registration := pkgs.Registration{
+	registration := sdk.Registration{
 		Service: "tasks", Instance: cfg.Runtime.Instance,
 		Build: compiled.Manifest.Service.BuildVersion, Digest: compiled.Digest,
 	}

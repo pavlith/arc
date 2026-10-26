@@ -7,8 +7,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/pavlith/arc/pkgs/events"
-	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/sdk/events"
+	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/notify/modules/delivery"
 	tasksv1 "github.com/pavlith/arc/services/task/api/v1"
 )

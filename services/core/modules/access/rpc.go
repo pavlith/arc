@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pavlith/arc/pkgs"
-	"github.com/pavlith/arc/pkgs/rpc"
+	"github.com/pavlith/arc/sdk"
+	"github.com/pavlith/arc/sdk/rpc"
 )
 
 func wireError(e error) error {
@@ -28,14 +28,14 @@ func (c *Core) Authenticate(ctx context.Context, subject string, raw []byte) (co
 	}
 	return rpc.InvocationAuthorizer(c.Identity.Verifier(), "access/v1")(ctx, subject, raw)
 }
-func bind[Req, Res any](s *pkgs.Service, c *Core, name string, mutation bool, h func(context.Context, Req) (Res, error)) error {
+func bind[Req, Res any](s *sdk.Service, c *Core, name string, mutation bool, h func(context.Context, Req) (Res, error)) error {
 	timeout := 5 * time.Second
 	if mutation {
 		timeout = 10 * time.Second
 	}
 	return rpc.Handle(s, rpc.Operation{ID: "access.v1." + name, Subject: "rpc.access.v1." + name, Endpoint: strings.ReplaceAll(name, ".", "_"), QueueGroup: "q.access.v1", Timeout: timeout, Protected: true, Mutation: mutation, Authorize: c.Authenticate}, func(ctx context.Context, r Req) (Res, error) { out, e := h(ctx, r); return out, wireError(e) })
 }
-func (c *Core) BindInternal(s *pkgs.Service) error {
+func (c *Core) BindInternal(s *sdk.Service) error {
 	if e := c.ready(); e != nil {
 		return e
 	}

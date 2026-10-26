@@ -2,8 +2,8 @@ package gate
 
 import (
 	"context"
-	"github.com/pavlith/arc/pkgs/contract"
-	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/sdk/contract"
+	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/core/modules/fabric"
 	"reflect"
 	"strings"

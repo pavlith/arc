@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pavlith/arc/pkgs"
-	"github.com/pavlith/arc/pkgs/rpc"
-	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/sdk"
+	"github.com/pavlith/arc/sdk/rpc"
+	"github.com/pavlith/arc/sdk/security"
 )
 
 type testPolicy struct{ owner, gate, worker, resource string }
@@ -296,17 +296,17 @@ func TestM0Identity(t *testing.T) {
 		if url == "" || dir == "" {
 			t.Fatal("NATS fixture required")
 		}
-		cfg := pkgs.Config{URL: url, Name: "identity-test", TLSCAFile: filepath.Join(dir, "ca.crt"), NKeySeedFile: filepath.Join(dir, "nats-echo-service.seed")}
+		cfg := sdk.Config{URL: url, Name: "identity-test", TLSCAFile: filepath.Join(dir, "ca.crt"), NKeySeedFile: filepath.Join(dir, "nats-echo-service.seed")}
 		deadline, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
-		service, e := pkgs.NewService(deadline, pkgs.ServiceConfig{Name: "arc-bootstrap", Version: "0.0.2", Connection: cfg})
+		service, e := sdk.NewService(deadline, sdk.ServiceConfig{Name: "arc-bootstrap", Version: "0.0.2", Connection: cfg})
 		must(e)
 		defer service.Stop()
 		must(c.BindInternal(service))
 		must(service.Connection().Flush())
 		cfg.Name = "identity-client"
 		cfg.NKeySeedFile = filepath.Join(dir, "nats-smoke-client.seed")
-		nc, e := pkgs.Connect(deadline, cfg)
+		nc, e := sdk.Connect(deadline, cfg)
 		must(e)
 		defer nc.Close()
 		client, e := rpc.NewClient(nc)

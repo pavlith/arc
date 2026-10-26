@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"database/sql"
-	"github.com/pavlith/arc/pkgs/contract"
-	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/sdk/contract"
+	"github.com/pavlith/arc/sdk/security"
 )
 
 type Route struct {

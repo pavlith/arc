@@ -7,7 +7,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
-	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/sdk/security"
 	"sync"
 )
 

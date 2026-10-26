@@ -3,9 +3,9 @@ package health
 import (
 	"context"
 
-	"github.com/pavlith/arc/pkgs/module"
-	"github.com/pavlith/arc/pkgs/rpc"
-	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/sdk/module"
+	"github.com/pavlith/arc/sdk/rpc"
+	"github.com/pavlith/arc/sdk/security"
 	notifyv1 "github.com/pavlith/arc/services/notify/api/v1"
 )
 

@@ -9,10 +9,10 @@ import (
 	"errors"
 
 	"github.com/nats-io/nats.go"
-	"github.com/pavlith/arc/pkgs"
-	"github.com/pavlith/arc/pkgs/contract"
-	"github.com/pavlith/arc/pkgs/module"
-	"github.com/pavlith/arc/pkgs/service"
+	"github.com/pavlith/arc/sdk"
+	"github.com/pavlith/arc/sdk/contract"
+	"github.com/pavlith/arc/sdk/module"
+	"github.com/pavlith/arc/sdk/service"
 	"github.com/pavlith/arc/services/core/modules/fabric"
 	"github.com/pavlith/arc/services/core/modules/identity"
 	notifyv1 "github.com/pavlith/arc/services/notify/api/v1"
@@ -27,13 +27,13 @@ var ErrInvalid = errors.New("notify: invalid service dependencies")
 // EventRegistry checks the exact signed source, artifact digest, subject, durable
 // and consumer identity with live Fabric approval.
 type EventRegistry interface {
-	pkgs.Registry
-	EventPermit(context.Context, pkgs.Registration, fabric.EventSubscription) error
+	sdk.Registry
+	EventPermit(context.Context, sdk.Registration, fabric.EventSubscription) error
 }
 
 type Config struct {
 	DB           *sql.DB
-	Runtime      pkgs.AppConfig
+	Runtime      sdk.AppConfig
 	Identity     identity.Client
 	CoreTrust    ed25519.PublicKey
 	Registry     EventRegistry
@@ -85,7 +85,7 @@ func New(cfg Config) (*Service, error) {
 	cfg.Runtime.Authorize = identity.RemoteAuthorizer(cfg.Identity, cfg.CoreTrust, "notifications/v1")
 	cfg.Runtime.SelfCheck = cfg.DB.PingContext
 
-	registration := pkgs.Registration{
+	registration := sdk.Registration{
 		Service: "notifications", Instance: cfg.Runtime.Instance,
 		Build: own.Manifest.Service.BuildVersion, Digest: own.Digest,
 	}

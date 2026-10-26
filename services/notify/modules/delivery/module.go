@@ -6,8 +6,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/pavlith/arc/pkgs/module"
-	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/sdk/module"
+	"github.com/pavlith/arc/sdk/security"
 )
 
 type Module struct {

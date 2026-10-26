@@ -15,7 +15,11 @@ CREATE TABLE IF NOT EXISTS system.schema_migrations (
 REVOKE ALL ON TABLE system.schema_migrations FROM PUBLIC;
 SQL
 
-for migration in "${MIGRATIONS_DIR:-/migrations}"/*.up.sql; do
+# Migrations are owned by each service and applied in dependency order:
+# Core (Identity/ACL/Fabric/Runtime), then Task, then Notify.
+# Never execute the removed legacy combined 000005 migration.
+root=${MIGRATIONS_DIR:-/services}
+for migration in "$root"/core/migrations/*.up.sql "$root"/task/migrations/*.up.sql "$root"/notify/migrations/*.up.sql; do
   [ -f "$migration" ] || continue
   version=$(basename "$migration")
   case "$version" in

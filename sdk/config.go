@@ -23,18 +23,18 @@ type Config struct {
 // Connect establishes a TLS and NKey-authenticated connection to NATS.
 func Connect(ctx context.Context, cfg Config) (*nats.Conn, error) {
 	if ctx == nil {
-		return nil, errors.New("sdk: nil context")
+		return nil, errors.New("pkgs: nil context")
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if cfg.URL == "" || cfg.Name == "" || cfg.NKeySeedFile == "" || cfg.TLSCAFile == "" {
-		return nil, errors.New("sdk: URL, name, NKey seed file, and TLS CA file are required")
+		return nil, errors.New("pkgs: URL, name, NKey seed file, and TLS CA file are required")
 	}
 
 	nkeyOption, err := nats.NkeyOptionFromSeed(cfg.NKeySeedFile)
 	if err != nil {
-		return nil, fmt.Errorf("sdk: load NKey credential: %w", err)
+		return nil, fmt.Errorf("pkgs: load NKey credential: %w", err)
 	}
 
 	timeout := defaultConnectTimeout
@@ -60,7 +60,7 @@ func Connect(ctx context.Context, cfg Config) (*nats.Conn, error) {
 		nats.PermissionErrOnSubscribe(true),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("sdk: connect to NATS: %w", err)
+		return nil, fmt.Errorf("pkgs: connect to NATS: %w", err)
 	}
 	return nc, nil
 }

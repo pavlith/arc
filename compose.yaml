@@ -58,15 +58,15 @@ services:
     read_only: true
     cap_drop: ["ALL"]
     volumes:
-      - ./migrations:/migrations:ro
+      - ./services:/services:ro
       - ./scripts/migrate.sh:/scripts/migrate.sh:ro
     secrets:
       - postgres_migrator_password
 
   rpc-smoke:
     build:
-      context: ./sdk
-      dockerfile: Dockerfile.smoke
+      context: .
+      dockerfile: deploy/docker/Dockerfile.smoke
     profiles: ["tools"]
     depends_on:
       - nats

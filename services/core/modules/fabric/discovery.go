@@ -2,7 +2,7 @@ package fabric
 
 import (
 	"context"
-	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/sdk/security"
 	"time"
 )
 

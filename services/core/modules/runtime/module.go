@@ -10,6 +10,7 @@ import (
 
 	"github.com/pavlith/arc/sdk"
 	"github.com/pavlith/arc/sdk/security"
+ "gorm.io/gorm"
 )
 
 var ErrConflict = errors.New("runtime: revision conflict")
@@ -21,6 +22,7 @@ type Authorize func(context.Context, string, string) error
 
 type Module struct {
 	DB        *sql.DB
+ GormDB    *gorm.DB
 	Authorize Authorize
 }
 
@@ -39,7 +41,7 @@ func (m *Module) ID() string { return "runtime" }
 // Runtime exposes no privileged NATS/Docker endpoint in M0. It is an in-process
 // Core module; any future RPC must use a separately approved protected contract.
 func (m *Module) Bind(_ *sdk.Service) (func(), error) {
-	if m == nil || m.DB == nil || m.Authorize == nil {
+	if m == nil || (m.DB == nil && m.GormDB == nil) || m.Authorize == nil {
 		return nil, security.ErrUnavailable
 	}
 	return nil, nil
@@ -49,7 +51,7 @@ func (m *Module) Bind(_ *sdk.Service) (func(), error) {
 // greater revisions update only the exact existing state. No side effects occur
 // in a Docker engine and the caller must supply an online checked permission.
 func (m *Module) Put(ctx context.Context, want Desired, expected int64) (Desired, error) {
-	if m == nil || m.DB == nil || m.Authorize == nil {
+	if m == nil || (m.DB == nil && m.GormDB == nil) || m.Authorize == nil {
 		return Desired{}, security.ErrUnavailable
 	}
 	if want.ID == "" || want.ServiceName == "" || len(want.Spec) == 0 ||
@@ -64,6 +66,7 @@ func (m *Module) Put(ctx context.Context, want Desired, expected int64) (Desired
 		return Desired{}, ErrInvalid
 	}
 	want.Spec = canonical
+ if m.GormDB != nil { return m.putGORM(ctx, want, expected) }
 	tx, err := m.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return Desired{}, security.ErrUnavailable
@@ -97,7 +100,7 @@ RETURNING revision
 }
 
 func (m *Module) Get(ctx context.Context, id string) (Desired, error) {
-	if m == nil || m.DB == nil || m.Authorize == nil {
+	if m == nil || (m.DB == nil && m.GormDB == nil) || m.Authorize == nil {
 		return Desired{}, security.ErrUnavailable
 	}
 	if id == "" {
@@ -106,7 +109,8 @@ func (m *Module) Get(ctx context.Context, id string) (Desired, error) {
 	if err := m.Authorize(ctx, "runtime.deployments.read", id); err != nil {
 		return Desired{}, err
 	}
-	var out Desired
+	if m.GormDB != nil { return m.getGORM(ctx, id) }
+ var out Desired
 	if err := m.DB.QueryRowContext(ctx,
 		`SELECT id,service_name,spec,replicas,revision FROM runtime.desired_deployments WHERE id=$1`, id,
 	).Scan(&out.ID, &out.ServiceName, &out.Spec, &out.Replicas, &out.Revision); err != nil {

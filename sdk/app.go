@@ -170,16 +170,18 @@ func (a *App) Start(ctx context.Context) error {
 	if e = a.cfg.Registry.Register(ctx, nc, a.registration); e != nil {
 		return fail(e)
 	}
-    svc, e := newServiceOnConnection(nc, ServiceConfig{
-        Name: a.compiled.Manifest.Service.Name,
-        Version: a.compiled.Manifest.Service.BuildVersion,
-    }, map[string]string{
-        "contract_digest": a.compiled.Digest,
-        "instance_id": a.registration.Instance,
-        "api_major": fmt.Sprint(a.compiled.Manifest.Service.APIMajor),
-    })
-    if e != nil { return fail(e) }
-    a.service = svc
+	svc, e := newServiceOnConnection(nc, ServiceConfig{
+		Name:    a.compiled.Manifest.Service.Name,
+		Version: a.compiled.Manifest.Service.BuildVersion,
+	}, map[string]string{
+		"contract_digest": a.compiled.Digest,
+		"instance_id":     a.registration.Instance,
+		"api_major":       fmt.Sprint(a.compiled.Manifest.Service.APIMajor),
+	})
+	if e != nil {
+		return fail(e)
+	}
+	a.service = svc
 	for _, o := range a.compiled.Manifest.Operations {
 		if e = a.bindings[o.ID](a.service); e != nil {
 			return fail(e)

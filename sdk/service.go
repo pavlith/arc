@@ -26,37 +26,37 @@ type Service struct {
 // newServiceOnConnection creates one service identity on an already-approved
 // NATS connection. App must register with Fabric before calling this.
 func newServiceOnConnection(nc *nats.Conn, cfg ServiceConfig, metadata map[string]string) (*Service, error) {
-    if nc == nil || cfg.Name == "" || cfg.Version == "" {
-        return nil, errors.New("sdk: service name, version and NATS connection are required")
-    }
-    runtime, err := transport.New(nc, transport.Config{
-        Name: cfg.Name, Version: cfg.Version,
-        Description: cfg.Description, Metadata: metadata,
-    })
-    if err != nil {
-        return nil, fmt.Errorf("sdk: register native NATS transport: %w", err)
-    }
-    return &Service{connection: nc, micro: runtime}, nil
+	if nc == nil || cfg.Name == "" || cfg.Version == "" {
+		return nil, errors.New("sdk: service name, version and NATS connection are required")
+	}
+	runtime, err := transport.New(nc, transport.Config{
+		Name: cfg.Name, Version: cfg.Version,
+		Description: cfg.Description, Metadata: metadata,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("sdk: register native NATS transport: %w", err)
+	}
+	return &Service{connection: nc, micro: runtime}, nil
 }
 
 func NewService(ctx context.Context, cfg ServiceConfig) (*Service, error) {
-    if cfg.Name == "" || cfg.Version == "" {
-        return nil, errors.New("sdk: service name and version are required")
-    }
-    ncCfg := cfg.Connection
-    if ncCfg.Name == "" {
-        ncCfg.Name = cfg.Name
-    }
-    nc, err := Connect(ctx, ncCfg)
-    if err != nil {
-        return nil, err
-    }
-    svc, err := newServiceOnConnection(nc, cfg, nil)
-    if err != nil {
-        nc.Close()
-        return nil, err
-    }
-    return svc, nil
+	if cfg.Name == "" || cfg.Version == "" {
+		return nil, errors.New("sdk: service name and version are required")
+	}
+	ncCfg := cfg.Connection
+	if ncCfg.Name == "" {
+		ncCfg.Name = cfg.Name
+	}
+	nc, err := Connect(ctx, ncCfg)
+	if err != nil {
+		return nil, err
+	}
+	svc, err := newServiceOnConnection(nc, cfg, nil)
+	if err != nil {
+		nc.Close()
+		return nil, err
+	}
+	return svc, nil
 }
 
 func (s *Service) AddEndpoint(name string, handler transport.Handler, opts ...transport.EndpointOpt) error {

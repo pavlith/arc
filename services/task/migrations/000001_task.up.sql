@@ -1,5 +1,5 @@
 -- Service-owned domain schema, replacing legacy combined migration 000005 (never apply both).
-CREATE SCHEMA IF NOT EXISTS tasks AUTHORIZATION arc_migrator;
+CREATE SCHEMA IF NOT EXISTS task AUTHORIZATION arc_migrator;
 REVOKE ALL ON SCHEMA task FROM PUBLIC;
 CREATE TABLE task.roots (
  acl_root_id uuid PRIMARY KEY, workspace_id uuid NOT NULL,

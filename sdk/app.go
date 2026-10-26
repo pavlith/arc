@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/micro"
+	"github.com/pavlith/arc/sdk/transport"
 	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/events"
 	"github.com/pavlith/arc/sdk/rpc"
@@ -57,7 +57,7 @@ type App struct {
 
 func NewApp(cfg AppConfig) (*App, error) {
 	if cfg.Registry == nil || cfg.Authorize == nil || cfg.Instance == "" || strings.ContainsAny(cfg.Instance, ".*> \r\n\t") || cfg.SelfCheck == nil {
-		return nil, errors.New("pkgs: incomplete approved app configuration")
+		return nil, errors.New("sdk: incomplete approved app configuration")
 	}
 	m, e := contract.Compile(cfg.Artifact)
 	if e != nil {
@@ -91,7 +91,7 @@ func bindHandle[Req, Res any](app *App, id string, h rpc.Handler[Req, Res], comm
 		return contract.ErrInvalid
 	}
 	if o.Auth.Mode == "resource" && app.cfg.Resource == nil || o.Auth.Mode == "service" && app.cfg.Trusted == nil {
-		return errors.New("pkgs: missing operation authorization")
+		return errors.New("sdk: missing operation authorization")
 	}
 	app.bindings[id] = func(s *Service) error {
 		op := rpc.Operation{ID: id, Endpoint: strings.ReplaceAll(id, ".", "_"), Subject: o.Subject, QueueGroup: fmt.Sprintf("q.%s.v%d", app.compiled.Manifest.Service.Name, app.compiled.Manifest.Service.APIMajor), Timeout: time.Duration(o.TimeoutMS) * time.Millisecond, Protected: true, Mutation: o.Kind == "command", ValidateRequest: func(b []byte) error { return app.compiled.Validate(o.RequestSchema, b) }, ValidateResponse: func(b []byte) error { return app.compiled.Validate(o.ResponseSchema, b) }}
@@ -149,7 +149,7 @@ func (a *App) Start(ctx context.Context) error {
 	a.mu.Lock()
 	if a.starting || len(a.bindings) != len(a.compiled.Manifest.Operations) {
 		a.mu.Unlock()
-		return errors.New("pkgs: incomplete or started app")
+		return errors.New("sdk: incomplete or started app")
 	}
 	a.starting = true
 	a.mu.Unlock()
@@ -171,7 +171,7 @@ func (a *App) Start(ctx context.Context) error {
 	if e = a.cfg.Registry.Register(ctx, nc, a.registration); e != nil {
 		return fail(e)
 	}
-	m, e := micro.AddService(nc, micro.Config{Name: a.compiled.Manifest.Service.Name, Version: a.compiled.Manifest.Service.BuildVersion, Metadata: map[string]string{"contract_digest": a.compiled.Digest, "instance_id": a.registration.Instance, "api_major": fmt.Sprint(a.compiled.Manifest.Service.APIMajor)}})
+	m, e := transport.New(nc, transport.Config{Name: a.compiled.Manifest.Service.Name, Version: a.compiled.Manifest.Service.BuildVersion, Metadata: map[string]string{"contract_digest": a.compiled.Digest, "instance_id": a.registration.Instance, "api_major": fmt.Sprint(a.compiled.Manifest.Service.APIMajor)}})
 	if e != nil {
 		return fail(e)
 	}

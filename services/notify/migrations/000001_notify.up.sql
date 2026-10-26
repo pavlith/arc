@@ -1,5 +1,5 @@
 -- Service-owned domain schema, replacing legacy combined migration 000005 (never apply both).
-CREATE SCHEMA IF NOT EXISTS notifications AUTHORIZATION arc_migrator;
+CREATE SCHEMA IF NOT EXISTS notify AUTHORIZATION arc_migrator;
 REVOKE ALL ON SCHEMA notify FROM PUBLIC;
 CREATE TABLE notify.inbox (
  consumer text NOT NULL, event_id uuid NOT NULL, request_hash bytea NOT NULL CHECK(octet_length(request_hash)=32),

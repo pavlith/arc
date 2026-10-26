@@ -6,7 +6,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/nats-io/nats.go/micro"
+	"github.com/pavlith/arc/sdk/transport"
 )
 
 type Operation struct {
@@ -24,7 +24,7 @@ type Operation struct {
 }
 
 type EndpointService interface {
-	AddEndpoint(string, micro.Handler, ...micro.EndpointOpt) error
+	AddEndpoint(string, transport.Handler, ...transport.EndpointOpt) error
 }
 
 type Handler[Req, Res any] func(context.Context, Req) (Res, error)
@@ -40,18 +40,18 @@ func Handle[Req, Res any](service EndpointService, operation Operation, handler 
 		return errors.New("rpc: queue group is required")
 	}
 
-	endpointHandler := micro.HandlerFunc(func(request micro.Request) {
+	endpointHandler := transport.Handler(func(request transport.Request) {
 		handleRequest(request, operation, handler)
 	})
 	return service.AddEndpoint(
 		operation.Endpoint,
 		endpointHandler,
-		micro.WithEndpointSubject(operation.Subject),
-		micro.WithEndpointQueueGroup(operation.QueueGroup),
+		transport.WithEndpointSubject(operation.Subject),
+		transport.WithEndpointQueueGroup(operation.QueueGroup),
 	)
 }
 
-func handleRequest[Req, Res any](request micro.Request, operation Operation, handler Handler[Req, Res]) {
+func handleRequest[Req, Res any](request transport.Request, operation Operation, handler Handler[Req, Res]) {
 	requestID := "unknown"
 	if len(request.Data()) > MaxMessageSize {
 		respondError(request, requestID, &Error{Code: CodeValidation, Message: "request exceeds 256 KiB"})
@@ -140,11 +140,11 @@ func invoke[Req, Res any](ctx context.Context, handler Handler[Req, Res], reques
 	return handler(ctx, request)
 }
 
-func respondError(request micro.Request, requestID string, err *Error) {
+func respondError(request transport.Request, requestID string, err *Error) {
 	respond(request, responseEnvelope{RequestID: requestID, Error: publicError(err)})
 }
 
-func respond(request micro.Request, envelope responseEnvelope) {
+func respond(request transport.Request, envelope responseEnvelope) {
 	data, err := json.Marshal(envelope)
 	if err != nil || len(data) > MaxMessageSize {
 		data, _ = json.Marshal(responseEnvelope{

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/micro"
+	"github.com/pavlith/arc/sdk/transport"
 )
 
 type ServiceConfig struct {
@@ -20,12 +20,12 @@ type ServiceConfig struct {
 // Service owns one NATS connection and an official nats.go/micro service.
 type Service struct {
 	connection *nats.Conn
-	micro      micro.Service
+	micro      *transport.Service
 }
 
 func NewService(ctx context.Context, cfg ServiceConfig) (*Service, error) {
 	if cfg.Name == "" || cfg.Version == "" {
-		return nil, errors.New("pkgs: service name and version are required")
+		return nil, errors.New("sdk: service name and version are required")
 	}
 	connectionCfg := cfg.Connection
 	if connectionCfg.Name == "" {
@@ -35,24 +35,24 @@ func NewService(ctx context.Context, cfg ServiceConfig) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	service, err := micro.AddService(nc, micro.Config{
+	service, err := transport.New(nc, transport.Config{
 		Name:        cfg.Name,
 		Version:     cfg.Version,
 		Description: cfg.Description,
 	})
 	if err != nil {
 		nc.Close()
-		return nil, fmt.Errorf("pkgs: add micro service: %w", err)
+		return nil, fmt.Errorf("sdk: add micro service: %w", err)
 	}
 	return &Service{connection: nc, micro: service}, nil
 }
 
-func (s *Service) AddEndpoint(name string, handler micro.Handler, opts ...micro.EndpointOpt) error {
+func (s *Service) AddEndpoint(name string, handler transport.Handler, opts ...transport.EndpointOpt) error {
 	if s == nil || s.micro == nil {
-		return errors.New("pkgs: service is not initialized")
+		return errors.New("sdk: service is not initialized")
 	}
 	if err := s.micro.AddEndpoint(name, handler, opts...); err != nil {
-		return fmt.Errorf("pkgs: add endpoint: %w", err)
+		return fmt.Errorf("sdk: add endpoint: %w", err)
 	}
 	return nil
 }

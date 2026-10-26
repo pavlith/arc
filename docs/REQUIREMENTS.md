@@ -88,6 +88,14 @@ M0-04 использует подписанные локальным опера�
 
 **Приёмка:** создание задачи через UI и API даёт одинаковую модель; исполнитель видит задачу по ACL; событие `evt.tasks.task.created.v1` запускает notification worker; после изменения роли запрещённая задача не отображается ни в поиске, ни в публичной ссылке без grant.
 
+M0-06 ограничен workspace Tasks create/get/list, transactional command result/outbox,
+Notifications inbox/internal record и persisted fake outbound intent. Identity/proof,
+owner/root/workspace и ACL проверяются онлайн до мутации и replay. Operator-approved
+адресация не берётся из event; inbox/effect/intent атомарны, внешний retry использует
+стабильный dedup key без обещания exactly-once. Полный Tasks/Kuayle, UI и реальные
+providers отложены до M1; полная crash/load/recovery матрица — M7. Исполняемый smoke
+и узкие guardrails: [M0-06](M0-06.md), `scripts/test-m0-06.sh`.
+
 ### 2.6 Calendars / CalDAV (`P1`)
 
 - **C-01:** календарь по умолчанию у каждого пользователя; создание нескольких личных и workspace-календарей, владельцы и grants по группам.

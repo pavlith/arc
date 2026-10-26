@@ -53,6 +53,10 @@ func wireError(e error) error {
 	if e == nil {
 		return nil
 	}
+	var typed *rpc.Error
+	if errors.As(e, &typed) {
+		return rpc.SecurityError(e)
+	}
 	if errors.Is(e, ErrConflict) {
 		return &rpc.Error{Code: rpc.CodeConflict, Message: "idempotency payload conflict"}
 	}
@@ -94,6 +98,7 @@ func (c *Core) BindInternal(s *sdk.Service) error {
 		return ErrUnavailable
 	}
 	registrations := []func() error{
+		func() error { return bind(s, c, "invocations.verify", c.verifyRequest) },
 		func() error {
 			return bind(s, c, "sessions.validate", func(ctx context.Context, r Authentication) (Session, error) { return c.Authenticate(ctx, r) })
 		},

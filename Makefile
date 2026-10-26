@@ -19,3 +19,13 @@ m0-04-smoke:
 
 m0-05-smoke:
 	bash scripts/test-m0-05.sh
+
+.PHONY: m0-06-smoke m0-06-build m0-06-up
+m0-06-smoke:
+	bash scripts/test-m0-06.sh
+
+m0-06-build:
+	cd sdk && $(GO) build ./cmd/arc-tasks ./cmd/arc-notifications
+
+m0-06-up:
+	docker compose -f compose.yaml -f compose.m0-06.yaml --profile m0-06 up --build tasks notifications

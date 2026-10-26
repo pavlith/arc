@@ -116,3 +116,24 @@ func Metadata(ctx context.Context) (RequestMetadata, bool) {
 	m, ok := ctx.Value(metadataKey{}).(RequestMetadata)
 	return m, ok
 }
+
+// RemoteInvocationAuthorizer adapts a cryptographically authenticated Core decision.
+// verify must validate the signature and bind its response to the entire envelope.
+func RemoteInvocationAuthorizer(verify func(context.Context, string, []byte) (security.Claims, error)) func(context.Context, string, []byte) (context.Context, error) {
+	return func(ctx context.Context, subject string, raw []byte) (context.Context, error) {
+		var env requestEnvelope
+		if verify == nil || decodeStrict(raw, &env) != nil || env.Proof == nil {
+			return nil, SecurityError(security.ErrUnauthenticated)
+		}
+		cl, e := verify(ctx, subject, raw)
+		if e != nil {
+			return nil, SecurityError(e)
+		}
+		if cl.Operation != env.Operation {
+			return nil, SecurityError(security.ErrUnauthenticated)
+		}
+		ctx = context.WithValue(ctx, claimsKey{}, cl)
+		ctx = context.WithValue(ctx, invocationTokenKey{}, env.Auth)
+		return context.WithValue(ctx, metadataKey{}, RequestMetadata{IdempotencyKey: env.IdempotencyKey, Payload: env.Payload}), nil
+	}
+}

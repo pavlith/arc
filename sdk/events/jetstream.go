@@ -125,7 +125,10 @@ func (d Delivery) Pull(ctx context.Context, js nats.JetStreamContext, subject, d
 		return e
 	}
 	defer sub.Unsubscribe()
-	msgs, e := sub.Fetch(10, nats.Context(ctx))
+	// Reserve processing/ACK budget even when a sparse batch waits for fetch expiry.
+	fetchCtx, cancelFetch := context.WithTimeout(ctx, 250*time.Millisecond)
+	msgs, e := sub.Fetch(10, nats.Context(fetchCtx))
+	cancelFetch()
 	if e != nil {
 		return e
 	}

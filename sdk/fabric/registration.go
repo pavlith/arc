@@ -21,13 +21,15 @@ import (
 
 const RegisterSubject = "ctl.arc.fabric.register"
 const ReadySubject = "ctl.arc.fabric.ready"
+const EventPermitSubject = "ctl.arc.fabric.event_permit"
 const CheckSubject = "ctl.arc.fabric.check"
 
 type controlRequest struct {
-	RequestID    string           `json:"request_id"`
-	Assertion    string           `json:"assertion"`
-	Proof        security.Proof   `json:"proof"`
-	Registration sdk.Registration `json:"registration"`
+	Subscription *EventSubscription `json:"subscription,omitempty"`
+	RequestID    string             `json:"request_id"`
+	Assertion    string             `json:"assertion"`
+	Proof        security.Proof     `json:"proof"`
+	Registration sdk.Registration   `json:"registration"`
 }
 type controlResponse struct {
 	Subject   string     `json:"subject"`
@@ -72,7 +74,7 @@ func (c *Core) BindControl(nc *nats.Conn) (func(), error) {
 			_ = s.Unsubscribe()
 		}
 	}
-	for _, subject := range []string{RegisterSubject, ReadySubject, CheckSubject} {
+	for _, subject := range []string{RegisterSubject, ReadySubject, CheckSubject, EventPermitSubject} {
 		sub, e := nc.Subscribe(subject, func(msg *nats.Msg) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -187,6 +189,40 @@ func (c *Core) control(ctx context.Context, nc *nats.Conn, subject string, raw [
 			}
 		}
 		return c.touch(ctx, cl.Caller, r, true)
+	case EventPermitSubject:
+		if q.Subscription == nil {
+			return security.ErrDenied
+		}
+		if e = c.touch(ctx, cl.Caller, r, false); e != nil {
+			return e
+		}
+		var installRaw []byte
+		if e = c.DB.QueryRowContext(ctx, `SELECT installation FROM fabric.contracts WHERE digest=$1 AND revoked_at IS NULL`, r.Digest).Scan(&installRaw); e != nil {
+			return security.ErrUnavailable
+		}
+		var install Installation
+		if contract.Strict(installRaw, &install) != nil {
+			return security.ErrDenied
+		}
+		found := false
+		for _, sub := range install.Subscriptions {
+			if sub == *q.Subscription {
+				found = true
+			}
+		}
+		if !found {
+			return security.ErrDenied
+		}
+		provider, e := c.active(ctx, q.Subscription.Provider, q.Subscription.Digest)
+		if e != nil {
+			return e
+		}
+		for _, ev := range provider.Manifest.Events {
+			if ev.Subject == q.Subscription.Subject {
+				return nil
+			}
+		}
+		return security.ErrDenied
 	case CheckSubject:
 		return c.touch(ctx, cl.Caller, r, false)
 	}
@@ -216,6 +252,12 @@ type Client struct {
 }
 
 func (c *Client) invoke(ctx context.Context, subject string, r sdk.Registration) error {
+	return c.invokeSubscription(ctx, subject, r, nil)
+}
+func (c *Client) EventPermit(ctx context.Context, r sdk.Registration, sub EventSubscription) error {
+	return c.invokeSubscription(ctx, EventPermitSubject, r, &sub)
+}
+func (c *Client) invokeSubscription(ctx context.Context, subject string, r sdk.Registration, subscription *EventSubscription) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if c.NC == nil || len(c.Key) != 64 || len(c.CoreKey) != 32 {
@@ -227,7 +269,7 @@ func (c *Client) invoke(ctx context.Context, subject string, r sdk.Registration)
 	if e != nil {
 		return e
 	}
-	q := controlRequest{RequestID: randomID(), Assertion: assertion, Registration: r}
+	q := controlRequest{RequestID: randomID(), Assertion: assertion, Registration: r, Subscription: subscription}
 	raw, _ := json.Marshal(q)
 	q.Proof, e = security.SignProof(c.Key, subject, raw, cl.JTI, security.Proof{Kid: c.Kid, Timestamp: now.Format(time.RFC3339Nano), Nonce: randomID()})
 	if e != nil {

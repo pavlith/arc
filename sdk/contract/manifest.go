@@ -37,10 +37,11 @@ type Resource struct {
 	AllowInheritance bool     `json:"allow_inheritance"`
 }
 type Auth struct {
-	Mode         string `json:"mode"`
-	ResourceType string `json:"resource_type,omitempty"`
-	Action       string `json:"action"`
-	ResourceFrom string `json:"resource_from,omitempty"`
+	WorkspaceFrom string `json:"workspace_from,omitempty"`
+	Mode          string `json:"mode"`
+	ResourceType  string `json:"resource_type,omitempty"`
+	Action        string `json:"action"`
+	ResourceFrom  string `json:"resource_from,omitempty"`
 }
 type Exposure struct {
 	Expose bool `json:"expose"`
@@ -170,6 +171,9 @@ func Compile(a Artifact) (*Compiled, error) {
 			return nil, ErrInvalid
 		}
 		if !actions[o.Auth.Action] {
+			return nil, ErrInvalid
+		}
+		if o.Auth.WorkspaceFrom != "" && !selector.MatchString(o.Auth.WorkspaceFrom) {
 			return nil, ErrInvalid
 		}
 		if o.Auth.Mode == "resource" {

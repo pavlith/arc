@@ -260,7 +260,15 @@ func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	budget := time.Duration(en.op.TimeoutMS) * time.Millisecond
 	opCtx, opCancel := context.WithTimeout(ctx, budget)
 	defer opCancel()
-	token, e := g.cfg.Backend.Exchange(opCtx, identity.UserExchange{Session: a.Session, AccessToken: a.AccessToken, Target: identity.Target{Audience: fmt.Sprintf("%s/v%d", en.route.Service, en.route.APIMajor), Operation: en.route.Operation}})
+	workspace := ""
+	if en.op.Auth.WorkspaceFrom != "" {
+		workspace, e = contract.Extract(payload, en.op.Auth.WorkspaceFrom)
+		if e != nil {
+			writeError(w, id, fault(rpc.CodeValidation))
+			return
+		}
+	}
+	token, e := g.cfg.Backend.Exchange(opCtx, identity.UserExchange{Session: a.Session, AccessToken: a.AccessToken, Target: identity.Target{Audience: fmt.Sprintf("%s/v%d", en.route.Service, en.route.APIMajor), Operation: en.route.Operation, WorkspaceID: workspace}})
 	if e != nil {
 		writeError(w, id, e)
 		return

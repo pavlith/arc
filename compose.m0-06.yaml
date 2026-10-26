@@ -1,0 +1,29 @@
+# Existing operator-provisioned Core/Gate and approved contracts are prerequisites.
+# The isolated smoke provisions these automatically; these profiles run domains.
+services:
+  tasks:
+    profiles: ["m0-06"]
+    build:
+      context: ./sdk
+      dockerfile: Dockerfile.domain
+      args: {SERVICE: tasks}
+    read_only: true
+    cap_drop: ["ALL"]
+    volumes:
+      - ./.secrets/m0-06/tasks:/run/arc:ro
+    depends_on:
+      postgres: {condition: service_healthy}
+      nats: {condition: service_started}
+  notifications:
+    profiles: ["m0-06"]
+    build:
+      context: ./sdk
+      dockerfile: Dockerfile.domain
+      args: {SERVICE: notifications}
+    read_only: true
+    cap_drop: ["ALL"]
+    volumes:
+      - ./.secrets/m0-06/notifications:/run/arc:ro
+    depends_on:
+      postgres: {condition: service_healthy}
+      nats: {condition: service_started}

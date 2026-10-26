@@ -385,6 +385,36 @@ Agent единственный владеет Docker socket/эквивалент
 
 Общие `resource_links` позволяют связывать task ↔ calendar event ↔ contact ↔ page ↔ file. Разрешение прочитать одну ссылку **не даёт** право прочитать связанный объект. Глобальный поиск индексирует разрешённые метаданные с обязательной перепроверкой ACL при выдаче результатов.
 
+M0-06 реализует отдельные `arc-tasks` и `arc-notifications` поверх `sdk.App` и
+`sdk/events`, с owner-local PostgreSQL schemas/roles и отдельными NATS credentials.
+Tasks `create/get/list` используют workspace ACL root; list ограничен 100 задачами
+текущего пользователя. Task→root/workspace проверяется по Tasks DB до онлайн
+Access.Check и до command replay. Root создаётся через Reserve, committed domain
+binding и signed provider receipt, проверяемый Access по текущему Identity key,
+затем Activate. Ручных SQL grants для бизнес-разрешений нет.
+
+Optional manifest `auth.workspace_from` задаёт payload selector workspace для
+Gate exchange; workspace остаётся пользовательским выбором, проверяемым Identity
+онлайн. Закрытый `identity.v1.invocations.verify` проверяет исходный invocation/proof
+для audience зарегистрированного recipient ServiceAccount. Подписанный ответ
+привязан к hash полного envelope, subject, claims и короткому expiry; доменный SDK
+проверяет pinned Core public key. Core DB credentials сервисам не передаются.
+
+Для начального ACL provisioning `tasks.roots.grants` — внутренняя approved operation
+без HTTP. Только resource operation с `access.grants.manage` может иметь явно
+одобренные downstream actions своего resource type; это не расширяет права actor:
+Access повторно проверяет online membership и фактическую grant authority.
+Bootstrap Fabric по-прежнему не принимает business policy.
+
+Notifications installation содержит operator-signed `subscriptions` с точными
+provider/digest/event subject/durable. Signed `ctl.arc.fabric.event_permit` требует
+ready consumer и действующие approvals обоих сервисов перед обработкой. Адресаты
+берутся из активной operator-managed addressing в Notifications DB, а не event.
+Inbox + notification + outbound delivery intent атомарны; ACK после commit.
+Persisted dedup key = SHA-256(notification,recipient,channel) используется при каждом
+retry fake provider. Внешний эффект не имеет exactly-once гарантии.
+Подробности запуска и M0 границы: [M0-06](M0-06.md).
+
 ## 9. Storage, наблюдаемость, отказоустойчивость
 
 - Arc PostgreSQL: схемы `identity`, `access`, `fabric`, `runtime`, `system` (outbox/audit). У сервисов — собственные схемы/credentials или отдельные БД по мере роста. Нельзя выполнять SQL-запросы в схему другого владельца.

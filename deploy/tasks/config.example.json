@@ -1,0 +1,14 @@
+{
+  "nats": {
+    "URL": "tls://nats:4222",
+    "Name": "tasks",
+    "NKeySeedFile": "/run/arc/nats.seed",
+    "TLSCAFile": "/run/arc/ca.crt"
+  },
+  "dsn_file": "/run/arc/database.dsn",
+  "service_id": "<registered service account uuid>",
+  "kid": "tasks-key-v1",
+  "key_file": "/run/arc/service.seed",
+  "core_key_file": "/run/arc/core-public.json",
+  "instance": "m006-tasks"
+}

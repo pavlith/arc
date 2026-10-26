@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"regexp"
+	"strings"
 
 	"github.com/pavlith/arc/sdk/access"
 	"github.com/pavlith/arc/sdk/contract"
@@ -15,13 +17,21 @@ import (
 	"github.com/pavlith/arc/sdk/security"
 )
 
+type EventSubscription struct {
+	Provider string `json:"provider"`
+	Digest   string `json:"digest"`
+	Subject  string `json:"subject"`
+	Durable  string `json:"durable"`
+}
+
 type Installation struct {
-	Publisher  string            `json:"publisher"`
-	Account    string            `json:"service_account"`
-	Deployment string            `json:"deployment"`
-	Artifact   contract.Artifact `json:"artifact"`
-	Subjects   []string          `json:"subjects"`
-	Policy     access.Approved   `json:"policy"`
+	Subscriptions []EventSubscription `json:"subscriptions,omitempty"`
+	Publisher     string              `json:"publisher"`
+	Account       string              `json:"service_account"`
+	Deployment    string              `json:"deployment"`
+	Artifact      contract.Artifact   `json:"artifact"`
+	Subjects      []string            `json:"subjects"`
+	Policy        access.Approved     `json:"policy"`
 }
 type SignedInstallation struct {
 	Payload   json.RawMessage `json:"payload"`
@@ -126,7 +136,7 @@ func (c *Core) verify(s SignedInstallation) (Installation, *contract.Compiled, e
 					if src == audience+":"+o.ID {
 						found = true
 						for _, act := range r.DownstreamActions[src] {
-							if act != o.Auth.Action {
+							if act != o.Auth.Action && !(o.Auth.Mode == "resource" && o.Auth.Action == "access.grants.manage" && has(typesActions(compiled, o.Auth.ResourceType), act)) {
 								return i, nil, security.ErrDenied
 							}
 						}
@@ -143,6 +153,11 @@ func (c *Core) verify(s SignedInstallation) (Installation, *contract.Compiled, e
 			if !declared[act] {
 				return i, nil, security.ErrDenied
 			}
+		}
+	}
+	for _, sub := range i.Subscriptions {
+		if sub.Provider == "" || len(sub.Digest) != 64 || sub.Subject == "" || sub.Durable == "" || strings.ContainsAny(sub.Durable, ".*> /\\") || !regexp.MustCompile(`^evt\.[a-z][a-z0-9_-]*\.[a-z][a-z0-9_-]*\.[a-z][a-z0-9_-]*\.v[1-9][0-9]*$`).MatchString(sub.Subject) {
+			return i, nil, contract.ErrInvalid
 		}
 	}
 	return i, compiled, nil
@@ -413,3 +428,12 @@ func (c *Core) active(ctx context.Context, account, digest string) (*contract.Co
 }
 
 var _ access.ContractSource = (*Core)(nil)
+
+func typesActions(m *contract.Compiled, typ string) []string {
+	for _, r := range m.Manifest.Resources {
+		if r.Type == typ {
+			return r.Actions
+		}
+	}
+	return nil
+}

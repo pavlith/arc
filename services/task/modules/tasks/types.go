@@ -12,9 +12,9 @@ type CreatedEvent = tasksv1.CreatedEvent
 type GrantCommand = tasksv1.GrantCommand
 
 const (
-    Create=tasksv1.CreateID
-    Admin=tasksv1.AdminID
-    Get=tasksv1.GetID
-    List=tasksv1.ListID
-    Created=tasksv1.CreatedSubject
+	Create  = tasksv1.CreateID
+	Admin   = tasksv1.AdminID
+	Get     = tasksv1.GetID
+	List    = tasksv1.ListID
+	Created = tasksv1.CreatedSubject
 )

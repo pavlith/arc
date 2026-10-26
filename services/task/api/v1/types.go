@@ -46,10 +46,9 @@ type GrantCommand struct {
 	GrantID       string `json:"grant_id,omitempty"`
 }
 
-
 type GrantResult struct {
-    ResourceID string `json:"resource_id,omitempty"`
-    GrantID string `json:"grant_id,omitempty"`
-    State string `json:"state,omitempty"`
-    Revision int64 `json:"policy_revision"`
+	ResourceID string `json:"resource_id,omitempty"`
+	GrantID    string `json:"grant_id,omitempty"`
+	State      string `json:"state,omitempty"`
+	Revision   int64  `json:"policy_revision"`
 }

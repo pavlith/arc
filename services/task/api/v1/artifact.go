@@ -9,7 +9,6 @@ import (
 //go:embed contract/manifest.json contract/schemas/*.json
 var files embed.FS
 
-
 func Artifact() contract.Artifact {
 	b, _ := files.ReadFile("contract/manifest.json")
 	a := contract.Artifact{Manifest: b, Schemas: map[string]json.RawMessage{}}

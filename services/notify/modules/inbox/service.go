@@ -2,17 +2,19 @@
 package inbox
 
 import (
- "context"
- "crypto/rand"
- "database/sql"
- "encoding/json"
- "fmt"
- "github.com/pavlith/arc/pkgs/events"
- "github.com/pavlith/arc/pkgs/security"
- "github.com/pavlith/arc/services/notify/modules/delivery"
- tasksv1 "github.com/pavlith/arc/services/task/api/v1"
+	"context"
+	"crypto/rand"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"github.com/pavlith/arc/pkgs/events"
+	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/services/notify/modules/delivery"
+	tasksv1 "github.com/pavlith/arc/services/task/api/v1"
 )
+
 const Durable = "notifications-task-created-v1"
+
 type Service struct{ DB *sql.DB }
 
 // Effect uses operator-managed active addressing, never a recipient from the event.
@@ -55,9 +57,11 @@ func (s *Service) Effect(ctx context.Context, tx *sql.Tx, ev events.Envelope) er
 }
 
 func newID() string {
- var b [16]byte
- if _,err:=rand.Read(b[:]);err!=nil{panic(err)}
- b[6]=(b[6]&15)|64
- b[8]=(b[8]&63)|128
- return fmt.Sprintf("%x-%x-%x-%x-%x",b[:4],b[4:6],b[6:8],b[8:10],b[10:])
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		panic(err)
+	}
+	b[6] = (b[6] & 15) | 64
+	b[8] = (b[8] & 63) | 128
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[:4], b[4:6], b[6:8], b[8:10], b[10:])
 }

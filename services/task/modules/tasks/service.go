@@ -8,14 +8,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/pavlith/arc/pkgs/module"
- tasksv1 "github.com/pavlith/arc/services/task/api/v1"
-	"github.com/pavlith/arc/services/core/modules/access"
 	"github.com/pavlith/arc/pkgs/contract"
 	"github.com/pavlith/arc/pkgs/events"
-	"github.com/pavlith/arc/services/core/modules/identity"
+	"github.com/pavlith/arc/pkgs/module"
 	"github.com/pavlith/arc/pkgs/rpc"
 	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/services/core/modules/access"
+	"github.com/pavlith/arc/services/core/modules/identity"
+	tasksv1 "github.com/pavlith/arc/services/task/api/v1"
 	"strings"
 	"time"
 )
@@ -47,15 +47,21 @@ func (s *Service) ID() string { return "tasks" }
 // Register binds every approved Tasks v1 operation; protected resource checks
 // happen before command replay, including on idempotent retries.
 func (s *Service) Register(r *module.Registry) error {
-    if s == nil || s.DB == nil || s.Contract == nil || s.Check == nil {
-        return security.ErrUnavailable
-    }
-    policy := module.Policy{Resource:s.Authorize}
-    store := events.Store{DB:s.DB,Schema:"tasks"}
-    if err:=module.BindCommand(r,tasksv1.Create,policy,store,s.create);err!=nil{return err}
-    if err:=module.BindCommand(r,tasksv1.Admin,policy,store,s.grants);err!=nil{return err}
-    if err:=module.BindQuery(r,tasksv1.Get,policy,s.get);err!=nil{return err}
-    return module.BindQuery(r,tasksv1.List,policy,s.list)
+	if s == nil || s.DB == nil || s.Contract == nil || s.Check == nil {
+		return security.ErrUnavailable
+	}
+	policy := module.Policy{Resource: s.Authorize}
+	store := events.Store{DB: s.DB, Schema: "tasks"}
+	if err := module.BindCommand(r, tasksv1.Create, policy, store, s.create); err != nil {
+		return err
+	}
+	if err := module.BindCommand(r, tasksv1.Admin, policy, store, s.grants); err != nil {
+		return err
+	}
+	if err := module.BindQuery(r, tasksv1.Get, policy, s.get); err != nil {
+		return err
+	}
+	return module.BindQuery(r, tasksv1.List, policy, s.list)
 }
 
 // Authorize verifies the actual task/root/workspace relation before Access.Check.
@@ -95,12 +101,12 @@ func (s *Service) create(ctx context.Context, tx *sql.Tx, q CreateRequest) (Task
 		return Task{}, &rpc.Error{Code: rpc.CodeValidation, Message: "title is required"}
 	}
 	now := time.Now().UTC()
-	v := Task{ID:NewID(), WorkspaceID:q.WorkspaceID, RootID:q.RootID, Title:q.Title, Status:"open", CreatedBy:strings.TrimPrefix(cl.Subject, "user:"), CreatedAt:now, UpdatedAt:now}
+	v := Task{ID: NewID(), WorkspaceID: q.WorkspaceID, RootID: q.RootID, Title: q.Title, Status: "open", CreatedBy: strings.TrimPrefix(cl.Subject, "user:"), CreatedAt: now, UpdatedAt: now}
 	_, e := tx.ExecContext(ctx, `INSERT INTO tasks.tasks(id,workspace_id,acl_root_id,title,status,created_by,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, v.ID, v.WorkspaceID, v.RootID, v.Title, v.Status, v.CreatedBy, v.CreatedAt, v.UpdatedAt)
 	if e != nil {
 		return Task{}, unavailable(e)
 	}
-	payload, _ := json.Marshal(CreatedEvent{Scope:q.Scope, TaskID:v.ID})
+	payload, _ := json.Marshal(CreatedEvent{Scope: q.Scope, TaskID: v.ID})
 	e = (events.Store{DB: s.DB, Schema: "tasks"}).Enqueue(ctx, tx, s.Contract, Created, events.Envelope{ID: NewID(), Type: "tasks.task.created", Version: 1, AggregateID: v.ID, OccurredAt: now, Traceparent: meta.Traceparent, Payload: payload})
 	if e != nil {
 		return Task{}, unavailable(e)
@@ -171,11 +177,11 @@ func (s *Service) ActivateRoot(ctx context.Context, q Scope) error {
 
 // GrantCommand is an internal provisioning operation; HTTP exposure is disabled.
 func (s *Service) grants(ctx context.Context, tx *sql.Tx, q GrantCommand) (tasksv1.GrantResult, error) {
-    result, err := s.grantsAccess(ctx,tx,q)
-    return tasksv1.GrantResult{
-       ResourceID:result.ResourceID, GrantID:result.GrantID,
-       State:result.State, Revision:result.Revision,
-    },err
+	result, err := s.grantsAccess(ctx, tx, q)
+	return tasksv1.GrantResult{
+		ResourceID: result.ResourceID, GrantID: result.GrantID,
+		State: result.State, Revision: result.Revision,
+	}, err
 }
 func (s *Service) grantsAccess(ctx context.Context, tx *sql.Tx, q GrantCommand) (access.MutationResult, error) {
 	op := "grants.add"

@@ -2,16 +2,17 @@
 package delivery
 
 import (
- "context"
- "crypto/sha256"
- "database/sql"
- "encoding/hex"
- "encoding/json"
- "sync"
- "github.com/pavlith/arc/pkgs/security"
+	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
+	"encoding/json"
+	"github.com/pavlith/arc/pkgs/security"
+	"sync"
 )
 
-type Service struct {DB *sql.DB}
+type Service struct{ DB *sql.DB }
+
 func DedupKey(notification, recipient, channel string) string {
 	b, _ := json.Marshal([]string{notification, recipient, channel})
 	h := sha256.Sum256(b)

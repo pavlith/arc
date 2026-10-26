@@ -15,7 +15,7 @@ import (
 	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/core/modules/access"
 	"github.com/pavlith/arc/services/core/modules/identity"
- "gorm.io/gorm"
+	"gorm.io/gorm"
 )
 
 type EventSubscription struct {
@@ -40,7 +40,7 @@ type SignedInstallation struct {
 }
 type Core struct {
 	DB          *sql.DB
- GormDB      *gorm.DB
+	GormDB      *gorm.DB
 	Identity    *identity.Core
 	ApprovalKey ed25519.PublicKey
 	// Bootstrap contains only locally pinned Identity/control policy, never business types.
@@ -174,7 +174,9 @@ func (c *Core) verify(s SignedInstallation) (Installation, *contract.Compiled, e
 // Approve is an in-process installer boundary requiring a pinned operator signature.
 // It atomically installs Access resource types and the immutable service contract.
 func (c *Core) Approve(ctx context.Context, s SignedInstallation) (string, error) {
- if c != nil && c.GormDB != nil { return c.approveGORM(ctx, s) }
+	if c != nil && c.GormDB != nil {
+		return c.approveGORM(ctx, s)
+	}
 	if e := c.ready(); e != nil {
 		return "", e
 	}
@@ -325,7 +327,9 @@ func (c *Core) Approve(ctx context.Context, s SignedInstallation) (string, error
 	return m.Digest, nil
 }
 func (c *Core) LoadAccess(ctx context.Context) (*access.Contracts, error) {
- if c != nil && c.GormDB != nil { return c.loadAccessGORM(ctx) }
+	if c != nil && c.GormDB != nil {
+		return c.loadAccessGORM(ctx)
+	}
 	if e := c.ready(); e != nil {
 		return nil, e
 	}
@@ -370,7 +374,9 @@ type Revocation struct {
 }
 
 func (c *Core) Revoke(ctx context.Context, raw []byte, sig []byte) error {
- if c != nil && c.GormDB != nil { return c.revokeGORM(ctx, raw, sig) }
+	if c != nil && c.GormDB != nil {
+		return c.revokeGORM(ctx, raw, sig)
+	}
 	if e := c.ready(); e != nil {
 		return e
 	}
@@ -417,7 +423,9 @@ func (c *Core) Revoke(ctx context.Context, raw []byte, sig []byte) error {
 	return nil
 }
 func (c *Core) active(ctx context.Context, account, digest string) (*contract.Compiled, error) {
- if c != nil && c.GormDB != nil { return c.activeGORM(ctx, account, digest) }
+	if c != nil && c.GormDB != nil {
+		return c.activeGORM(ctx, account, digest)
+	}
 	if e := c.ready(); e != nil {
 		return nil, e
 	}

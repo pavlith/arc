@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"database/sql"
- "encoding/json"
+	"encoding/json"
 	"errors"
 	"sort"
 	"time"
@@ -114,8 +114,8 @@ func (c *Core) routesGORM(ctx context.Context) (SignedSnapshot, error) {
 		return SignedSnapshot{}, security.ErrUnavailable
 	}
 	snap := RouteSnapshot{
-		IssuedAt: time.Now().UTC(),
-		Routes:   []Route{},
+		IssuedAt:  time.Now().UTC(),
+		Routes:    []Route{},
 		Artifacts: map[string]contract.Artifact{},
 	}
 	// Read route-state revision and contracts from the same WAL read snapshot.
@@ -149,7 +149,7 @@ func (c *Core) routesGORM(ctx context.Context) (SignedSnapshot, error) {
 					Service: compiled.Manifest.Service.Name, Operation: op.ID,
 					Subject: op.Subject, Digest: compiled.Digest,
 					SuccessStatus: op.HTTP.SuccessStatus,
-					APIMajor: compiled.Manifest.Service.APIMajor, Bindings: op.HTTP.Bindings,
+					APIMajor:      compiled.Manifest.Service.APIMajor, Bindings: op.HTTP.Bindings,
 				})
 				snap.Artifacts[compiled.Digest] = installed.Artifact
 			}

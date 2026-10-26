@@ -1,8 +1,9 @@
 package task
 
-import "embed"
+import (
+	"github.com/go-gormigrate/gormigrate/v2"
+	"github.com/pavlith/arc/services/task/migrations"
+)
 
-// Migrations are applied by the service's owner-specific migrator role.
-//
-//go:embed migrations/*.up.sql
-var Migrations embed.FS
+// Migrations returns the owner's explicit ordered schema migrations.
+func Migrations() []*gormigrate.Migration { return migrations.SQLite() }

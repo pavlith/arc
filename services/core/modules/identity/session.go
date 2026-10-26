@@ -11,8 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pavlith/arc/sdk/database"
 	"github.com/pavlith/arc/sdk/security"
 	"golang.org/x/crypto/argon2"
+	"gorm.io/gorm"
 )
 
 func HashPassword(password string) (string, error) {
@@ -82,7 +84,13 @@ func (c *Core) rateLimit(ctx context.Context, bucket string, limit int) error {
 		return e
 	}
 	var attempts int
-	e := c.DB.QueryRowContext(ctx, `INSERT INTO identity.rate_limits(bucket,window_start,attempts) VALUES($1,$2,1) ON CONFLICT(bucket) DO UPDATE SET attempts=CASE WHEN identity.rate_limits.window_start<=$2-interval '1 minute' THEN 1 ELSE identity.rate_limits.attempts+1 END, window_start=CASE WHEN identity.rate_limits.window_start<=$2-interval '1 minute' THEN $2 ELSE identity.rate_limits.window_start END RETURNING attempts`, bucket, c.now()).Scan(&attempts)
+	e := database.RetryBusy(ctx, func() error {
+		return c.db(ctx).WithContext(ctx).Raw(`INSERT INTO identity_rate_limits(bucket,window_start,attempts)
+ VALUES( ?,?,1) ON CONFLICT(bucket) DO UPDATE SET
+ attempts=CASE WHEN identity_rate_limits.window_start<=? THEN 1 ELSE identity_rate_limits.attempts+1 END,
+ window_start=CASE WHEN identity_rate_limits.window_start<=? THEN excluded.window_start ELSE identity_rate_limits.window_start END
+ RETURNING attempts`, bucket, c.now(), c.now().Add(-time.Minute), c.now().Add(-time.Minute)).Row().Scan(&attempts)
+	})
 	if e != nil {
 		return ErrUnavailable
 	}
@@ -110,11 +118,11 @@ func (c *Core) BootstrapUser(ctx context.Context, email, password string) (strin
 	if e != nil {
 		return "", "", e
 	}
-	e = c.tx(ctx, func(t *sql.Tx) error {
-		if _, e := t.ExecContext(ctx, `INSERT INTO identity.users(id,email) VALUES($1,$2)`, id, email); e != nil {
+	e = c.tx(ctx, func(t *gorm.DB) error {
+		if e := t.WithContext(ctx).Exec(`INSERT INTO identity_users(id,email) VALUES( ?,?)`, id, email).Error; e != nil {
 			return e
 		}
-		if _, e := t.ExecContext(ctx, `INSERT INTO identity.password_credentials(user_id,password_hash,recovery_hash) VALUES($1,$2,$3)`, id, encoded, hash(recovery)); e != nil {
+		if e := t.WithContext(ctx).Exec(`INSERT INTO identity_password_credentials(user_id,password_hash,recovery_hash) VALUES( ?,?,?)`, id, encoded, hash(recovery)).Error; e != nil {
 			return e
 		}
 		return audit(ctx, t, "core", "users.create", id, "ok")
@@ -131,7 +139,7 @@ func (c *Core) Login(ctx context.Context, email, password string) (LoginResult, 
 		return out, e
 	}
 	var uid, encoded string
-	e := c.DB.QueryRowContext(ctx, `SELECT u.id,p.password_hash FROM identity.users u JOIN identity.password_credentials p ON p.user_id=u.id WHERE u.email=$1 AND u.status='active'`, email).Scan(&uid, &encoded)
+	e := c.db(ctx).WithContext(ctx).Raw(`SELECT u.id,p.password_hash FROM identity_users u JOIN identity_password_credentials p ON p.user_id=u.id WHERE u.email=? AND u.status='active'`, email).Row().Scan(&uid, &encoded)
 	if e != nil && e != sql.ErrNoRows {
 		return out, ErrUnavailable
 	}
@@ -140,7 +148,7 @@ func (c *Core) Login(ctx context.Context, email, password string) (LoginResult, 
 		encoded = "$argon2id$v=19$m=65536,t=3,p=2$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	}
 	if !CheckPassword(encoded, password) || uid == "" {
-		if e := audit(ctx, c.DB, "anonymous", "sessions.login", "", "denied"); e != nil {
+		if e := audit(ctx, c.db(ctx), "anonymous", "sessions.login", "", "denied"); e != nil {
 			return out, e
 		}
 		return out, ErrUnauthenticated
@@ -171,22 +179,22 @@ func (c *Core) Login(ctx context.Context, email, password string) (LoginResult, 
 	if e != nil {
 		return LoginResult{}, e
 	}
-	e = c.tx(ctx, func(t *sql.Tx) error {
+	e = c.tx(ctx, func(t *gorm.DB) error {
 		// Lock password row so concurrent recovery cannot leave a new live session.
 		var liveHash string
-		if e := t.QueryRowContext(ctx, `SELECT p.password_hash FROM identity.password_credentials p JOIN identity.users u ON u.id=p.user_id WHERE p.user_id=$1 AND u.status='active' FOR UPDATE OF p,u`, uid).Scan(&liveHash); e != nil {
+		if e := t.WithContext(ctx).Raw(`SELECT p.password_hash FROM identity_password_credentials p JOIN identity_users u ON u.id=p.user_id WHERE p.user_id=? AND u.status='active'`, uid).Row().Scan(&liveHash); e != nil {
 			return e
 		}
 		if liveHash != encoded {
 			return ErrUnauthenticated
 		}
-		if _, e := t.ExecContext(ctx, `INSERT INTO identity.sessions(id,user_id,secret_hash,csrf_hash,expires_at) VALUES($1,$2,$3,$4,$5)`, out.Session.ID, uid, hash(out.Secret), hash(out.CSRF), out.Session.ExpiresAt); e != nil {
+		if e := t.WithContext(ctx).Exec(`INSERT INTO identity_sessions(id,user_id,secret_hash,csrf_hash,expires_at) VALUES( ?,?,?,?,?)`, out.Session.ID, uid, hash(out.Secret), hash(out.CSRF), out.Session.ExpiresAt).Error; e != nil {
 			return e
 		}
-		if _, e := t.ExecContext(ctx, `INSERT INTO identity.refresh_families(id,session_id,expires_at) VALUES($1,$2,$3)`, family, out.Session.ID, out.Session.ExpiresAt); e != nil {
+		if e := t.WithContext(ctx).Exec(`INSERT INTO identity_refresh_families(id,session_id,expires_at) VALUES( ?,?,?)`, family, out.Session.ID, out.Session.ExpiresAt).Error; e != nil {
 			return e
 		}
-		if _, e := t.ExecContext(ctx, `INSERT INTO identity.refresh_tokens(token_hash,family_id) VALUES($1,$2)`, hash(out.Refresh), family); e != nil {
+		if e := t.WithContext(ctx).Exec(`INSERT INTO identity_refresh_tokens(token_hash,family_id) VALUES( ?,?)`, hash(out.Refresh), family).Error; e != nil {
 			return e
 		}
 		return audit(ctx, t, "user:"+uid, "sessions.login", out.Session.ID, "ok")
@@ -212,7 +220,7 @@ func (c *Core) Introspect(ctx context.Context, sessionSecret string) (Session, e
 	if sessionSecret == "" {
 		return s, ErrUnauthenticated
 	}
-	e := c.DB.QueryRowContext(ctx, `SELECT s.id,s.user_id,s.expires_at FROM identity.sessions s JOIN identity.users u ON u.id=s.user_id WHERE s.secret_hash=$1 AND s.revoked_at IS NULL AND s.expires_at>$2 AND u.status='active'`, hash(sessionSecret), c.now()).Scan(&s.ID, &s.UserID, &s.ExpiresAt)
+	e := c.db(ctx).WithContext(ctx).Raw(`SELECT s.id,s.user_id,s.expires_at FROM identity_sessions s JOIN identity_users u ON u.id=s.user_id WHERE s.secret_hash=? AND s.revoked_at IS NULL AND s.expires_at>? AND u.status='active'`, hash(sessionSecret), c.now()).Row().Scan(&s.ID, &s.UserID, &s.ExpiresAt)
 	return s, keyError(e)
 }
 func (c *Core) user(ctx context.Context, auth UserSession) (Session, error) {
@@ -221,7 +229,7 @@ func (c *Core) user(ctx context.Context, auth UserSession) (Session, error) {
 		return s, e
 	}
 	var ok bool
-	e = c.DB.QueryRowContext(ctx, `SELECT csrf_hash=$2 FROM identity.sessions WHERE id=$1`, s.ID, hash(auth.CSRF)).Scan(&ok)
+	e = c.db(ctx).WithContext(ctx).Raw(`SELECT csrf_hash=? FROM identity_sessions WHERE id=?`, hash(auth.CSRF), s.ID).Row().Scan(&ok)
 	if e != nil {
 		return s, ErrUnavailable
 	}
@@ -245,16 +253,16 @@ func (c *Core) RevokeSession(ctx context.Context, auth UserSession, id string) e
 	return c.revokeSession(ctx, s.UserID, id)
 }
 func (c *Core) revokeSession(ctx context.Context, user, id string) error {
-	return c.tx(ctx, func(t *sql.Tx) error {
-		r, e := t.ExecContext(ctx, `UPDATE identity.sessions SET revoked_at=$3 WHERE id::text=$1 AND user_id::text=$2`, id, user, c.now())
-		if e != nil {
-			return e
+	return c.tx(ctx, func(t *gorm.DB) error {
+		r := t.WithContext(ctx).Exec(`UPDATE identity_sessions SET revoked_at=? WHERE id=? AND user_id=?`, c.now(), id, user)
+		if r.Error != nil {
+			return r.Error
 		}
-		n, _ := r.RowsAffected()
+		n := r.RowsAffected
 		if n != 1 {
 			return ErrDenied
 		}
-		if _, e = t.ExecContext(ctx, `UPDATE identity.refresh_families SET revoked_at=$2 WHERE session_id::text=$1`, id, c.now()); e != nil {
+		if e := t.WithContext(ctx).Exec(`UPDATE identity_refresh_families SET revoked_at=? WHERE session_id=?`, c.now(), id).Error; e != nil {
 			return e
 		}
 		return audit(ctx, t, "user:"+user, "sessions.revoke", id, "ok")
@@ -270,21 +278,21 @@ func (c *Core) Refresh(ctx context.Context, token string) (LoginResult, error) {
 		return out, e
 	}
 	reuse := false
-	e = c.tx(ctx, func(t *sql.Tx) error {
+	e = c.tx(ctx, func(t *gorm.DB) error {
 		var family string
 		var consumed, revoked, sessionRevoked sql.NullTime
 		var expiry time.Time
-		e := t.QueryRowContext(ctx, `SELECT f.id,f.session_id,s.user_id,s.expires_at,r.consumed_at,f.revoked_at,s.revoked_at,f.expires_at FROM identity.refresh_tokens r JOIN identity.refresh_families f ON f.id=r.family_id JOIN identity.sessions s ON s.id=f.session_id JOIN identity.users u ON u.id=s.user_id WHERE r.token_hash=$1 AND u.status='active' FOR UPDATE OF f,s,r`, hash(token)).Scan(&family, &out.Session.ID, &out.Session.UserID, &out.Session.ExpiresAt, &consumed, &revoked, &sessionRevoked, &expiry)
+		e := t.WithContext(ctx).Raw(`SELECT f.id,f.session_id,s.user_id,s.expires_at,r.consumed_at,f.revoked_at,s.revoked_at,f.expires_at FROM identity_refresh_tokens r JOIN identity_refresh_families f ON f.id=r.family_id JOIN identity_sessions s ON s.id=f.session_id JOIN identity_users u ON u.id=s.user_id WHERE r.token_hash=? AND u.status='active'`, hash(token)).Row().Scan(&family, &out.Session.ID, &out.Session.UserID, &out.Session.ExpiresAt, &consumed, &revoked, &sessionRevoked, &expiry)
 		if e != nil {
 			return keyError(e)
 		}
 		if consumed.Valid {
 			reuse = true
-			if _, e = t.ExecContext(ctx, `UPDATE identity.refresh_families SET revoked_at=$2 WHERE id=$1`, family, c.now()); e != nil {
+			if e = t.WithContext(ctx).Exec(`UPDATE identity_refresh_families SET revoked_at=? WHERE id=?`, c.now(), family).Error; e != nil {
 				return e
 			}
 			// Also revoke access/session state so existing tokens cannot survive reuse.
-			if _, e = t.ExecContext(ctx, `UPDATE identity.sessions SET revoked_at=$2 WHERE id=$1`, out.Session.ID, c.now()); e != nil {
+			if e = t.WithContext(ctx).Exec(`UPDATE identity_sessions SET revoked_at=? WHERE id=?`, c.now(), out.Session.ID).Error; e != nil {
 				return e
 			}
 			return audit(ctx, t, "user:"+out.Session.UserID, "refresh.reuse", family, "revoked")
@@ -292,10 +300,10 @@ func (c *Core) Refresh(ctx context.Context, token string) (LoginResult, error) {
 		if revoked.Valid || sessionRevoked.Valid || !expiry.After(c.now()) || !out.Session.ExpiresAt.After(c.now()) {
 			return ErrUnauthenticated
 		}
-		if _, e = t.ExecContext(ctx, `UPDATE identity.refresh_tokens SET consumed_at=$2 WHERE token_hash=$1`, hash(token), c.now()); e != nil {
+		if e = t.WithContext(ctx).Exec(`UPDATE identity_refresh_tokens SET consumed_at=? WHERE token_hash=?`, c.now(), hash(token)).Error; e != nil {
 			return e
 		}
-		if _, e = t.ExecContext(ctx, `INSERT INTO identity.refresh_tokens(token_hash,family_id) VALUES($1,$2)`, hash(next), family); e != nil {
+		if e = t.WithContext(ctx).Exec(`INSERT INTO identity_refresh_tokens(token_hash,family_id) VALUES( ?,?)`, hash(next), family).Error; e != nil {
 			return e
 		}
 		out.AccessToken, e = c.access(out.Session)
@@ -327,19 +335,19 @@ func (c *Core) Recover(ctx context.Context, email, code, password string) (strin
 	if e != nil {
 		return "", e
 	}
-	e = c.tx(ctx, func(t *sql.Tx) error {
+	e = c.tx(ctx, func(t *gorm.DB) error {
 		var uid string
-		e := t.QueryRowContext(ctx, `SELECT p.user_id FROM identity.password_credentials p JOIN identity.users u ON u.id=p.user_id WHERE u.email=$1 AND p.recovery_hash=$2 AND u.status='active' FOR UPDATE OF p,u`, strings.ToLower(strings.TrimSpace(email)), hash(code)).Scan(&uid)
+		e := t.WithContext(ctx).Raw(`SELECT p.user_id FROM identity_password_credentials p JOIN identity_users u ON u.id=p.user_id WHERE u.email=? AND p.recovery_hash=? AND u.status='active'`, strings.ToLower(strings.TrimSpace(email)), hash(code)).Row().Scan(&uid)
 		if e != nil {
 			return keyError(e)
 		}
-		if _, e = t.ExecContext(ctx, `UPDATE identity.password_credentials SET password_hash=$2,recovery_hash=$3,updated_at=$4 WHERE user_id=$1`, uid, encoded, hash(next), c.now()); e != nil {
+		if e = t.WithContext(ctx).Exec(`UPDATE identity_password_credentials SET password_hash=?,recovery_hash=?,updated_at=? WHERE user_id=?`, encoded, hash(next), c.now(), uid).Error; e != nil {
 			return e
 		}
-		if _, e = t.ExecContext(ctx, `UPDATE identity.sessions SET revoked_at=$2 WHERE user_id=$1`, uid, c.now()); e != nil {
+		if e = t.WithContext(ctx).Exec(`UPDATE identity_sessions SET revoked_at=? WHERE user_id=?`, c.now(), uid).Error; e != nil {
 			return e
 		}
-		if _, e = t.ExecContext(ctx, `UPDATE identity.refresh_families f SET revoked_at=$2 FROM identity.sessions s WHERE f.session_id=s.id AND s.user_id=$1`, uid, c.now()); e != nil {
+		if e = t.WithContext(ctx).Exec(`UPDATE identity_refresh_families SET revoked_at=? WHERE session_id IN (SELECT id FROM identity_sessions WHERE user_id=?)`, c.now(), uid).Error; e != nil {
 			return e
 		}
 		return audit(ctx, t, "user:"+uid, "users.recover", uid, "ok")
@@ -364,24 +372,24 @@ func (c *Core) ChangePassword(ctx context.Context, auth UserSession, oldPassword
 	if e != nil {
 		return e
 	}
-	return c.tx(ctx, func(t *sql.Tx) error {
+	return c.tx(ctx, func(t *gorm.DB) error {
 		if e := c.lockSession(ctx, t, s); e != nil {
 			return e
 		}
 		var oldHash string
-		if e := t.QueryRowContext(ctx, `SELECT password_hash FROM identity.password_credentials WHERE user_id=$1 FOR UPDATE`, s.UserID).Scan(&oldHash); e != nil {
+		if e := t.WithContext(ctx).Raw(`SELECT password_hash FROM identity_password_credentials WHERE user_id=?`, s.UserID).Row().Scan(&oldHash); e != nil {
 			return keyError(e)
 		}
 		if !CheckPassword(oldHash, oldPassword) {
 			return ErrUnauthenticated
 		}
-		if _, e := t.ExecContext(ctx, `UPDATE identity.password_credentials SET password_hash=$2,updated_at=$3 WHERE user_id=$1`, s.UserID, encoded, c.now()); e != nil {
+		if e := t.WithContext(ctx).Exec(`UPDATE identity_password_credentials SET password_hash=?,updated_at=? WHERE user_id=?`, encoded, c.now(), s.UserID).Error; e != nil {
 			return e
 		}
-		if _, e := t.ExecContext(ctx, `UPDATE identity.sessions SET revoked_at=$2 WHERE user_id=$1`, s.UserID, c.now()); e != nil {
+		if e := t.WithContext(ctx).Exec(`UPDATE identity_sessions SET revoked_at=? WHERE user_id=?`, c.now(), s.UserID).Error; e != nil {
 			return e
 		}
-		if _, e := t.ExecContext(ctx, `UPDATE identity.refresh_families f SET revoked_at=$2 FROM identity.sessions s WHERE f.session_id=s.id AND s.user_id=$1`, s.UserID, c.now()); e != nil {
+		if e := t.WithContext(ctx).Exec(`UPDATE identity_refresh_families SET revoked_at=? WHERE session_id IN (SELECT id FROM identity_sessions WHERE user_id=?)`, c.now(), s.UserID).Error; e != nil {
 			return e
 		}
 		return audit(ctx, t, "user:"+s.UserID, "users.password_change", s.UserID, "ok")

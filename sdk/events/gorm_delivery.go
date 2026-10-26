@@ -13,22 +13,21 @@ import (
 	"gorm.io/gorm"
 )
 
-// GormDelivery implements the same signed-permit JetStream proof as Delivery,
-// using the current owner's GORM SQLite inbox/outbox.
-type GormDelivery struct {
-	Store    GormStore
+// Delivery verifies live event permissions and uses the owner SQLite inbox/outbox.
+type Delivery struct {
+	Store    Store
 	Contract *contract.Compiled
 	Permit   func(context.Context) error
 }
 
-func (d GormDelivery) permit(ctx context.Context) error {
+func (d Delivery) permit(ctx context.Context) error {
 	if d.Contract == nil || d.Permit == nil || d.Store.DB == nil {
 		return security.ErrUnavailable
 	}
 	return d.Permit(ctx)
 }
 
-func (d GormDelivery) PublishBatch(ctx context.Context, js nats.JetStreamContext, limit int) (int, error) {
+func (d Delivery) PublishBatch(ctx context.Context, js nats.JetStreamContext, limit int) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	if err := d.permit(ctx); err != nil {
@@ -92,7 +91,7 @@ func (d GormDelivery) PublishBatch(ctx context.Context, js nats.JetStreamContext
 	return n, err
 }
 
-func (d GormDelivery) Pull(ctx context.Context, js nats.JetStreamContext, subject, durable string,
+func (d Delivery) Pull(ctx context.Context, js nats.JetStreamContext, subject, durable string,
 	handler func(context.Context, *gorm.DB, Envelope) error) error {
 	if err := d.permit(ctx); err != nil {
 		return err
@@ -142,7 +141,7 @@ func (d GormDelivery) Pull(ctx context.Context, js nats.JetStreamContext, subjec
 			_ = msg.Nak()
 			return err
 		}
-		err = d.Store.ConsumeGORM(ctx, durable, subject, d.Contract, msg.Data, handler)
+		err = d.Store.Consume(ctx, durable, subject, d.Contract, msg.Data, handler)
 		if err == nil {
 			if err = msg.AckSync(nats.Context(ctx)); err != nil {
 				return err

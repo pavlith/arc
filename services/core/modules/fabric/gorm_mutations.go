@@ -32,7 +32,7 @@ func (c *Core) approveGORM(ctx context.Context, signed SignedInstallation) (stri
 	changed := false
 	err = database.RetryBusy(ctx, func() error {
 		changed = false
-		return c.GormDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return database.FromContext(ctx, c.GormDB).WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			if err := tx.Exec("UPDATE fabric_route_state SET revision=revision WHERE singleton=1").Error; err != nil {
 				return security.ErrUnavailable
 			}
@@ -238,7 +238,7 @@ func (c *Core) revokeGORM(ctx context.Context, raw, sig []byte) error {
 	changed := false
 	err = database.RetryBusy(ctx, func() error {
 		changed = false
-		return c.GormDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return database.FromContext(ctx, c.GormDB).WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			if err := tx.Exec("UPDATE fabric_route_state SET revision=revision WHERE singleton=1").Error; err != nil {
 				return security.ErrUnavailable
 			}

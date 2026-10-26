@@ -24,7 +24,7 @@ func toTask(v models.Task) Task {
 	}
 }
 
-// createGORM executes only inside CommandGORM's replay transaction.
+// createGORM executes only inside Command's replay transaction.
 func (s *Service) createGORM(ctx context.Context, tx *gorm.DB, q CreateRequest) (Task, error) {
 	cl, _ := rpc.VerifiedClaims(ctx)
 	meta, _ := rpc.Metadata(ctx)
@@ -41,7 +41,7 @@ func (s *Service) createGORM(ctx context.Context, tx *gorm.DB, q CreateRequest) 
 		return Task{}, unavailable(err)
 	}
 	payload, _ := json.Marshal(CreatedEvent{Scope: q.Scope, TaskID: row.ID})
-	if err := (events.GormStore{DB: s.GormDB}).EnqueueGORM(ctx, tx, s.Contract, Created,
+	if err := (events.Store{DB: s.GormDB}).Enqueue(ctx, tx, s.Contract, Created,
 		events.Envelope{
 			ID: NewID(), Type: taskv1.CreatedName, Version: 1, AggregateID: row.ID,
 			OccurredAt: now, Traceparent: meta.Traceparent, Payload: payload,
@@ -61,7 +61,7 @@ func (s *Service) createGORM(ctx context.Context, tx *gorm.DB, q CreateRequest) 
 // Access mutation is done through its independently authorized Core RPC;
 // the local command_result is only marked complete after the RPC succeeds.
 func (s *Service) grantsGORM(ctx context.Context, tx *gorm.DB, q GrantCommand) (taskv1.GrantResult, error) {
-	result, err := s.grantsAccess(ctx, nil, q)
+	result, err := s.grantsAccess(ctx, q)
 	return taskv1.GrantResult{
 		ResourceID: result.ResourceID, GrantID: result.GrantID,
 		State: result.State, Revision: result.Revision,

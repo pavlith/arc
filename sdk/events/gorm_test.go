@@ -50,7 +50,7 @@ func TestGormInboxConcurrentReplayConflictAndRollback(t *testing.T) {
 		OccurredAt:  time.Now().UTC(), Payload: payload,
 	}
 	raw, _ := json.Marshal(ev)
-	store := events.GormStore{DB: db}
+	store := events.Store{DB: db}
 	var runs atomic.Int32
 	effect := func(ctx context.Context, tx *gorm.DB, ev events.Envelope) error {
 		runs.Add(1)
@@ -63,7 +63,7 @@ func TestGormInboxConcurrentReplayConflictAndRollback(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			errs <- store.ConsumeGORM(ctx, "test-durable", taskv1.CreatedSubject, m, raw, effect)
+			errs <- store.Consume(ctx, "test-durable", taskv1.CreatedSubject, m, raw, effect)
 		}()
 	}
 	wg.Wait()
@@ -82,13 +82,13 @@ func TestGormInboxConcurrentReplayConflictAndRollback(t *testing.T) {
 	}
 	ev.Traceparent = "00-different"
 	conflicting, _ := json.Marshal(ev)
-	if err := store.ConsumeGORM(ctx, "test-durable", taskv1.CreatedSubject, m, conflicting, effect); err == nil {
+	if err := store.Consume(ctx, "test-durable", taskv1.CreatedSubject, m, conflicting, effect); err == nil {
 		t.Fatal("conflicting replay accepted")
 	}
 	// New event fails in its handler, then must be retryable with no inbox residue.
 	ev.ID = "00000000-0000-4000-8000-000000000005"
 	rollbackRaw, _ := json.Marshal(ev)
-	if err := store.ConsumeGORM(ctx, "test-durable", taskv1.CreatedSubject, m, rollbackRaw,
+	if err := store.Consume(ctx, "test-durable", taskv1.CreatedSubject, m, rollbackRaw,
 		func(ctx context.Context, tx *gorm.DB, ev events.Envelope) error {
 			if err := tx.Exec("INSERT INTO effects(event_id) VALUES(?)", ev.ID).Error; err != nil {
 				return err
@@ -97,7 +97,7 @@ func TestGormInboxConcurrentReplayConflictAndRollback(t *testing.T) {
 		}); err == nil {
 		t.Fatal("failed handler accepted")
 	}
-	if err := store.ConsumeGORM(ctx, "test-durable", taskv1.CreatedSubject, m, rollbackRaw, effect); err != nil {
+	if err := store.Consume(ctx, "test-durable", taskv1.CreatedSubject, m, rollbackRaw, effect); err != nil {
 		t.Fatalf("retry after rollback: %v", err)
 	}
 	if err := db.Table("effects").Count(&count).Error; err != nil || count != 2 {

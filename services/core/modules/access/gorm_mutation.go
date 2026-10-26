@@ -39,7 +39,7 @@ func (c *Core) mutationGORM(ctx context.Context, op string, payload any,
 	hash := sha256.Sum256(raw)
 	err = database.RetryBusy(ctx, func() error {
 		out = MutationResult{}
-		return c.GormDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return database.FromContext(ctx, c.GormDB).WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			// Acquiring the SQLite write lock BEFORE dedup/live checks avoids
 			// concurrent first-writer snapshots and double effects.
 			if err := tx.Exec("UPDATE access_policy_state SET revision=revision WHERE singleton=1").Error; err != nil {
@@ -340,7 +340,7 @@ func (c *Core) transitionGORM(ctx context.Context, op string, q LifecycleRequest
 				if c.Domain == nil {
 					return MutationResult{}, ErrUnavailable
 				}
-				if err := c.Domain.Confirm(ctx, resource.Provider, resource.ID, op, q.Receipt); err != nil {
+				if err := c.Domain.Confirm(database.TransactionContext(ctx, c.GormDB, tx), resource.Provider, resource.ID, op, q.Receipt); err != nil {
 					return MutationResult{}, err
 				}
 			}

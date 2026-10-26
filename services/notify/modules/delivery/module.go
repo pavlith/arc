@@ -2,7 +2,6 @@ package delivery
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"time"
 
@@ -12,7 +11,6 @@ import (
 )
 
 type Module struct {
-	DB       *sql.DB
 	GormDB   *gorm.DB
 	Provider Provider
 	Permit   func(context.Context) error
@@ -20,13 +18,13 @@ type Module struct {
 
 func (*Module) ID() string { return "delivery" }
 func (m *Module) Register(r *module.Registry) error {
-	if m == nil || (m.DB == nil && m.GormDB == nil) || m.Provider == nil || m.Permit == nil {
+	if m == nil || m.GormDB == nil || m.Provider == nil || m.Permit == nil {
 		return module.ErrInvalid
 	}
 	return r.AddWorker(module.Worker{ID: "notification-delivery", Run: m.Run})
 }
 func (m *Module) Run(ctx context.Context) error {
-	writer := &Service{DB: m.DB, GormDB: m.GormDB}
+	writer := &Service{GormDB: m.GormDB}
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -43,11 +41,9 @@ func (m *Module) Run(ctx context.Context) error {
 				return err // fail closed on unapproved consumer/producer.
 			}
 			var err error
-			if m.GormDB != nil {
-				_, err = writer.DeliverGORM(work, m.Provider)
-			} else {
-				_, err = writer.Deliver(work, m.Provider)
-			}
+
+			_, err = writer.Deliver(work, m.Provider)
+
 			cancel()
 			if err != nil && ctx.Err() == nil {
 				if errors.Is(err, security.ErrDenied) || errors.Is(err, security.ErrUnauthenticated) {

@@ -15,15 +15,15 @@ import (
 	"gorm.io/gorm"
 )
 
-// GormStore persists command replay and inbox/outbox in the calling domain's
+// Store persists command replay and inbox/outbox in the calling domain's
 // own SQLite file. It never accepts a SQL schema or a cross-service DB handle.
-type GormStore struct{ DB *gorm.DB }
+type Store struct{ DB *gorm.DB }
 
-// CommandGORM executes the handler and its replay result in one transaction.
+// Command executes the handler and its replay result in one transaction.
 // Reserving the unique command key as the FIRST statement serializes competing
-// writers without PostgreSQL advisory locks. An aborted transaction leaves no
+// writers without advisory locks. An aborted transaction leaves no
 // reservation or domain effect. All retries recheck the verified payload hash.
-func CommandGORM[Req, Res any](ctx context.Context, s GormStore, m *contract.Compiled, id string, q Req,
+func Command[Req, Res any](ctx context.Context, s Store, m *contract.Compiled, id string, q Req,
 	handler func(context.Context, *gorm.DB, Req) (Res, error)) (Res, error) {
 	var zero Res
 	if ctx == nil || s.DB == nil || m == nil || handler == nil {
@@ -97,9 +97,9 @@ func CommandGORM[Req, Res any](ctx context.Context, s GormStore, m *contract.Com
 	return value, nil
 }
 
-// EnqueueGORM joins the handler's transaction. Publishing happens only after
+// Enqueue joins the handler's transaction. Publishing happens only after
 // this transaction commits; a publish retry reuses the stored event ID.
-func (s GormStore) EnqueueGORM(ctx context.Context, tx *gorm.DB, m *contract.Compiled, subject string, ev Envelope) error {
+func (s Store) Enqueue(ctx context.Context, tx *gorm.DB, m *contract.Compiled, subject string, ev Envelope) error {
 	if s.DB == nil || tx == nil || m == nil {
 		return security.ErrUnavailable
 	}
@@ -114,10 +114,10 @@ func (s GormStore) EnqueueGORM(ctx context.Context, tx *gorm.DB, m *contract.Com
 		"INSERT INTO outbox(event_id,subject,envelope) VALUES(?,?,?)", ev.ID, subject, raw).Error
 }
 
-// ConsumeGORM atomically persists the verified event hash and domain effects.
+// Consume atomically persists the verified event hash and domain effects.
 // Identical redelivery is a no-op; an event ID with different canonical content
 // is rejected. The unique inbox key is acquired BEFORE reading prior results.
-func (s GormStore) ConsumeGORM(ctx context.Context, consumer, subject string,
+func (s Store) Consume(ctx context.Context, consumer, subject string,
 	m *contract.Compiled, raw []byte, handler func(context.Context, *gorm.DB, Envelope) error) error {
 	if ctx == nil || s.DB == nil || consumer == "" || m == nil || handler == nil {
 		return contract.ErrInvalid

@@ -3,11 +3,12 @@ package identity
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 
+	"github.com/pavlith/arc/sdk/database"
 	"github.com/pavlith/arc/sdk/rpc"
 	"github.com/pavlith/arc/sdk/security"
+	"gorm.io/gorm"
 )
 
 type transactionKey struct{}
@@ -40,15 +41,15 @@ func command[Req, Res any](ctx context.Context, c *Core, op string, r Req, h fun
 	}
 	digest := hash(string(raw))
 	var out Res
-	e = c.tx(ctx, func(t *sql.Tx) error {
+	e = c.tx(ctx, func(t *gorm.DB) error {
 		if e := c.lockSession(ctx, t, s); e != nil {
 			return e
 		}
-		if _, e := t.ExecContext(ctx, `INSERT INTO identity.command_results(actor,operation,idempotency_key,request_hash) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING`, "user:"+s.UserID, op, meta.IdempotencyKey, digest); e != nil {
+		if e := t.WithContext(ctx).Exec(`INSERT INTO identity_command_results(actor,operation,idempotency_key,request_hash) VALUES( ?,?,?,?) ON CONFLICT DO NOTHING`, "user:"+s.UserID, op, meta.IdempotencyKey, digest).Error; e != nil {
 			return e
 		}
 		var storedHash, result []byte
-		if e := t.QueryRowContext(ctx, `SELECT request_hash,result FROM identity.command_results WHERE actor=$1 AND operation=$2 AND idempotency_key=$3 FOR UPDATE`, "user:"+s.UserID, op, meta.IdempotencyKey).Scan(&storedHash, &result); e != nil {
+		if e := t.WithContext(ctx).Raw(`SELECT request_hash,result FROM identity_command_results WHERE actor=? AND operation=? AND idempotency_key=?`, "user:"+s.UserID, op, meta.IdempotencyKey).Row().Scan(&storedHash, &result); e != nil {
 			return e
 		}
 		if !bytes.Equal(digest, storedHash) {
@@ -58,7 +59,7 @@ func command[Req, Res any](ctx context.Context, c *Core, op string, r Req, h fun
 			return json.Unmarshal(result, &out)
 		}
 		var e error
-		out, e = h(context.WithValue(ctx, transactionKey{}, t), r)
+		out, e = h(context.WithValue(database.TransactionContext(ctx, c.GormDB, t), transactionKey{}, t), r)
 		if e != nil {
 			return e
 		}
@@ -66,7 +67,7 @@ func command[Req, Res any](ctx context.Context, c *Core, op string, r Req, h fun
 		if e != nil {
 			return e
 		}
-		_, e = t.ExecContext(ctx, `UPDATE identity.command_results SET result=$4 WHERE actor=$1 AND operation=$2 AND idempotency_key=$3`, "user:"+s.UserID, op, meta.IdempotencyKey, result)
+		e = t.WithContext(ctx).Exec(`UPDATE identity_command_results SET result=? WHERE actor=? AND operation=? AND idempotency_key=?`, result, "user:"+s.UserID, op, meta.IdempotencyKey).Error
 		return e
 	})
 	return out, e

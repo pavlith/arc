@@ -32,7 +32,7 @@ func Run(ctx context.Context, path string) error {
 		Account: cfg.ServiceID, Kid: cfg.Kid, Key: deps.Key, CoreKey: deps.CoreTrust,
 	}
 	app, err := New(Config{
-		DB: deps.DB, GormDB: deps.GormDB, Runtime: deps.RuntimeConfig(cfg.Config, registry),
+		GormDB: deps.GormDB, Runtime: deps.RuntimeConfig(cfg.Config, registry),
 		Identity: identity.Client{
 			RPC: deps.RPC, ServiceID: cfg.ServiceID, Kid: cfg.Kid, PrivateKey: deps.Key,
 		},

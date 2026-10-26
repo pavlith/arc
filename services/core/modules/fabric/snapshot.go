@@ -6,10 +6,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"sort"
 	"time"
 
-	"database/sql"
 	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/security"
 )
@@ -39,66 +37,7 @@ type SignedSnapshot struct {
 }
 
 func (c *Core) Routes(ctx context.Context) (SignedSnapshot, error) {
-	if c != nil && c.GormDB != nil {
-		return c.routesGORM(ctx)
-	}
-	if e := c.ready(); e != nil {
-		return SignedSnapshot{}, e
-	}
-	if len(c.SnapshotKey) != 64 {
-		return SignedSnapshot{}, security.ErrUnavailable
-	}
-	t, e := c.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
-	if e != nil {
-		return SignedSnapshot{}, security.ErrUnavailable
-	}
-	defer t.Rollback()
-	snap := RouteSnapshot{IssuedAt: time.Now().UTC(), Routes: []Route{}, Artifacts: map[string]contract.Artifact{}}
-	if e = t.QueryRowContext(ctx, `SELECT revision FROM fabric.route_state WHERE singleton`).Scan(&snap.Revision); e != nil {
-		return SignedSnapshot{}, security.ErrUnavailable
-	}
-	rows, e := t.QueryContext(ctx, `SELECT installation,signature FROM fabric.contracts WHERE revoked_at IS NULL ORDER BY digest`)
-	if e != nil {
-		return SignedSnapshot{}, security.ErrUnavailable
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var s SignedInstallation
-		if rows.Scan(&s.Payload, &s.Signature) != nil {
-			return SignedSnapshot{}, security.ErrUnavailable
-		}
-		installed, m, e := c.verify(s)
-		if e != nil {
-			return SignedSnapshot{}, e
-		}
-		for _, o := range m.Manifest.Operations {
-			if o.HTTP.Expose {
-				snap.Routes = append(snap.Routes, Route{Method: o.HTTP.Method, Path: o.HTTP.Path, Service: m.Manifest.Service.Name, Operation: o.ID, Subject: o.Subject, Digest: m.Digest, SuccessStatus: o.HTTP.SuccessStatus, APIMajor: m.Manifest.Service.APIMajor, Bindings: o.HTTP.Bindings})
-				snap.Artifacts[m.Digest] = installed.Artifact
-			}
-		}
-	}
-	if rows.Err() != nil {
-		return SignedSnapshot{}, security.ErrUnavailable
-	}
-	rows.Close()
-	sort.Slice(snap.Routes, func(i, j int) bool {
-		return snap.Routes[i].Method+snap.Routes[i].Path < snap.Routes[j].Method+snap.Routes[j].Path
-	})
-
-	if e = t.Commit(); e != nil {
-		return SignedSnapshot{}, security.ErrUnavailable
-	}
-	kid := c.SnapshotKid
-	if kid == "" {
-		kid = "fabric-snapshot-v1"
-	} else {
-		k, e := c.Identity.SigningKey(ctx, kid)
-		if e != nil || k.Revoked || time.Now().Before(k.NotBefore) || !time.Now().Before(k.ExpiresAt) || !ed25519.PublicKey(c.SnapshotKey.Public().(ed25519.PublicKey)).Equal(k.Public) {
-			return SignedSnapshot{}, security.ErrUnavailable
-		}
-	}
-	return SignSnapshot(snap, kid, c.SnapshotKey)
+	return c.routesGORM(ctx)
 }
 
 func ContentDigest(s RouteSnapshot) (string, error) {

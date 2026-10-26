@@ -3,11 +3,11 @@ package access
 import (
 	"context"
 	"crypto/ed25519"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"testing"
 
+	"github.com/pavlith/arc/internal/testdb"
 	"github.com/pavlith/arc/sdk/rpc"
 	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/core/modules/identity"
@@ -53,12 +53,8 @@ func TestApprovedContracts(t *testing.T) {
 	if _, err = contracts.Type("rogue.root", provider, ""); !errors.Is(err, security.ErrDenied) {
 		t.Fatal("undeclared resource type accepted")
 	}
-	db, err := sql.Open("pgx", "host=/nonexistent dbname=unused")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	c = &Core{DB: db, Identity: &identity.Core{DB: db}, Contracts: contracts}
+	db, _ := testdb.Open(t, "core")
+	c = &Core{GormDB: db, Identity: &identity.Core{GormDB: db}, Contracts: contracts}
 	incoming := security.Claims{Subject: actor, Audience: "calendar/v1", Operation: "calendar.read"}
 	auth := identity.Authorization{Caller: provider, Actor: actor, Audience: "access/v1", Operation: "access.v1.check", Incoming: &incoming}
 	if err = c.Authorize(context.Background(), auth); err != nil {

@@ -4,11 +4,11 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"database/sql"
 	"errors"
 	"testing"
 
 	"github.com/nats-io/nats.go"
+	"github.com/pavlith/arc/internal/testdb"
 	"github.com/pavlith/arc/sdk"
 	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/rpc"
@@ -45,10 +45,12 @@ func TestTaskNotifyComposeNoNetworkAndExactSubscription(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	taskDB, _ := testdb.Open(t, "task")
+	notifyDB, _ := testdb.Open(t, "notify")
 	reg := &closedRegistry{}
 	id := identity.Client{RPC: &rpc.Client{}, ServiceID: "instance-uuid", Kid: "instance-key", PrivateKey: private}
 	tasks, err := task.New(task.Config{
-		DB: &sql.DB{}, Runtime: sdk.AppConfig{Registry: reg, Instance: "tasks-instance"},
+		GormDB: taskDB, Runtime: sdk.AppConfig{Registry: reg, Instance: "tasks-instance"},
 		Identity: id, CoreTrust: pub,
 	})
 	if err != nil {
@@ -63,7 +65,7 @@ func TestTaskNotifyComposeNoNetworkAndExactSubscription(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := notify.Config{
-		DB: &sql.DB{}, Runtime: sdk.AppConfig{Instance: "notify-instance"},
+		GormDB: notifyDB, Runtime: sdk.AppConfig{Instance: "notify-instance"},
 		Identity: id, CoreTrust: pub, Registry: reg,
 		Subscription: fabric.EventSubscription{
 			Provider: "publisher-uuid", Digest: source.Digest,

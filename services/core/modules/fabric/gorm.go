@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/pavlith/arc/sdk/contract"
+	"github.com/pavlith/arc/sdk/database"
 	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/core/modules/access"
 	"gorm.io/gorm"
@@ -41,7 +42,7 @@ func (c *Core) activeGORM(ctx context.Context, account, digest string) (*contrac
 	if err := c.readyGORM(); err != nil {
 		return nil, err
 	}
-	signed, err := scanSignedInstallation(c.GormDB.WithContext(ctx).Raw(
+	signed, err := scanSignedInstallation(database.FromContext(ctx, c.GormDB).WithContext(ctx).Raw(
 		`SELECT c.installation,c.signature FROM fabric_contracts c
 		JOIN fabric_deployments d ON d.digest=c.digest
 		JOIN identity_service_accounts a ON a.id=d.service_account_id
@@ -82,7 +83,7 @@ func (c *Core) loadAccessGORM(ctx context.Context) (*access.Contracts, error) {
 		}
 	}
 	approved := append([]access.Approved(nil), c.Bootstrap...)
-	rows, err := c.GormDB.WithContext(ctx).Raw(
+	rows, err := database.FromContext(ctx, c.GormDB).WithContext(ctx).Raw(
 		"SELECT installation,signature FROM fabric_contracts WHERE revoked_at IS NULL ORDER BY digest",
 	).Rows()
 	if err != nil {
@@ -119,7 +120,7 @@ func (c *Core) routesGORM(ctx context.Context) (SignedSnapshot, error) {
 		Artifacts: map[string]contract.Artifact{},
 	}
 	// Read route-state revision and contracts from the same WAL read snapshot.
-	err := c.GormDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := database.FromContext(ctx, c.GormDB).WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Raw("SELECT revision FROM fabric_route_state WHERE singleton=1").
 			Row().Scan(&snap.Revision); err != nil {
 			return err

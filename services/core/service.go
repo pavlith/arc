@@ -1,12 +1,11 @@
 // Package core composes Arc's trusted Core process from four in-process modules.
 // Core bootstrap is explicitly separated from approved domain-service deployment:
-// it uses the low-level pkgs Micro service without weakening pkgs/service.Compose.
+// it uses the low-level SDK Micro service without weakening sdk/service.Compose.
 package core
 
 import (
 	"context"
 	"crypto/ed25519"
-	"database/sql"
 	"errors"
 	"fmt"
 	"sync"
@@ -18,6 +17,7 @@ import (
 	"github.com/pavlith/arc/services/core/modules/fabric"
 	"github.com/pavlith/arc/services/core/modules/identity"
 	"github.com/pavlith/arc/services/core/modules/runtime"
+	"gorm.io/gorm"
 )
 
 var ErrInvalid = errors.New("core: invalid bootstrap configuration")
@@ -30,7 +30,7 @@ type Module interface {
 }
 
 type Config struct {
-	DB                      *sql.DB
+	GormDB                  *gorm.DB
 	NATS                    sdk.Config
 	Version                 string
 	IdentitySigningKid      string
@@ -62,7 +62,7 @@ type Service struct {
 
 // New wires the Identity->Access->Fabric policy graph without network access.
 func New(cfg Config) (*Service, error) {
-	if cfg.DB == nil || cfg.Version == "" || cfg.IdentitySigningKid == "" ||
+	if cfg.GormDB == nil || cfg.Version == "" || cfg.IdentitySigningKid == "" ||
 		cfg.SnapshotKid == "" ||
 		len(cfg.IdentitySigningKey) != ed25519.PrivateKeySize ||
 		len(cfg.InstallationApprovalKey) != ed25519.PublicKeySize ||
@@ -71,16 +71,16 @@ func New(cfg Config) (*Service, error) {
 		cfg.RuntimeAuthorize == nil {
 		return nil, ErrInvalid
 	}
-	id := &identity.Core{DB: cfg.DB, PrivateKey: cfg.IdentitySigningKey,
+	id := &identity.Core{GormDB: cfg.GormDB, PrivateKey: cfg.IdentitySigningKey,
 		SigningKid: cfg.IdentitySigningKid, Now: cfg.Now}
-	ac := &access.Core{DB: cfg.DB, Identity: id, Now: cfg.Now}
-	fb := &fabric.Core{DB: cfg.DB, Identity: id,
+	ac := &access.Core{GormDB: cfg.GormDB, Identity: id, Now: cfg.Now}
+	fb := &fabric.Core{GormDB: cfg.GormDB, Identity: id,
 		ApprovalKey: cfg.InstallationApprovalKey, Bootstrap: cfg.ContractBootstrap,
 		SnapshotKid: cfg.SnapshotKid, SnapshotKey: cfg.SnapshotSigningKey,
 		RouteTrustKey: cfg.RouteTrustKey}
 	ac.ContractSource = fb
 	id.Policy = ac
-	rt := &runtime.Module{DB: cfg.DB, Authorize: cfg.RuntimeAuthorize}
+	rt := &runtime.Module{GormDB: cfg.GormDB, Authorize: cfg.RuntimeAuthorize}
 	return &Service{
 		Identity: id, Access: ac, Fabric: fb, Runtime: rt,
 		connection: cfg.NATS, version: cfg.Version,
@@ -111,7 +111,11 @@ func (s *Service) Start(ctx context.Context) error {
 	if s.started || s.stopped {
 		return ErrInvalid
 	}
-	if err := s.Identity.DB.PingContext(ctx); err != nil {
+	owner, err := s.Identity.GormDB.DB()
+	if err != nil {
+		return security.ErrUnavailable
+	}
+	if err := owner.PingContext(ctx); err != nil {
 		return security.ErrUnavailable
 	}
 	transport, err := sdk.NewService(ctx, sdk.ServiceConfig{

@@ -1,5 +1,4 @@
 // Package migrations owns Core's complete file-backed SQLite schema.
-// This package is independent from the legacy PostgreSQL SQL migrations.
 // Migrations must be run by the Core owner migrator before Core starts.
 package migrations
 
@@ -9,7 +8,7 @@ import (
 )
 
 // SQLite returns explicitly ordered, atomic migrations for Core's four modules.
-// Tables use module prefixes: SQLite has no PostgreSQL schemas or SQL roles.
+// Tables use module prefixes: SQLite uses file ownership instead of SQL schemas/roles.
 func SQLite() []*gormigrate.Migration {
 	return []*gormigrate.Migration{
 		{ID: "000001_bootstrap", Migrate: func(tx *gorm.DB) error {

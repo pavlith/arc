@@ -4,10 +4,7 @@ package access
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -33,12 +30,12 @@ type ContractSource interface {
 }
 type Core struct {
 	ContractSource ContractSource
-	DB             *sql.DB
-	GormDB         *gorm.DB
-	Identity       *identity.Core
-	Contracts      *Contracts
-	Domain         DomainOwner
-	Now            func() time.Time
+
+	GormDB    *gorm.DB
+	Identity  *identity.Core
+	Contracts *Contracts
+	Domain    DomainOwner
+	Now       func() time.Time
 }
 
 func (c *Core) now() time.Time {
@@ -51,13 +48,7 @@ func (c *Core) ready() error {
 	if c == nil || c.Identity == nil || (c.Contracts == nil && c.ContractSource == nil) {
 		return ErrUnavailable
 	}
-	if c.GormDB != nil {
-		if c.Identity.GormDB != c.GormDB {
-			return ErrUnavailable
-		}
-		return nil
-	}
-	if c.DB == nil || c.Identity.DB != c.DB {
+	if c.GormDB == nil || c.Identity.GormDB != c.GormDB {
 		return ErrUnavailable
 	}
 	return nil
@@ -186,40 +177,6 @@ type MutationResult struct {
 	Revision   int64  `json:"policy_revision"`
 }
 
-func readResource(ctx context.Context, t *sql.Tx, id string) (Resource, error) {
-	var r Resource
-	e := t.QueryRowContext(ctx, `SELECT id,type,provider_service,owner_kind,owner_id,COALESCE(workspace_id::text,''),COALESCE(acl_parent_id::text,''),inherit_acl,state,policy_revision FROM access.resources WHERE id::text=$1`, id).Scan(&r.ID, &r.Type, &r.Provider, &r.OwnerKind, &r.OwnerID, &r.WorkspaceID, &r.ParentID, &r.InheritACL, &r.State, &r.Revision)
-	return r, e
-}
-func (c *Core) readType(ctx context.Context, t *sql.Tx, name string) (TypeSpec, error) {
-	var provider, digest string
-	if e := t.QueryRowContext(ctx, `SELECT provider_service,contract_digest FROM access.resource_types WHERE type=$1`, name).Scan(&provider, &digest); e != nil {
-		return TypeSpec{}, e
-	}
-	return c.Contracts.Type(name, provider, digest)
-}
-
-func (c *Core) snapshot(ctx context.Context, fn func(*sql.Tx, int64) error) error {
-	if e := c.ready(); e != nil {
-		return e
-	}
-	t, e := c.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
-	if e != nil {
-		return ErrUnavailable
-	}
-	defer t.Rollback()
-	var rev int64
-	if e = t.QueryRowContext(ctx, `SELECT revision FROM access.policy_state WHERE singleton`).Scan(&rev); e != nil {
-		return ErrUnavailable
-	}
-	if e = fn(t, rev); e != nil {
-		return normalize(e)
-	}
-	if e = t.Commit(); e != nil {
-		return normalize(e)
-	}
-	return nil
-}
 func normalize(e error) error {
 	if e == nil {
 		return nil
@@ -229,116 +186,7 @@ func normalize(e error) error {
 	}
 	return ErrUnavailable
 }
-func (c *Core) mutation(ctx context.Context, op string, payload any, fn func(*sql.Tx, security.Claims, int64) (MutationResult, error)) (MutationResult, error) {
-	var out MutationResult
-	cl, e := c.claims(ctx, op)
-	if e != nil {
-		return out, e
-	}
-	meta, ok := rpc.Metadata(ctx)
-	if !ok || meta.IdempotencyKey == "" || len(meta.IdempotencyKey) > 128 {
-		return out, ErrValidation
-	}
-	raw, e := json.Marshal(payload)
-	if e != nil {
-		return out, ErrValidation
-	}
-	raw, e = security.CanonicalJSON(raw)
-	if e != nil {
-		return out, ErrValidation
-	}
-	digest := sha256.Sum256(raw)
-	t, e := c.DB.BeginTx(ctx, nil)
-	if e != nil {
-		return out, ErrUnavailable
-	}
-	defer t.Rollback()
-	// One short policy write lock orders lifecycle/grant mutations and revisions.
-	var rev int64
-	if e = t.QueryRowContext(ctx, `SELECT revision FROM access.policy_state WHERE singleton FOR UPDATE`).Scan(&rev); e != nil {
-		return out, ErrUnavailable
-	}
-	if e = c.live(ctx, t, cl); e != nil {
-		return out, normalize(e)
-	}
-	var stored, result []byte
-	e = t.QueryRowContext(ctx, `SELECT request_hash,result FROM access.operations WHERE actor=$1 AND caller=$2 AND operation=$3 AND idempotency_key=$4`, cl.Subject, cl.Caller, op, meta.IdempotencyKey).Scan(&stored, &result)
-	if e == nil {
-		if hex.EncodeToString(stored) != hex.EncodeToString(digest[:]) {
-			return out, ErrConflict
-		}
-		if json.Unmarshal(result, &out) != nil {
-			return out, ErrUnavailable
-		}
-		return out, nil
-	}
-	if e != sql.ErrNoRows {
-		return out, ErrUnavailable
-	}
-	out, e = fn(t, cl, rev+1)
-	if e != nil {
-		return out, normalize(e)
-	}
-	_, e = t.ExecContext(ctx, `UPDATE access.policy_state SET revision=$1 WHERE singleton`, rev+1)
-	if e != nil {
-		return out, ErrUnavailable
-	}
-	out.Revision = rev + 1
-	result, e = json.Marshal(out)
-	if e != nil {
-		return out, ErrUnavailable
-	}
-	_, e = t.ExecContext(ctx, `INSERT INTO access.operations(actor,caller,operation,idempotency_key,request_hash,resource_id,state,result) VALUES($1,$2,$3,$4,$5,NULLIF($6,'')::uuid,'completed',$7)`, cl.Subject, cl.Caller, op, meta.IdempotencyKey, digest[:], out.ResourceID, result)
-	if e != nil {
-		return out, ErrUnavailable
-	}
-	change := op
-	if op == "grants.add" {
-		if g, ok := payload.(GrantRequest); ok {
-			self := g.PrincipalKind+":"+g.PrincipalID == cl.Subject || g.PrincipalKind == "user" && g.PrincipalID == cl.OnBehalfOf
-			if !self && g.PrincipalKind == "role" && (g.PrincipalID == "owner" || g.PrincipalID == "admin") {
-				user := strings.TrimPrefix(cl.Subject, "user:")
-				if cl.OnBehalfOf != "" {
-					user = cl.OnBehalfOf
-				}
-				var role string
-				if user != "" && t.QueryRowContext(ctx, `SELECT role FROM identity.memberships WHERE workspace_id=(SELECT workspace_id FROM access.resources WHERE id=$1) AND user_id::text=$2 AND revoked_at IS NULL`, g.ResourceID, user).Scan(&role) == nil {
-					self = role == g.PrincipalID
-				}
-			}
-			if !self && g.PrincipalKind == "group" {
-				user := actorUser(cl)
-				if user != "" {
-					if err := t.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM identity.group_members WHERE group_id::text=$1 AND user_id::text=$2)`, g.PrincipalID, user).Scan(&self); err != nil {
-						return out, ErrUnavailable
-					}
-				}
-			}
-			if self {
-				change = "self_grant"
-			}
-		}
-	}
-	details := map[string]any{"state": out.State}
-	switch q := payload.(type) {
-	case GrantRequest:
-		details["grant"] = q
-	case RegisterRequest:
-		details["type"], details["contract_digest"] = q.Type, q.ContractDigest
-	}
-	changeJSON, e := json.Marshal(details)
-	if e != nil {
-		return out, ErrUnavailable
-	}
-	_, e = t.ExecContext(ctx, `INSERT INTO access.policy_audit(actor,caller,on_behalf_of,operation,resource_id,policy_revision,change_kind,grant_id,change) VALUES($1,$2,NULLIF($3,'')::uuid,$4,NULLIF($5,'')::uuid,$6,$7,NULLIF($8,'')::uuid,$9)`, cl.Subject, cl.Caller, cl.OnBehalfOf, op, out.ResourceID, rev+1, change, out.GrantID, changeJSON)
-	if e != nil {
-		return out, ErrUnavailable
-	}
-	if e = t.Commit(); e != nil {
-		return out, ErrUnavailable
-	}
-	return out, nil
-}
+
 func actorUser(cl security.Claims) string {
 	if cl.OnBehalfOf != "" {
 		return cl.OnBehalfOf

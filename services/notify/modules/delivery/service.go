@@ -4,16 +4,14 @@ package delivery
 import (
 	"context"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
-	"github.com/pavlith/arc/sdk/security"
-	"gorm.io/gorm"
 	"sync"
+
+	"gorm.io/gorm"
 )
 
 type Service struct {
-	DB     *sql.DB
 	GormDB *gorm.DB
 }
 
@@ -29,54 +27,6 @@ type Provider interface {
 
 // Deliver sends bounded persisted intents. Timeout keeps the same key on retry.
 // Provider calls cannot be atomic with SQL; a non-idempotent provider may duplicate.
-func (s *Service) Deliver(ctx context.Context, p Provider) (int, error) {
-	if p == nil {
-		return 0, security.ErrUnavailable
-	}
-	tx, e := s.DB.BeginTx(ctx, nil)
-	if e != nil {
-		return 0, e
-	}
-	defer tx.Rollback()
-	rows, e := tx.QueryContext(ctx, `SELECT notification_id,recipient_user_id,dedup_key FROM notify.delivery_intents WHERE delivered_at IS NULL ORDER BY notification_id LIMIT 100 FOR UPDATE SKIP LOCKED`)
-	if e != nil {
-		return 0, e
-	}
-	type intent struct{ id, user, key string }
-	batch := []intent{}
-	for rows.Next() {
-		var v intent
-		if e = rows.Scan(&v.id, &v.user, &v.key); e != nil {
-			rows.Close()
-			return 0, e
-		}
-		batch = append(batch, v)
-	}
-	e = rows.Err()
-	rows.Close()
-	if e != nil {
-		return 0, e
-	}
-	var sendErr error
-	n := 0
-	for _, v := range batch {
-		e = p.Send(ctx, v.user, v.key)
-		if e != nil {
-			sendErr = e
-		}
-		_, qe := tx.ExecContext(ctx, `UPDATE notify.delivery_intents SET attempts=attempts+1,delivered_at=CASE WHEN $2 THEN now() ELSE NULL END WHERE notification_id=$1`, v.id, e == nil)
-		if qe != nil {
-			return 0, qe
-		}
-		if e == nil {
-			n++
-		}
-	}
-	if e = tx.Commit(); e != nil {
-		return 0, e
-	}
-	return n, sendErr
-}
 
 // FakeProvider is the only M0 external adapter. It records invocations and accepts
 // each key once; Fail can simulate an uncertain timeout after the effect.

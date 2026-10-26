@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
+	"github.com/pavlith/arc/internal/testdb"
 	"github.com/pavlith/arc/sdk"
 	"github.com/pavlith/arc/sdk/bootstrap"
 	"github.com/pavlith/arc/sdk/contract"
@@ -32,7 +33,7 @@ import (
 	"github.com/pavlith/arc/services/core/modules/access"
 	"github.com/pavlith/arc/services/core/modules/fabric"
 	"github.com/pavlith/arc/services/core/modules/identity"
-	"github.com/pavlith/arc/services/gate/modules/http"
+	gate "github.com/pavlith/arc/services/gate/modules/http"
 	notifyservice "github.com/pavlith/arc/services/notify"
 	notifyv1 "github.com/pavlith/arc/services/notify/api/v1"
 	"github.com/pavlith/arc/services/notify/modules/delivery"
@@ -40,6 +41,7 @@ import (
 	taskservice "github.com/pavlith/arc/services/task"
 	taskv1 "github.com/pavlith/arc/services/task/api/v1"
 	tasks "github.com/pavlith/arc/services/task/modules/tasks"
+	"gorm.io/gorm"
 )
 
 func key(v byte) ed25519.PrivateKey { return ed25519.NewKeyFromSeed(bytes.Repeat([]byte{v}, 32)) }
@@ -53,8 +55,7 @@ func approval(k ed25519.PrivateKey, v access.Approval) access.Approved {
 	return access.Approved{Payload: b, Signature: s}
 }
 func TestM006(t *testing.T) {
-	dsn := os.Getenv("ARC_TASK_TEST_DSN")
-	if dsn == "" {
+	if os.Getenv("ARC_DOMAIN_BIN_DIR") == "" {
 		t.Skip("run scripts/test-m0-06.sh")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
@@ -65,30 +66,23 @@ func TestM006(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
-	open := func(role string) *sql.DB {
-		d, e := sql.Open("pgx", strings.Replace(dsn, "user=arc_core", "user="+role, 1))
-		must(e)
-		t.Cleanup(func() { d.Close() })
-		d.SetMaxOpenConns(16)
-		return d
-	}
-	db, tdb, ndb, migrator := open("arc_core"), open("arc_task"), open("arc_notify"), open("arc_migrator")
+	coreDB, db := testdb.Open(t, "core")
+	taskDB, tdb := testdb.Open(t, "task")
+	notifyDB, ndb := testdb.Open(t, "notify")
 	for _, d := range []*sql.DB{tdb, ndb} {
-		for _, table := range []string{"identity.users", "access.grants", "fabric.contracts"} {
+		for _, table := range []string{"identity_users", "access_grants", "fabric_contracts"} {
 			var n int
-			if d.QueryRow(`SELECT count(*) FROM `+table).Scan(&n) == nil {
-				t.Fatal("domain role read Core", table)
+			if d.QueryRow("SELECT count(*) FROM "+table).Scan(&n) == nil {
+				t.Fatal("domain database contains Core table", table)
 			}
 		}
 	}
-	if _, e := tdb.Exec(`SELECT * FROM notify.notifications`); e == nil {
-		t.Fatal("cross-owner SQL allowed")
+	if _, e := tdb.Exec("SELECT * FROM notifications"); e == nil {
+		t.Fatal("Task contains Notify table")
 	}
-	if _, e := ndb.Exec(`UPDATE notify.subscriptions SET active=false`); e == nil {
-		t.Fatal("consumer can change trusted addressing")
-	}
+	var e error
 	operator, coreKey, gateKey, taskKey, notifyKey, trust := key(61), key(62), key(63), key(64), key(65), key(66)
-	id := &identity.Core{DB: db, PrivateKey: coreKey, SigningKid: "m006-core-key"}
+	id := &identity.Core{GormDB: coreDB, PrivateKey: coreKey, SigningKid: "m006-core-key"}
 	must(id.PublishSigningKey(ctx, time.Now().Add(time.Hour)))
 	owner, _, e := id.BootstrapUser(ctx, "proof-owner@example.test", "proof fixture password")
 	must(e)
@@ -107,7 +101,7 @@ func TestM006(t *testing.T) {
 	baseline := access.Approval{AdminUsers: []string{owner}, Deployments: []access.Deployment{{Definition: "gate", Instance: "m006-gate"}, {Definition: "task", Instance: "m006-task"}, {Definition: "notify", Instance: "m006-notify"}}}
 	static, e := access.NewContracts(operator.Public().(ed25519.PublicKey), []access.Approved{approval(operator, baseline)})
 	must(e)
-	acl := &access.Core{DB: db, Identity: id, Contracts: static, Domain: access.ReceiptVerifier{Keys: id.Verifier().Keys}}
+	acl := &access.Core{GormDB: coreDB, Identity: id, Contracts: static, Domain: access.ReceiptVerifier{Keys: id.Verifier().Keys}}
 	id.Policy = acl
 	gateID, e := id.RegisterService(ctx, session, "gate", "m006-gate")
 	must(e)
@@ -131,7 +125,7 @@ func TestM006(t *testing.T) {
 		}
 	}
 
-	f := &fabric.Core{DB: db, Identity: id, ApprovalKey: operator.Public().(ed25519.PublicKey), Bootstrap: []access.Approved{approval(operator, baseline)}, SnapshotKey: coreKey, SnapshotKid: id.SigningKid, RouteTrustKey: trust}
+	f := &fabric.Core{GormDB: coreDB, Identity: id, ApprovalKey: operator.Public().(ed25519.PublicKey), Bootstrap: []access.Approved{approval(operator, baseline)}, SnapshotKey: coreKey, SnapshotKid: id.SigningKid, RouteTrustKey: trust}
 	acl.ContractSource = f
 	dir := os.Getenv("ARC_IDENTITY_NATS_SECRETS")
 	cfg := func(name, seed string) sdk.Config {
@@ -200,7 +194,7 @@ func TestM006(t *testing.T) {
 	subscription := fabric.EventSubscription{Provider: provider, Digest: tm.Digest, Subject: tasks.Created, Durable: notifyinbox.Durable}
 	install(notifyv1.Artifact(), consumer, "m006-notify", []fabric.EventSubscription{subscription})
 	// Provision roots through the real Reserve/domain receipt/Activate protocol.
-	domain := &tasks.Service{DB: tdb, Contract: tm}
+	domain := &tasks.Service{GormDB: taskDB, Contract: tm}
 	accessContext := func(workspace, op string) context.Context {
 		source := tasks.Create
 		if strings.HasPrefix(op, "grants.") {
@@ -245,7 +239,7 @@ func TestM006(t *testing.T) {
 		_, e = (&access.Client{RPC: rc}).AddGrant(grantCtx("grants.add"), access.GrantRequest{ResourceID: scope.RootID, PrincipalKind: "role", PrincipalID: "member", Action: action})
 		must(e)
 	}
-	_, e = migrator.Exec(`INSERT INTO notify.subscriptions(workspace_id,acl_root_id,recipient_user_id) VALUES($1,$2,$3)`, workspace, scope.RootID, owner)
+	_, e = ndb.Exec(`INSERT INTO subscriptions(workspace_id,acl_root_id,recipient_user_id) VALUES(?,?,?)`, workspace, scope.RootID, owner)
 	must(e)
 	// Dedicated credentials are denied cross-service subscriptions/publications.
 	taskNC, e := sdk.Connect(ctx, cfg("m006-task-fixture", "nats-task.seed"))
@@ -295,9 +289,11 @@ func TestM006(t *testing.T) {
 	start := func(kind, account, kid string, k ed25519.PrivateKey, sub fabric.EventSubscription) func() {
 		keyFile := filepath.Join(confDir, kind+".seed")
 		must(os.WriteFile(keyFile, k.Seed(), 0600))
-		dsnFile := filepath.Join(confDir, kind+".dsn")
-		must(os.WriteFile(dsnFile, []byte(strings.Replace(dsn, "user=arc_core", "user=arc_"+kind, 1)), 0600))
-		base := bootstrap.Config{NATS: cfg("m006-"+kind, "nats-"+kind+".seed"), DSNFile: dsnFile, ServiceID: account, Kid: kid, KeyFile: keyFile, CoreKeyFile: coreFile, Instance: "m006-" + kind}
+		path := testdb.Path(t, tdb)
+		if kind == "notify" {
+			path = testdb.Path(t, ndb)
+		}
+		base := bootstrap.Config{NATS: cfg("m006-"+kind, "nats-"+kind+".seed"), SQLitePath: path, ServiceID: account, Kid: kid, KeyFile: keyFile, CoreKeyFile: coreFile, Instance: "m006-" + kind}
 		var config any = taskservice.BootstrapConfig{Config: base}
 		if kind == "notify" {
 			config = notifyservice.BootstrapConfig{Config: base, Subscription: sub}
@@ -308,7 +304,7 @@ func TestM006(t *testing.T) {
 		must(e)
 		cmd.Stdout = logFile
 		cmd.Stderr = logFile
-		processStarted := time.Now()
+		processStarted := time.Now().UTC()
 		must(cmd.Start())
 		done := make(chan error, 1)
 		go func() { done <- cmd.Wait() }()
@@ -317,7 +313,7 @@ func TestM006(t *testing.T) {
 		t.Cleanup(stop)
 		eventually(t, func() bool {
 			var ready bool
-			_ = db.QueryRow(`SELECT ready AND observed_at>$2 FROM fabric.instances WHERE instance_id=$1`, base.Instance, processStarted).Scan(&ready)
+			_ = db.QueryRow(`SELECT ready AND observed_at>? FROM fabric_instances WHERE instance_id=?`, processStarted, base.Instance).Scan(&ready)
 			return ready
 		}, func() string {
 			b, _ := os.ReadFile(logFile.Name())
@@ -402,7 +398,7 @@ func TestM006(t *testing.T) {
 		must(db.QueryRow(query, args...).Scan(&n))
 		return n
 	}
-	if count(tdb, `SELECT count(*) FROM task.audit WHERE actor=$1 AND request_id='m006-request' AND traceparent<>''`, owner) != 1 {
+	if count(tdb, `SELECT count(*) FROM audit WHERE actor=? AND request_id='m006-request' AND traceparent<>''`, owner) != 1 {
 		t.Fatal("audit propagation")
 	}
 	status, b = request(client, "GET", base+"/"+task.ID, "", token, "")
@@ -419,7 +415,7 @@ func TestM006(t *testing.T) {
 	}
 	var replay tasks.Task
 	must(json.Unmarshal(b, &replay))
-	if replay.ID != task.ID || count(tdb, `SELECT count(*) FROM task.tasks`) != taskCount {
+	if replay.ID != task.ID || count(tdb, `SELECT count(*) FROM tasks`) != taskCount {
 		t.Fatal("command replay duplicated task")
 	}
 	status, b = request(client, "POST", base, `{"title":"Changed"}`, token, "m006-create")
@@ -428,9 +424,9 @@ func TestM006(t *testing.T) {
 	}
 	// Consumer absent: committed event remains in JetStream until its first delivery.
 	eventually(t, func() bool {
-		return count(tdb, `SELECT count(*) FROM task.outbox WHERE published_at IS NOT NULL`) == 1
+		return count(tdb, `SELECT count(*) FROM outbox WHERE published_at IS NOT NULL`) == 1
 	}, nil)
-	if count(ndb, `SELECT count(*) FROM notify.notifications`) != 0 {
+	if count(ndb, `SELECT count(*) FROM notifications`) != 0 {
 		t.Fatal("effect before consumer")
 	}
 	stopNotify := start("notify", consumer, "m006-notify-key", notifyKey, subscription)
@@ -451,16 +447,16 @@ func TestM006(t *testing.T) {
 	}
 	must(notifyRegistry.EventPermit(ctx, nr, subscription))
 
-	eventually(t, func() bool { return count(ndb, `SELECT count(*) FROM notify.notifications`) == 1 }, func() string {
+	eventually(t, func() bool { return count(ndb, `SELECT count(*) FROM notifications`) == 1 }, func() string {
 		b, _ := os.ReadFile(filepath.Join(confDir, "notify.log"))
 		info, _ := js.ConsumerInfo("TASK", notifyinbox.Durable)
 		return fmt.Sprintf("%s consumer=%+v", b, info)
 	})
 	verticalLatency := time.Since(begun)
 	eventually(t, func() bool {
-		return count(ndb, `SELECT count(*) FROM notify.delivery_intents WHERE delivered_at IS NOT NULL`) == 1
+		return count(ndb, `SELECT count(*) FROM delivery_intents WHERE delivered_at IS NOT NULL`) == 1
 	}, nil)
-	if count(ndb, `SELECT count(*) FROM notify.inbox`) != 1 {
+	if count(ndb, `SELECT count(*) FROM inbox`) != 1 {
 		t.Fatal("inbox missing")
 	}
 	t.Logf("login → Gate → Tasks → outbox → JetStream → notification: %s (includes delayed consumer start)", verticalLatency)
@@ -480,7 +476,7 @@ func TestM006(t *testing.T) {
 	taskCount++
 	notificationCount++
 	eventually(t, func() bool {
-		return count(ndb, `SELECT count(*) FROM notify.delivery_intents WHERE delivered_at IS NOT NULL`) == notificationCount
+		return count(ndb, `SELECT count(*) FROM delivery_intents WHERE delivered_at IS NOT NULL`) == notificationCount
 	}, nil)
 	countsMu.Lock()
 	t.Logf("warm create → notification + fake intent delivery latency=%s; observed Core RPC including background approval polls=%v; request path=5 actor RPC + 1 Fabric lease RPC", time.Since(warmStart), counts)
@@ -500,25 +496,25 @@ func TestM006(t *testing.T) {
 		notificationCount++
 		eventually(t, func() bool {
 			var eventID string
-			if e := tdb.QueryRow(`SELECT event_id FROM task.outbox WHERE envelope->>'aggregate_id'=$1`, created.ID).Scan(&eventID); e != nil {
+			if e := tdb.QueryRow(`SELECT event_id FROM outbox WHERE envelope->>'aggregate_id'=?`, created.ID).Scan(&eventID); e != nil {
 				return false
 			}
-			return count(ndb, `SELECT count(*) FROM notify.notifications n JOIN notify.delivery_intents d ON d.notification_id=n.id WHERE n.event_id=$1 AND d.delivered_at IS NOT NULL`, eventID) == 1
+			return count(ndb, `SELECT count(*) FROM notifications n JOIN delivery_intents d ON d.notification_id=n.id WHERE n.event_id=? AND d.delivered_at IS NOT NULL`, eventID) == 1
 		}, nil)
 		latencies = append(latencies, time.Since(started))
 	}
 	sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
 	percentile := func(n int) time.Duration { return latencies[(len(latencies)*n+99)/100-1] }
 	t.Logf("running-consumer create -> notification -> fake delivery: samples=%d p50=%s p95=%s max=%s (25ms observation polling, 100ms worker ticks; not a load benchmark)", len(latencies), percentile(50), percentile(95), latencies[len(latencies)-1])
-	if count(tdb, `SELECT count(*) FROM task.tasks`) != taskCount || count(ndb, `SELECT count(*) FROM notify.delivery_intents WHERE delivered_at IS NOT NULL`) != notificationCount {
+	if count(tdb, `SELECT count(*) FROM tasks`) != taskCount || count(ndb, `SELECT count(*) FROM delivery_intents WHERE delivered_at IS NOT NULL`) != notificationCount {
 		t.Fatal("running-consumer samples lost an effect")
 	}
 	t.Run("missing-permit-fail-closed", func(t *testing.T) {
-		blocked := events.Delivery{Store: events.Store{DB: ndb, Schema: "notify"}, Contract: tm}
-		if e := blocked.Pull(ctx, js, tasks.Created, notifyinbox.Durable, (&notifyinbox.Service{DB: ndb}).Effect); !errors.Is(e, security.ErrUnavailable) {
+		blocked := events.Delivery{Store: events.Store{DB: notifyDB}, Contract: tm}
+		if e := blocked.Pull(ctx, js, tasks.Created, notifyinbox.Durable, (&notifyinbox.Service{GormDB: notifyDB}).Effect); !errors.Is(e, security.ErrUnavailable) {
 			t.Fatalf("pull without current approval: %v", e)
 		}
-		if _, e := (events.Delivery{Store: events.Store{DB: tdb, Schema: "task"}, Contract: tm}).PublishBatch(ctx, js, 10); !errors.Is(e, security.ErrUnavailable) {
+		if _, e := (events.Delivery{Store: events.Store{DB: taskDB}, Contract: tm}).PublishBatch(ctx, js, 10); !errors.Is(e, security.ErrUnavailable) {
 			t.Fatalf("publish without current approval: %v", e)
 		}
 	})
@@ -601,28 +597,29 @@ func TestM006(t *testing.T) {
 				t.Fatalf("forged %s accepted: %s", kind, reply.Data)
 			}
 		}
-		if count(tdb, `SELECT count(*) FROM task.tasks`) != taskCount {
+		if count(tdb, `SELECT count(*) FROM tasks`) != taskCount {
 			t.Fatal("security failure mutated tasks")
 		}
 	})
 	t.Run("outbox-rollback", func(t *testing.T) {
-		_, e = migrator.Exec(`ALTER TABLE task.outbox ADD CONSTRAINT reject_fixture CHECK(false) NOT VALID`)
+		_, e = tdb.Exec(`CREATE TRIGGER reject_fixture BEFORE INSERT ON outbox BEGIN SELECT RAISE(ABORT,'fixture outbox failure'); END`)
 		must(e)
+		t.Cleanup(func() { _, _ = tdb.Exec(`DROP TRIGGER IF EXISTS reject_fixture`) })
 		status, b := request(client, "POST", base, `{"title":"rollback"}`, token, "rollback-key")
 		if status != 503 {
 			t.Fatalf("rollback %d %s", status, b)
 		}
-		if count(tdb, `SELECT count(*) FROM task.tasks`) != taskCount || count(tdb, `SELECT count(*) FROM task.command_results WHERE operation='task.task.create'`) != taskCount {
+		if count(tdb, `SELECT count(*) FROM tasks`) != taskCount || count(tdb, `SELECT count(*) FROM command_results WHERE operation=?`, tasks.Create) != taskCount {
 			t.Fatal("rollback left partial domain/command effect")
 		}
-		_, e = migrator.Exec(`ALTER TABLE task.outbox DROP CONSTRAINT reject_fixture`)
+		_, e = tdb.Exec(`DROP TRIGGER reject_fixture`)
 		must(e)
 	})
 	t.Run("inbox-replay-rollback-concurrent", func(t *testing.T) {
 		var raw []byte
-		must(tdb.QueryRow(`SELECT envelope FROM task.outbox`).Scan(&raw))
-		notify := &notifyinbox.Service{DB: ndb}
-		store := events.Store{DB: ndb, Schema: "notify"}
+		must(tdb.QueryRow(`SELECT envelope FROM outbox`).Scan(&raw))
+		notify := &notifyinbox.Service{GormDB: notifyDB}
+		store := events.Store{DB: notifyDB}
 		var wg sync.WaitGroup
 		errs := make(chan error, 12)
 		for i := 0; i < 12; i++ {
@@ -637,7 +634,7 @@ func TestM006(t *testing.T) {
 		for e := range errs {
 			must(e)
 		}
-		if count(ndb, `SELECT count(*) FROM notify.notifications`) != notificationCount {
+		if count(ndb, `SELECT count(*) FROM notifications`) != notificationCount {
 			t.Fatal("concurrent replay duplicated notification")
 		}
 		// Same event id with different payload is rejected, not silently deduplicated.
@@ -650,7 +647,7 @@ func TestM006(t *testing.T) {
 		}
 		ev.ID = tasks.NewID()
 		changed, _ = json.Marshal(ev)
-		e := store.Consume(ctx, notifyinbox.Durable, tasks.Created, tm, changed, func(c context.Context, tx *sql.Tx, v events.Envelope) error {
+		e := store.Consume(ctx, notifyinbox.Durable, tasks.Created, tm, changed, func(c context.Context, tx *gorm.DB, v events.Envelope) error {
 			if e := notify.Effect(c, tx, v); e != nil {
 				return e
 			}
@@ -659,7 +656,7 @@ func TestM006(t *testing.T) {
 		if e == nil {
 			t.Fatal("handler failure ignored")
 		}
-		if count(ndb, `SELECT count(*) FROM notify.inbox WHERE event_id=$1`, ev.ID) != 0 || count(ndb, `SELECT count(*) FROM notify.notifications WHERE event_id=$1`, ev.ID) != 0 {
+		if count(ndb, `SELECT count(*) FROM inbox WHERE event_id=?`, ev.ID) != 0 || count(ndb, `SELECT count(*) FROM notifications WHERE event_id=?`, ev.ID) != 0 {
 			t.Fatal("inbox rollback left effect")
 		}
 		must(store.Consume(ctx, notifyinbox.Durable, tasks.Created, tm, changed, notify.Effect))
@@ -671,13 +668,13 @@ func TestM006(t *testing.T) {
 			info, e := js.ConsumerInfo("TASK", notifyinbox.Durable)
 			return e == nil && info.NumAckPending == 0 && info.NumPending == 0
 		}, nil)
-		if count(ndb, `SELECT count(*) FROM notify.notifications`) != notificationCount {
+		if count(ndb, `SELECT count(*) FROM notifications`) != notificationCount {
 			t.Fatal("JetStream replay duplicated notification")
 		}
 	})
 	t.Run("revoked-consumer-fail-closed", func(t *testing.T) {
-		beforeInbox := count(ndb, `SELECT count(*) FROM notify.inbox`)
-		beforeEffects := count(ndb, `SELECT count(*) FROM notify.notifications`)
+		beforeInbox := count(ndb, `SELECT count(*) FROM inbox`)
+		beforeEffects := count(ndb, `SELECT count(*) FROM notifications`)
 		revocation, sig := signed(operator, fabric.Revocation{Digest: nm.Digest, Revoke: true})
 		if e := f.Revoke(ctx, revocation, sig); e != nil {
 			t.Fatal(e)
@@ -698,12 +695,12 @@ func TestM006(t *testing.T) {
 		}
 		eventually(t, func() bool {
 			var published bool
-			_ = tdb.QueryRow(`SELECT published_at IS NOT NULL FROM task.outbox WHERE envelope->>'aggregate_id'=$1`, withheld.ID).Scan(&published)
+			_ = tdb.QueryRow(`SELECT published_at IS NOT NULL FROM outbox WHERE envelope->>'aggregate_id'=?`, withheld.ID).Scan(&published)
 			return published
 		}, nil)
 		// The running worker must not process or ACK a newly published event.
 		time.Sleep(500 * time.Millisecond)
-		if count(ndb, `SELECT count(*) FROM notify.inbox`) != beforeInbox || count(ndb, `SELECT count(*) FROM notify.notifications`) != beforeEffects {
+		if count(ndb, `SELECT count(*) FROM inbox`) != beforeInbox || count(ndb, `SELECT count(*) FROM notifications`) != beforeEffects {
 			t.Fatal("revoked consumer committed a delivery effect")
 		}
 		info, e := js.ConsumerInfo("TASK", notifyinbox.Durable)
@@ -716,8 +713,8 @@ func TestM006(t *testing.T) {
 		// Rows are already durable and the adapter is independently restartable.
 		stopNotify()
 		fake := &delivery.FakeProvider{Fail: true}
-		notify := &delivery.Service{DB: ndb}
-		_, e = migrator.Exec(`UPDATE notify.delivery_intents SET delivered_at=NULL`)
+		notify := &delivery.Service{GormDB: notifyDB}
+		_, e = ndb.Exec(`UPDATE delivery_intents SET delivered_at=NULL`)
 		must(e)
 		_, _ = notify.Deliver(ctx, fake)
 		_, e = notify.Deliver(ctx, fake)
@@ -742,9 +739,9 @@ func TestM006(t *testing.T) {
 	t.Run("publisher-unavailable", func(t *testing.T) {
 		stopTasks()
 		// Requeue the committed outbox and prove retry keeps its event identity.
-		_, e = migrator.Exec(`UPDATE task.outbox SET published_at=NULL`)
+		_, e = tdb.Exec(`UPDATE outbox SET published_at=NULL`)
 		must(e)
-		delivery := events.Delivery{Store: events.Store{DB: tdb, Schema: "task"}, Contract: tm, Permit: func(c context.Context) error {
+		delivery := events.Delivery{Store: events.Store{DB: taskDB}, Contract: tm, Permit: func(c context.Context) error {
 			return (&fabric.Client{NC: taskNC, Account: provider, Kid: taskClient.Kid, Key: taskKey, CoreKey: coreKey.Public().(ed25519.PublicKey)}).Check(c, sdk.Registration{Service: "task", Instance: "m006-task", Build: tm.Manifest.Service.BuildVersion, Digest: tm.Digest})
 		}}
 		closed, e := sdk.Connect(ctx, cfg("closed", "nats-jetstream-admin.seed"))
@@ -755,7 +752,7 @@ func TestM006(t *testing.T) {
 		if _, e = delivery.PublishBatch(ctx, closedJS, 10); e == nil {
 			t.Fatal("closed publisher succeeded")
 		}
-		if count(tdb, `SELECT count(*) FROM task.outbox WHERE published_at IS NULL`) != taskCount {
+		if count(tdb, `SELECT count(*) FROM outbox WHERE published_at IS NULL`) != taskCount {
 			t.Fatal("event lost on publish failure")
 		}
 		// More than one publisher batch can be pending after the latency samples.
@@ -764,7 +761,7 @@ func TestM006(t *testing.T) {
 		if n != taskCount {
 			t.Fatal("publisher retry did not recover")
 		}
-		if count(tdb, `SELECT count(*) FROM task.tasks`) != taskCount {
+		if count(tdb, `SELECT count(*) FROM tasks`) != taskCount {
 			t.Fatal("publish affected committed task")
 		}
 	})
@@ -789,7 +786,7 @@ func TestM006(t *testing.T) {
 		if s != 503 {
 			t.Fatalf("Identity unavailable %d %s", s, b)
 		}
-		if count(tdb, `SELECT count(*) FROM task.tasks`) != taskCount {
+		if count(tdb, `SELECT count(*) FROM tasks`) != taskCount {
 			t.Fatal("Core outage mutated task")
 		}
 	})

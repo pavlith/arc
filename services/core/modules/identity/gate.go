@@ -22,7 +22,7 @@ func (c *Core) Authenticate(ctx context.Context, a Authentication) (Session, err
 			return Session{}, e
 		}
 		var s Session
-		e = c.DB.QueryRowContext(ctx, `SELECT id,user_id,expires_at FROM identity.sessions WHERE id::text=$1 AND user_id::text=$2`, cl.SessionID, strings.TrimPrefix(cl.Subject, "user:")).Scan(&s.ID, &s.UserID, &s.ExpiresAt)
+		e = c.db(ctx).WithContext(ctx).Raw(`SELECT id,user_id,expires_at FROM identity_sessions WHERE id=? AND user_id=?`, cl.SessionID, strings.TrimPrefix(cl.Subject, "user:")).Row().Scan(&s.ID, &s.UserID, &s.ExpiresAt)
 		return s, keyError(e)
 	}
 	if a.RequireCSRF {
@@ -44,7 +44,7 @@ func (c *Core) RefreshBrowser(ctx context.Context, session UserSession, token st
 			return LoginResult{}, e
 		}
 		var sid string
-		e = c.DB.QueryRowContext(ctx, `SELECT f.session_id FROM identity.refresh_tokens t JOIN identity.refresh_families f ON f.id=t.family_id WHERE t.token_hash=$1`, hash(token)).Scan(&sid)
+		e = c.db(ctx).WithContext(ctx).Raw(`SELECT f.session_id FROM identity_refresh_tokens t JOIN identity_refresh_families f ON f.id=t.family_id WHERE t.token_hash=?`, hash(token)).Row().Scan(&sid)
 		if e != nil {
 			return LoginResult{}, keyError(e)
 		}

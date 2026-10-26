@@ -6,19 +6,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 var ErrInvalid = errors.New("database: invalid configuration")
 
 // Open opens one service-owned, file-backed SQLite database. The caller must
 // choose a unique absolute path for its service and owns the returned handle.
-// MaxOpenConns(1) guarantees connection-local SQLite PRAGMAs on every operation.
+// Driver options reapply connection-local PRAGMAs after reconnects as well.
 // SQLite WAL supports readers alongside one writer; it does not support multiple
 // concurrent writers, so consumers must retry transient SQLITE_BUSY failures.
 func Open(ctx context.Context, path string) (*gorm.DB, error) {
@@ -38,7 +42,13 @@ func Open(ctx context.Context, path string) (*gorm.DB, error) {
 	if err = f.Close(); err != nil {
 		return nil, fmt.Errorf("database: close file: %w", err)
 	}
-	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
+	dsn := (&url.URL{Scheme: "file", Path: path}).String() + "?_foreign_keys=on&_busy_timeout=10000&_journal_mode=WAL"
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
+		Logger: logger.New(log.New(os.Stderr, "", log.LstdFlags), logger.Config{
+			SlowThreshold: time.Second, LogLevel: logger.Warn,
+			IgnoreRecordNotFoundError: true, ParameterizedQueries: true,
+		}),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("database: initialize sqlite: %w", err)
 	}

@@ -2,7 +2,6 @@ package sdk
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -11,7 +10,6 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/pavlith/arc/sdk/contract"
-	"github.com/pavlith/arc/sdk/events"
 	"github.com/pavlith/arc/sdk/rpc"
 	"github.com/pavlith/arc/sdk/security"
 )
@@ -70,15 +68,6 @@ func Handle[Req, Res any](app *App, id string, h rpc.Handler[Req, Res]) error {
 	return bindHandle(app, id, h, false)
 }
 
-// HandleCommand requires the domain transaction that owns effects, replay and outbox.
-func HandleCommand[Req, Res any](app *App, id string, store events.Store, h func(context.Context, *sql.Tx, Req) (Res, error)) error {
-	if app == nil || h == nil {
-		return contract.ErrInvalid
-	}
-	return bindHandle(app, id, func(ctx context.Context, q Req) (Res, error) {
-		return events.Command(ctx, store, app.compiled, id, q, h)
-	}, true)
-}
 func bindHandle[Req, Res any](app *App, id string, h rpc.Handler[Req, Res], command bool) error {
 	if app == nil || h == nil {
 		return contract.ErrInvalid

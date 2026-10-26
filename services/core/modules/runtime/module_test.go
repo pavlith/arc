@@ -2,17 +2,17 @@ package runtime_test
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"testing"
 
 	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/core/modules/runtime"
+	"gorm.io/gorm"
 )
 
 func TestRuntimeRefusesUnapprovedDesiredState(t *testing.T) {
-	m := &runtime.Module{DB: &sql.DB{}}
+	m := &runtime.Module{GormDB: &gorm.DB{}}
 	if _, err := m.Put(context.Background(), runtime.Desired{ID: "instance", ServiceName: "task",
 		Replicas: 1, Spec: json.RawMessage(`{"image":"tasks:v1"}`)}, 0); !errors.Is(err, security.ErrUnavailable) {
 		t.Fatalf("missing online auth allowed desired state: %v", err)
@@ -34,7 +34,7 @@ func TestRuntimeRefusesUnapprovedDesiredState(t *testing.T) {
 }
 
 func TestRuntimeRejectsInvalidDeploymentBeforeDatabase(t *testing.T) {
-	m := &runtime.Module{DB: &sql.DB{}, Authorize: func(context.Context, string, string) error {
+	m := &runtime.Module{GormDB: &gorm.DB{}, Authorize: func(context.Context, string, string) error {
 		t.Fatal("invalid request reached authorization")
 		return nil
 	}}

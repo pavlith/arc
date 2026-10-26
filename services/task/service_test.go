@@ -1,7 +1,6 @@
 package task_test
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/pavlith/arc/sdk/contract"
@@ -35,11 +34,7 @@ func TestTaskNewFailsClosedWithoutCredentials(t *testing.T) {
 	}
 }
 func TestTaskMigrationsOwnedLocally(t *testing.T) {
-	b, err := task.Migrations.ReadFile("migrations/000001_task.up.sql")
-	if err != nil || len(b) == 0 {
-		t.Fatal("missing service-local migration", err)
-	}
-	if strings.Contains(string(b), "CREATE TABLE notifications.") {
-		t.Fatal("cross-owner schema migration")
+	if len(task.Migrations()) == 0 {
+		t.Fatal("missing owner migrations")
 	}
 }

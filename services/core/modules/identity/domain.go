@@ -8,11 +8,12 @@ import (
 	"time"
 
 	"github.com/pavlith/arc/sdk/security"
+	"gorm.io/gorm"
 )
 
-func (c *Core) lockSession(ctx context.Context, t *sql.Tx, s Session) error {
+func (c *Core) lockSession(ctx context.Context, t *gorm.DB, s Session) error {
 	var ok bool
-	e := t.QueryRowContext(ctx, `SELECT true FROM identity.sessions s JOIN identity.users u ON u.id=s.user_id WHERE s.id=$1 AND s.revoked_at IS NULL AND s.expires_at>$2 AND u.status='active' FOR SHARE OF s,u`, s.ID, c.now()).Scan(&ok)
+	e := t.WithContext(ctx).Raw(`SELECT true FROM identity_sessions s JOIN identity_users u ON u.id=s.user_id WHERE s.id=? AND s.revoked_at IS NULL AND s.expires_at>? AND u.status='active'`, s.ID, c.now()).Row().Scan(&ok)
 	return keyError(e)
 }
 func (c *Core) CreateWorkspace(ctx context.Context, auth UserSession, name string) (string, error) {
@@ -27,27 +28,27 @@ func (c *Core) CreateWorkspace(ctx context.Context, auth UserSession, name strin
 	if e != nil {
 		return "", e
 	}
-	e = c.tx(ctx, func(t *sql.Tx) error {
+	e = c.tx(ctx, func(t *gorm.DB) error {
 		if e := c.lockSession(ctx, t, s); e != nil {
 			return e
 		}
-		if _, e := t.ExecContext(ctx, `INSERT INTO identity.workspaces(id,name) VALUES($1,$2)`, id, name); e != nil {
+		if e := t.WithContext(ctx).Exec(`INSERT INTO identity_workspaces(id,name) VALUES( ?,?)`, id, name).Error; e != nil {
 			return e
 		}
-		if _, e := t.ExecContext(ctx, `INSERT INTO identity.memberships(workspace_id,user_id,role) VALUES($1,$2,'owner')`, id, s.UserID); e != nil {
+		if e := t.WithContext(ctx).Exec(`INSERT INTO identity_memberships(workspace_id,user_id,role) VALUES( ?,?,'owner')`, id, s.UserID).Error; e != nil {
 			return e
 		}
 		return audit(ctx, t, "user:"+s.UserID, "workspaces.create", id, "ok")
 	})
 	return id, e
 }
-func workspaceRole(ctx context.Context, t *sql.Tx, workspace, user string) (string, error) {
+func workspaceRole(ctx context.Context, t *gorm.DB, workspace, user string) (string, error) {
 	var revision int64
-	if e := t.QueryRowContext(ctx, `SELECT revision FROM identity.workspaces WHERE id::text=$1 FOR UPDATE`, workspace).Scan(&revision); e != nil {
+	if e := t.WithContext(ctx).Raw(`SELECT revision FROM identity_workspaces WHERE id=?`, workspace).Row().Scan(&revision); e != nil {
 		return "", keyError(e)
 	}
 	var role string
-	e := t.QueryRowContext(ctx, `SELECT role FROM identity.memberships WHERE workspace_id::text=$1 AND user_id::text=$2 AND revoked_at IS NULL`, workspace, user).Scan(&role)
+	e := t.WithContext(ctx).Raw(`SELECT role FROM identity_memberships WHERE workspace_id=? AND user_id=? AND revoked_at IS NULL`, workspace, user).Row().Scan(&role)
 	return role, keyError(e)
 }
 func (c *Core) SetMembership(ctx context.Context, auth UserSession, workspace, user, role string, revoke bool) error {
@@ -58,7 +59,7 @@ func (c *Core) SetMembership(ctx context.Context, auth UserSession, workspace, u
 	if role != "owner" && role != "admin" && role != "member" && role != "guest" {
 		return ErrDenied
 	}
-	return c.tx(ctx, func(t *sql.Tx) error {
+	return c.tx(ctx, func(t *gorm.DB) error {
 		if e := c.lockSession(ctx, t, s); e != nil {
 			return e
 		}
@@ -70,7 +71,7 @@ func (c *Core) SetMembership(ctx context.Context, auth UserSession, workspace, u
 			return ErrDenied
 		}
 		var previous string
-		e = t.QueryRowContext(ctx, `SELECT role FROM identity.memberships WHERE workspace_id::text=$1 AND user_id::text=$2 AND revoked_at IS NULL`, workspace, user).Scan(&previous)
+		e = t.WithContext(ctx).Raw(`SELECT role FROM identity_memberships WHERE workspace_id=? AND user_id=? AND revoked_at IS NULL`, workspace, user).Row().Scan(&previous)
 		if e != nil && e != sql.ErrNoRows {
 			return e
 		}
@@ -79,7 +80,7 @@ func (c *Core) SetMembership(ctx context.Context, auth UserSession, workspace, u
 		}
 		if previous == "owner" && (revoke || role != "owner") {
 			var owners int
-			if e = t.QueryRowContext(ctx, `SELECT count(*) FROM identity.memberships WHERE workspace_id::text=$1 AND role='owner' AND revoked_at IS NULL`, workspace).Scan(&owners); e != nil {
+			if e = t.WithContext(ctx).Raw(`SELECT count(*) FROM identity_memberships WHERE workspace_id=? AND role='owner' AND revoked_at IS NULL`, workspace).Row().Scan(&owners); e != nil {
 				return e
 			}
 			if owners <= 1 {
@@ -87,18 +88,18 @@ func (c *Core) SetMembership(ctx context.Context, auth UserSession, workspace, u
 			}
 		}
 		if revoke {
-			if _, e = t.ExecContext(ctx, `UPDATE identity.memberships SET revoked_at=$3 WHERE workspace_id::text=$1 AND user_id::text=$2`, workspace, user, c.now()); e != nil {
+			if e = t.WithContext(ctx).Exec(`UPDATE identity_memberships SET revoked_at=? WHERE workspace_id=? AND user_id=?`, c.now(), workspace, user).Error; e != nil {
 				return e
 			}
-			if _, e = t.ExecContext(ctx, `DELETE FROM identity.group_members WHERE workspace_id::text=$1 AND user_id::text=$2`, workspace, user); e != nil {
+			if e = t.WithContext(ctx).Exec(`DELETE FROM identity_group_members WHERE workspace_id=? AND user_id=?`, workspace, user).Error; e != nil {
 				return e
 			}
 		} else {
-			if _, e = t.ExecContext(ctx, `INSERT INTO identity.memberships(workspace_id,user_id,role) VALUES($1,$2,$3) ON CONFLICT(workspace_id,user_id) DO UPDATE SET role=$3,revoked_at=NULL`, workspace, user, role); e != nil {
+			if e = t.WithContext(ctx).Exec(`INSERT INTO identity_memberships(workspace_id,user_id,role) VALUES( ?,?,?) ON CONFLICT(workspace_id,user_id) DO UPDATE SET role=?,revoked_at=NULL`, workspace, user, role, role).Error; e != nil {
 				return e
 			}
 		}
-		if _, e = t.ExecContext(ctx, `UPDATE identity.workspaces SET revision=revision+1 WHERE id::text=$1`, workspace); e != nil {
+		if e = t.WithContext(ctx).Exec(`UPDATE identity_workspaces SET revision=revision+1 WHERE id=?`, workspace).Error; e != nil {
 			return e
 		}
 		return audit(ctx, t, "user:"+s.UserID, "memberships.change", workspace+":"+user, "ok")
@@ -113,7 +114,7 @@ func (c *Core) CreateGroup(ctx context.Context, auth UserSession, workspace, nam
 	if e != nil {
 		return "", e
 	}
-	e = c.tx(ctx, func(t *sql.Tx) error {
+	e = c.tx(ctx, func(t *gorm.DB) error {
 		if e := c.lockSession(ctx, t, s); e != nil {
 			return e
 		}
@@ -127,7 +128,7 @@ func (c *Core) CreateGroup(ctx context.Context, auth UserSession, workspace, nam
 		if strings.TrimSpace(name) == "" {
 			return ErrDenied
 		}
-		if _, e = t.ExecContext(ctx, `INSERT INTO identity.groups(id,workspace_id,name) VALUES($1,$2,$3)`, id, workspace, name); e != nil {
+		if e = t.WithContext(ctx).Exec(`INSERT INTO identity_groups(id,workspace_id,name) VALUES( ?,?,?)`, id, workspace, name).Error; e != nil {
 			return e
 		}
 		return audit(ctx, t, "user:"+s.UserID, "groups.create", id, "ok")
@@ -139,7 +140,7 @@ func (c *Core) SetGroupMember(ctx context.Context, auth UserSession, workspace, 
 	if e != nil {
 		return e
 	}
-	return c.tx(ctx, func(t *sql.Tx) error {
+	return c.tx(ctx, func(t *gorm.DB) error {
 		if e := c.lockSession(ctx, t, s); e != nil {
 			return e
 		}
@@ -151,22 +152,22 @@ func (c *Core) SetGroupMember(ctx context.Context, auth UserSession, workspace, 
 			return ErrDenied
 		}
 		if remove {
-			_, e = t.ExecContext(ctx, `DELETE FROM identity.group_members WHERE workspace_id::text=$1 AND group_id::text=$2 AND user_id::text=$3`, workspace, group, user)
+			e = t.WithContext(ctx).Exec(`DELETE FROM identity_group_members WHERE workspace_id=? AND group_id=? AND user_id=?`, workspace, group, user).Error
 		} else {
 			var ok bool
-			e = t.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM identity.memberships WHERE workspace_id::text=$1 AND user_id::text=$2 AND revoked_at IS NULL)`, workspace, user).Scan(&ok)
+			e = t.WithContext(ctx).Raw(`SELECT EXISTS(SELECT 1 FROM identity_memberships WHERE workspace_id=? AND user_id=? AND revoked_at IS NULL)`, workspace, user).Row().Scan(&ok)
 			if e != nil {
 				return e
 			}
 			if !ok {
 				return ErrDenied
 			}
-			_, e = t.ExecContext(ctx, `INSERT INTO identity.group_members(workspace_id,group_id,user_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, workspace, group, user)
+			e = t.WithContext(ctx).Exec(`INSERT INTO identity_group_members(workspace_id,group_id,user_id) VALUES( ?,?,?) ON CONFLICT DO NOTHING`, workspace, group, user).Error
 		}
 		if e != nil {
 			return e
 		}
-		if _, e = t.ExecContext(ctx, `UPDATE identity.workspaces SET revision=revision+1 WHERE id::text=$1`, workspace); e != nil {
+		if e = t.WithContext(ctx).Exec(`UPDATE identity_workspaces SET revision=revision+1 WHERE id=?`, workspace).Error; e != nil {
 			return e
 		}
 		return audit(ctx, t, "user:"+s.UserID, "groups.members.change", group+":"+user, "ok")
@@ -195,11 +196,11 @@ func (c *Core) RegisterService(ctx context.Context, auth UserSession, definition
 	if e != nil {
 		return "", e
 	}
-	e = c.tx(ctx, func(t *sql.Tx) error {
+	e = c.tx(ctx, func(t *gorm.DB) error {
 		if e := c.lockSession(ctx, t, s); e != nil {
 			return e
 		}
-		if _, e := t.ExecContext(ctx, `INSERT INTO identity.service_accounts(id,service_definition,deployment) VALUES($1,$2,$3)`, id, definition, deployment); e != nil {
+		if e := t.WithContext(ctx).Exec(`INSERT INTO identity_service_accounts(id,service_definition,deployment) VALUES( ?,?,?)`, id, definition, deployment).Error; e != nil {
 			return e
 		}
 		return audit(ctx, t, "user:"+s.UserID, "service_accounts.register", id, "ok")
@@ -214,18 +215,18 @@ func (c *Core) AddServiceKey(ctx context.Context, auth UserSession, service, kid
 	if len(public) != 32 || kid == "" || reference == "" || !expires.After(c.now()) {
 		return ErrDenied
 	}
-	return c.tx(ctx, func(t *sql.Tx) error {
+	return c.tx(ctx, func(t *gorm.DB) error {
 		if e := c.lockSession(ctx, t, s); e != nil {
 			return e
 		}
 		var disabled sql.NullTime
-		if e := t.QueryRowContext(ctx, `SELECT disabled_at FROM identity.service_accounts WHERE id::text=$1 FOR UPDATE`, service).Scan(&disabled); e != nil {
+		if e := t.WithContext(ctx).Raw(`SELECT disabled_at FROM identity_service_accounts WHERE id=?`, service).Row().Scan(&disabled); e != nil {
 			return keyError(e)
 		}
 		if disabled.Valid {
 			return ErrDenied
 		}
-		if _, e := t.ExecContext(ctx, `INSERT INTO identity.service_credentials(kid,service_account_id,public_key,secret_reference,not_before,expires_at) VALUES($1,$2,$3,$4,$5,$6)`, kid, service, []byte(public), reference, c.now(), expires); e != nil {
+		if e := t.WithContext(ctx).Exec(`INSERT INTO identity_service_credentials(kid,service_account_id,public_key,secret_reference,not_before,expires_at) VALUES( ?,?,?,?,?,?)`, kid, service, []byte(public), reference, c.now(), expires).Error; e != nil {
 			return e
 		}
 		return audit(ctx, t, "user:"+s.UserID, "service_keys.rotate", kid, "ok")
@@ -236,11 +237,11 @@ func (c *Core) DisableService(ctx context.Context, auth UserSession, id string) 
 	if e != nil {
 		return e
 	}
-	return c.tx(ctx, func(t *sql.Tx) error {
+	return c.tx(ctx, func(t *gorm.DB) error {
 		if e := c.lockSession(ctx, t, s); e != nil {
 			return e
 		}
-		if _, e := t.ExecContext(ctx, `UPDATE identity.service_accounts SET disabled_at=$2 WHERE id::text=$1`, id, c.now()); e != nil {
+		if e := t.WithContext(ctx).Exec(`UPDATE identity_service_accounts SET disabled_at=? WHERE id=?`, c.now(), id).Error; e != nil {
 			return e
 		}
 		return audit(ctx, t, "user:"+s.UserID, "service_accounts.disable", id, "ok")
@@ -251,15 +252,15 @@ func (c *Core) RevokeKey(ctx context.Context, auth UserSession, kid string, sign
 	if e != nil {
 		return e
 	}
-	return c.tx(ctx, func(t *sql.Tx) error {
+	return c.tx(ctx, func(t *gorm.DB) error {
 		if e := c.lockSession(ctx, t, s); e != nil {
 			return e
 		}
-		table := "identity.service_credentials"
+		table := "identity_service_credentials"
 		if signing {
-			table = "identity.signing_key_metadata"
+			table = "identity_signing_key_metadata"
 		}
-		if _, e := t.ExecContext(ctx, `UPDATE `+table+` SET revoked_at=$2 WHERE kid=$1`, kid, c.now()); e != nil {
+		if e := t.WithContext(ctx).Exec(`UPDATE `+table+` SET revoked_at=? WHERE kid=?`, c.now(), kid).Error; e != nil {
 			return e
 		}
 		return audit(ctx, t, "user:"+s.UserID, "keys.revoke", kid, "ok")
@@ -274,15 +275,15 @@ func (c *Core) SetUserDisabled(ctx context.Context, auth UserSession, id string,
 	if disabled {
 		status = "disabled"
 	}
-	return c.tx(ctx, func(t *sql.Tx) error {
+	return c.tx(ctx, func(t *gorm.DB) error {
 		if e := c.lockSession(ctx, t, s); e != nil {
 			return e
 		}
-		if _, e := t.ExecContext(ctx, `UPDATE identity.users SET status=$2 WHERE id::text=$1`, id, status); e != nil {
+		if e := t.WithContext(ctx).Exec(`UPDATE identity_users SET status=? WHERE id=?`, status, id).Error; e != nil {
 			return e
 		}
 		if disabled {
-			if _, e := t.ExecContext(ctx, `UPDATE identity.sessions SET revoked_at=$2 WHERE user_id::text=$1`, id, c.now()); e != nil {
+			if e := t.WithContext(ctx).Exec(`UPDATE identity_sessions SET revoked_at=? WHERE user_id=?`, c.now(), id).Error; e != nil {
 				return e
 			}
 		}
@@ -304,7 +305,7 @@ func (c *Core) RegisterAgent(ctx context.Context, auth UserSession, workspace, s
 	if e != nil {
 		return "", e
 	}
-	e = c.tx(ctx, func(t *sql.Tx) error {
+	e = c.tx(ctx, func(t *gorm.DB) error {
 		if e := c.lockSession(ctx, t, s); e != nil {
 			return e
 		}
@@ -313,7 +314,7 @@ func (c *Core) RegisterAgent(ctx context.Context, auth UserSession, workspace, s
 				return e
 			}
 		}
-		if _, e := t.ExecContext(ctx, `INSERT INTO identity.agent_identities(id,owner_user_id,workspace_id,execution_scope) VALUES($1,$2,NULLIF($3,'')::uuid,$4)`, id, s.UserID, workspace, scope); e != nil {
+		if e := t.WithContext(ctx).Exec(`INSERT INTO identity_agent_identities(id,owner_user_id,workspace_id,execution_scope) VALUES( ?,?,NULLIF(?,''),?)`, id, s.UserID, workspace, scope).Error; e != nil {
 			return e
 		}
 		return audit(ctx, t, "user:"+s.UserID, "agents.register", id, "ok")
@@ -331,7 +332,7 @@ func (c *Core) LeaveWorkspace(ctx context.Context, auth UserSession, workspace s
 	if e != nil {
 		return e
 	}
-	return c.tx(ctx, func(t *sql.Tx) error {
+	return c.tx(ctx, func(t *gorm.DB) error {
 		if e := c.lockSession(ctx, t, s); e != nil {
 			return e
 		}
@@ -341,20 +342,20 @@ func (c *Core) LeaveWorkspace(ctx context.Context, auth UserSession, workspace s
 		}
 		if role == "owner" {
 			var owners int
-			if e = t.QueryRowContext(ctx, `SELECT count(*) FROM identity.memberships WHERE workspace_id::text=$1 AND role='owner' AND revoked_at IS NULL`, workspace).Scan(&owners); e != nil {
+			if e = t.WithContext(ctx).Raw(`SELECT count(*) FROM identity_memberships WHERE workspace_id=? AND role='owner' AND revoked_at IS NULL`, workspace).Row().Scan(&owners); e != nil {
 				return e
 			}
 			if owners <= 1 {
 				return ErrDenied
 			}
 		}
-		if _, e = t.ExecContext(ctx, `UPDATE identity.memberships SET revoked_at=$3 WHERE workspace_id::text=$1 AND user_id=$2`, workspace, s.UserID, c.now()); e != nil {
+		if e = t.WithContext(ctx).Exec(`UPDATE identity_memberships SET revoked_at=? WHERE workspace_id=? AND user_id=?`, c.now(), workspace, s.UserID).Error; e != nil {
 			return e
 		}
-		if _, e = t.ExecContext(ctx, `DELETE FROM identity.group_members WHERE workspace_id::text=$1 AND user_id=$2`, workspace, s.UserID); e != nil {
+		if e = t.WithContext(ctx).Exec(`DELETE FROM identity_group_members WHERE workspace_id=? AND user_id=?`, workspace, s.UserID).Error; e != nil {
 			return e
 		}
-		if _, e = t.ExecContext(ctx, `UPDATE identity.workspaces SET revision=revision+1 WHERE id::text=$1`, workspace); e != nil {
+		if e = t.WithContext(ctx).Exec(`UPDATE identity_workspaces SET revision=revision+1 WHERE id=?`, workspace).Error; e != nil {
 			return e
 		}
 		return audit(ctx, t, "user:"+s.UserID, "memberships.leave", workspace, "ok")
@@ -365,15 +366,15 @@ func (c *Core) DisableAgent(ctx context.Context, auth UserSession, id string) er
 	if e != nil {
 		return e
 	}
-	return c.tx(ctx, func(t *sql.Tx) error {
+	return c.tx(ctx, func(t *gorm.DB) error {
 		if e := c.lockSession(ctx, t, s); e != nil {
 			return e
 		}
-		r, e := t.ExecContext(ctx, `UPDATE identity.agent_identities SET disabled_at=$3 WHERE id::text=$1 AND owner_user_id=$2`, id, s.UserID, c.now())
-		if e != nil {
-			return e
+		r := t.WithContext(ctx).Exec(`UPDATE identity_agent_identities SET disabled_at=? WHERE id=? AND owner_user_id=?`, c.now(), id, s.UserID)
+		if r.Error != nil {
+			return r.Error
 		}
-		n, _ := r.RowsAffected()
+		n := r.RowsAffected
 		if n != 1 {
 			return ErrDenied
 		}

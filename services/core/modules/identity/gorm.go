@@ -26,8 +26,8 @@ func (c *Core) consumeGORM(ctx context.Context, namespace, nonce string, expires
 	}
 	var inserted int64
 	err := database.RetryBusy(ctx, func() error {
-		r := c.GormDB.WithContext(ctx).Exec(
-			"INSERT INTO identity_assertion_nonces(namespace,nonce,expires_at) VALUES(?,?,?) ON CONFLICT(namespace,nonce) DO NOTHING",
+		r := database.FromContext(ctx, c.GormDB).WithContext(ctx).Exec(
+			"INSERT INTO identity_assertion_nonces(namespace,nonce,expires_at) VALUES( ?,?,?) ON CONFLICT(namespace,nonce) DO NOTHING",
 			namespace, nonce, expires,
 		)
 		inserted = r.RowsAffected
@@ -48,7 +48,7 @@ func (c *Core) signingKeyGORM(ctx context.Context, kid string) (security.Key, er
 		return k, ErrUnavailable
 	}
 	var row models.IdentitySigningKey
-	err := c.GormDB.WithContext(ctx).Where("kid=?", kid).Take(&row).Error
+	err := database.FromContext(ctx, c.GormDB).WithContext(ctx).Where("kid=?", kid).Take(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return k, ErrUnauthenticated
 	}
@@ -66,7 +66,7 @@ func (c *Core) callerKeyGORM(ctx context.Context, caller, kid string) (security.
 		return k, ErrUnavailable
 	}
 	var revoked, disabled sql.NullTime
-	err := c.GormDB.WithContext(ctx).
+	err := database.FromContext(ctx, c.GormDB).WithContext(ctx).
 		Table("identity_service_credentials AS k").
 		Select("k.public_key,k.not_before,k.expires_at,k.revoked_at,a.disabled_at").
 		Joins("JOIN identity_service_accounts AS a ON a.id=k.service_account_id").
@@ -86,7 +86,7 @@ func (c *Core) publishSigningKeyGORM(ctx context.Context, expires time.Time) err
 	}
 	now := c.now()
 	err := database.RetryBusy(ctx, func() error {
-		return c.GormDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return database.FromContext(ctx, c.GormDB).WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			err := tx.Create(&models.IdentitySigningKey{
 				Kid: c.SigningKid, PublicKey: []byte(c.PrivateKey.Public().(ed25519.PublicKey)),
 				NotBefore: now, ExpiresAt: expires,
@@ -94,7 +94,7 @@ func (c *Core) publishSigningKeyGORM(ctx context.Context, expires time.Time) err
 			if err != nil {
 				return err
 			}
-			return tx.Exec("INSERT INTO identity_audit(actor,operation,target,outcome) VALUES(?,?,?,?)",
+			return tx.Exec("INSERT INTO identity_audit(actor,operation,target,outcome) VALUES( ?,?,?,?)",
 				"core", "signing_keys.publish", c.SigningKid, "ok").Error
 		})
 	})
@@ -110,7 +110,7 @@ func (c *Core) jwksGORM(ctx context.Context) (security.JWKS, error) {
 	}
 	now := c.now()
 	var rows []models.IdentitySigningKey
-	err := c.GormDB.WithContext(ctx).
+	err := database.FromContext(ctx, c.GormDB).WithContext(ctx).
 		Where("revoked_at IS NULL AND not_before<=? AND expires_at>?", now, now).
 		Order("kid").Find(&rows).Error
 	if err != nil {
@@ -133,7 +133,7 @@ func (c *Core) delegationGORM(ctx context.Context, id string) (Delegation, error
 	}
 	var resources, actions string
 	var revoked sql.NullTime
-	err := c.GormDB.WithContext(ctx).Raw(
+	err := database.FromContext(ctx, c.GormDB).WithContext(ctx).Raw(
 		`SELECT id,grantor_user_id,grantee_kind,grantee_id,resource_ids,actions,
 		expires_at,revoked_at,consent_method FROM identity_delegations WHERE id=?`, id,
 	).Row().Scan(&out.ID, &out.Grantor, &out.GranteeKind, &out.GranteeID,
@@ -161,7 +161,7 @@ func (c *Core) checkDelegationGORM(ctx context.Context, cl security.Claims) erro
 		return ErrDenied
 	}
 	var active bool
-	err = c.GormDB.WithContext(ctx).Raw(
+	err = database.FromContext(ctx, c.GormDB).WithContext(ctx).Raw(
 		"SELECT EXISTS(SELECT 1 FROM identity_users WHERE id=? AND status='active')", d.Grantor,
 	).Row().Scan(&active)
 	if err != nil {
@@ -204,7 +204,7 @@ func (c *Core) checkInvocationGORM(ctx context.Context, cl security.Claims) erro
 		return ErrUnauthenticated
 	}
 	var active bool
-	if err := c.GormDB.WithContext(ctx).Raw(query, args...).Row().Scan(&active); err != nil {
+	if err := database.FromContext(ctx, c.GormDB).WithContext(ctx).Raw(query, args...).Row().Scan(&active); err != nil {
 		return ErrUnavailable
 	}
 	if !active {
@@ -222,7 +222,7 @@ func (c *Core) checkInvocationGORM(ctx context.Context, cl security.Claims) erro
 		}
 		if strings.HasPrefix(cl.Subject, "user:") || cl.OnBehalfOf != "" {
 			var member bool
-			err := c.GormDB.WithContext(ctx).Raw(
+			err := database.FromContext(ctx, c.GormDB).WithContext(ctx).Raw(
 				`SELECT EXISTS(SELECT 1 FROM identity_memberships
 				WHERE workspace_id=? AND user_id=? AND revoked_at IS NULL)`, cl.WorkspaceID, user,
 			).Row().Scan(&member)

@@ -9,10 +9,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// DeliverGORM retries durable fake delivery intents with the persisted stable
+// Deliver retries durable fake delivery intents with the persisted stable
 // provider key. An uncertain provider timeout can be replayed safely only
 // because the provider itself deduplicates the key.
-func (s *Service) DeliverGORM(ctx context.Context, provider Provider) (int, error) {
+func (s *Service) Deliver(ctx context.Context, provider Provider) (int, error) {
 	if provider == nil || s.GormDB == nil {
 		return 0, security.ErrUnavailable
 	}

@@ -159,7 +159,7 @@ func TestReservedAndCollidingHTTPPaths(t *testing.T) {
 func TestSafeErrorsProxyAndRateLimits(t *testing.T) {
 	for code, status := range map[rpc.Code]int{rpc.CodeUnauthenticated: 401, rpc.CodePermissionDenied: 403, rpc.CodeNotFound: 404, rpc.CodeValidation: 400, rpc.CodeConflict: 409, rpc.CodeRateLimited: 429, rpc.CodeUnavailable: 503, rpc.CodeDeadlineExceeded: 504, rpc.CodeInternal: 500} {
 		w := httptest.NewRecorder()
-		writeError(w, "request", &rpc.Error{Code: code, Message: "postgres secret stacktrace"})
+		writeError(w, "request", &rpc.Error{Code: code, Message: "database secret stacktrace"})
 		if w.Code != status || strings.Contains(w.Body.String(), "secret") {
 			t.Fatal("unsafe HTTP error mapping", code, w.Code)
 		}

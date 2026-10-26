@@ -12,9 +12,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// EffectGORM persists only operator-selected recipient effects in the same
+// Effect persists only operator-selected recipient effects in the same
 // owner-local transaction as the inbox deduplication record.
-func (s *Service) EffectGORM(ctx context.Context, tx *gorm.DB, ev events.Envelope) error {
+func (s *Service) Effect(ctx context.Context, tx *gorm.DB, ev events.Envelope) error {
 	var q taskv1.CreatedEvent
 	if json.Unmarshal(ev.Payload, &q) != nil || q.TaskID != ev.AggregateID {
 		return security.ErrDenied

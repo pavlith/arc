@@ -79,7 +79,7 @@ func (c *Core) exchangeService(ctx context.Context, r ServiceExchange, a securit
 	var incoming *security.Claims
 	if r.IncomingToken != "" {
 		var definition string
-		if e = c.DB.QueryRowContext(ctx, `SELECT service_definition FROM identity.service_accounts WHERE id::text=$1 AND disabled_at IS NULL`, a.Issuer).Scan(&definition); e != nil {
+		if e = c.db(ctx).WithContext(ctx).Raw(`SELECT service_definition FROM identity_service_accounts WHERE id=? AND disabled_at IS NULL`, a.Issuer).Row().Scan(&definition); e != nil {
 			return TokenResult{}, keyError(e)
 		}
 		major := r.IncomingAPIMajor
@@ -180,7 +180,7 @@ func (c *Core) issue(ctx context.Context, cl security.Claims, target Target, inc
 	if e != nil {
 		return TokenResult{}, e
 	}
-	if e = audit(ctx, c.DB, cl.Subject, "invocations.issue", target.Audience+":"+target.Operation, "ok"); e != nil {
+	if e = audit(ctx, c.db(ctx), cl.Subject, "invocations.issue", target.Audience+":"+target.Operation, "ok"); e != nil {
 		return TokenResult{}, e
 	}
 	return TokenResult{token, expiry}, nil

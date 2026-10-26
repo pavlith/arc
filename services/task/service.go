@@ -5,7 +5,6 @@ package task
 import (
 	"context"
 	"crypto/ed25519"
-	"database/sql"
 	"errors"
 
 	"github.com/nats-io/nats.go"
@@ -23,7 +22,6 @@ import (
 var ErrInvalid = errors.New("task: invalid service dependencies")
 
 type Config struct {
-	DB        *sql.DB
 	GormDB    *gorm.DB
 	Runtime   sdk.AppConfig
 	Identity  identity.Client
@@ -39,7 +37,7 @@ type Service struct {
 // New does not connect to NATS or open a database: all bindings and permits are
 // validated before Start. Runtime Artifact and incoming authorizer are pinned here.
 func New(cfg Config) (*Service, error) {
-	if (cfg.DB == nil && cfg.GormDB == nil) || cfg.Identity.RPC == nil ||
+	if cfg.GormDB == nil || cfg.Identity.RPC == nil ||
 		cfg.Identity.ServiceID == "" || cfg.Identity.Kid == "" ||
 		len(cfg.Identity.PrivateKey) != ed25519.PrivateKeySize ||
 		len(cfg.CoreTrust) != ed25519.PublicKeySize ||
@@ -62,19 +60,16 @@ func New(cfg Config) (*Service, error) {
 	}
 	cfg.Runtime.Artifact = artifact
 	cfg.Runtime.Authorize = identity.RemoteAuthorizer(cfg.Identity, cfg.CoreTrust, "task/v1")
-	if cfg.GormDB != nil {
-		owner, err := cfg.GormDB.DB()
-		if err != nil {
-			return nil, ErrInvalid
-		}
-		cfg.Runtime.SelfCheck = owner.PingContext
-	} else {
-		cfg.Runtime.SelfCheck = cfg.DB.PingContext
+
+	owner, err := cfg.GormDB.DB()
+	if err != nil {
+		return nil, ErrInvalid
 	}
+	cfg.Runtime.SelfCheck = owner.PingContext
 
 	s := &Service{}
 	tasksModule := &tasks.Service{
-		DB: cfg.DB, GormDB: cfg.GormDB, Identity: cfg.Identity, Contract: compiled,
+		GormDB: cfg.GormDB, Identity: cfg.Identity, Contract: compiled,
 		Check: tasks.OnlineCheck(cfg.Identity),
 	}
 	registration := sdk.Registration{
@@ -82,7 +77,7 @@ func New(cfg Config) (*Service, error) {
 		Build: compiled.Manifest.Service.BuildVersion, Digest: compiled.Digest,
 	}
 	publisher := &outbox.Module{
-		DB: cfg.DB, GormDB: cfg.GormDB, Contract: compiled, Registry: cfg.Runtime.Registry,
+		GormDB: cfg.GormDB, Contract: compiled, Registry: cfg.Runtime.Registry,
 		Registration: registration,
 		Connection: func() *nats.Conn {
 			if s.App == nil {

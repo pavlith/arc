@@ -197,3 +197,62 @@ func TestSQLiteIdentityInvocationRechecksUserAndDelegation(t *testing.T) {
 		t.Fatalf("revoked delegation accepted: %v", err)
 	}
 }
+
+func TestSQLiteIdentityRefreshReuseAcrossConnections(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "core.sqlite")
+	first, err := database.Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close(first)
+	if err := database.Migrate(ctx, first, coremigrations.SQLite()); err != nil {
+		t.Fatal(err)
+	}
+	second, err := database.Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close(second)
+	key := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{9}, ed25519.SeedSize))
+	owners := []*Core{{GormDB: first, PrivateKey: key, SigningKid: "refresh-test"}, {GormDB: second, PrivateKey: key, SigningKid: "refresh-test"}}
+	if _, _, err := owners[0].BootstrapUser(ctx, "refresh@example.test", "refresh fixture password"); err != nil {
+		t.Fatal(err)
+	}
+	login, err := owners[0].Login(ctx, "refresh@example.test", "refresh fixture password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	type result struct {
+		login LoginResult
+		err   error
+	}
+	results := make(chan result, 2)
+	start := make(chan struct{})
+	for _, owner := range owners {
+		go func(c *Core) { <-start; v, e := c.Refresh(ctx, login.Refresh); results <- result{v, e} }(owner)
+	}
+	close(start)
+	var successful LoginResult
+	successes, rejections := 0, 0
+	for range owners {
+		r := <-results
+		if r.err == nil {
+			successes++
+			successful = r.login
+		} else if errors.Is(r.err, ErrUnauthenticated) {
+			rejections++
+		} else {
+			t.Fatal(r.err)
+		}
+	}
+	if successes != 1 || rejections != 1 {
+		t.Fatalf("refresh race: %d successes, %d rejections", successes, rejections)
+	}
+	if _, err := owners[0].Refresh(ctx, successful.Refresh); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("reuse did not revoke rotated family: %v", err)
+	}
+	if _, err := owners[1].Introspect(ctx, login.Secret); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("reuse left session live: %v", err)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/pavlith/arc/sdk"
+	"github.com/pavlith/arc/sdk/database"
 	"github.com/pavlith/arc/sdk/security"
 )
 
@@ -15,7 +16,7 @@ func (c *Core) registerInstanceGORM(ctx context.Context, account string, reg sdk
 		return err
 	}
 	now := time.Now().UTC()
-	result := c.GormDB.WithContext(ctx).Exec(
+	result := database.FromContext(ctx, c.GormDB).WithContext(ctx).Exec(
 		`INSERT INTO fabric_instances
 		(instance_id,service_account_id,digest,build_version,ready,lease_until,observed_at)
 		VALUES(?,?,?,?,0,?,?)
@@ -40,7 +41,7 @@ func (c *Core) touchGORM(ctx context.Context, account string, reg sdk.Registrati
 		return err
 	}
 	now := time.Now().UTC()
-	result := c.GormDB.WithContext(ctx).Exec(
+	result := database.FromContext(ctx, c.GormDB).WithContext(ctx).Exec(
 		`UPDATE fabric_instances
 		SET ready=1, lease_until=?, observed_at=?
 		WHERE instance_id=? AND service_account_id=? AND digest=?
@@ -62,7 +63,7 @@ func (c *Core) installationGORM(ctx context.Context, digest string) ([]byte, err
 		return nil, err
 	}
 	var raw []byte
-	err := c.GormDB.WithContext(ctx).Raw(
+	err := database.FromContext(ctx, c.GormDB).WithContext(ctx).Raw(
 		"SELECT installation FROM fabric_contracts WHERE digest=? AND revoked_at IS NULL", digest,
 	).Row().Scan(&raw)
 	if err != nil {

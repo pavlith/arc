@@ -11,10 +11,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"os"
-	"strings"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/pavlith/arc/sdk/database"
 	"github.com/pavlith/arc/sdk/security"
 	"gorm.io/gorm"
 )
@@ -38,7 +37,6 @@ type Policy interface {
 	Authorize(context.Context, Authorization) error
 }
 type Core struct {
-	DB         *sql.DB
 	GormDB     *gorm.DB
 	Policy     Policy
 	PrivateKey ed25519.PrivateKey
@@ -53,7 +51,7 @@ func (c *Core) now() time.Time {
 	return time.Now().UTC()
 }
 func (c *Core) ready() error {
-	if c == nil || c.DB == nil {
+	if c == nil || c.GormDB == nil {
 		return ErrUnavailable
 	}
 	return nil
@@ -83,80 +81,37 @@ func uuid() (string, error) {
 }
 func hash(s string) []byte { h := sha256.Sum256([]byte(s)); return h[:] }
 
-type executor interface {
-	ExecContext(context.Context, string, ...any) (sql.Result, error)
-}
-
-func audit(ctx context.Context, q executor, actor, op, target, outcome string) error {
-	_, e := q.ExecContext(ctx, `INSERT INTO identity.audit(actor,operation,target,outcome) VALUES($1,$2,$3,$4)`, actor, op, target, outcome)
+func audit(ctx context.Context, q *gorm.DB, actor, op, target, outcome string) error {
+	e := q.WithContext(ctx).Exec(`INSERT INTO identity_audit(actor,operation,target,outcome) VALUES( ?,?,?,?)`, actor, op, target, outcome).Error
 	return e
 }
-func (c *Core) tx(ctx context.Context, fn func(*sql.Tx) error) error {
-	if existing, ok := ctx.Value(transactionKey{}).(*sql.Tx); ok {
+func (c *Core) tx(ctx context.Context, fn func(*gorm.DB) error) error {
+	if e := c.ready(); e != nil {
+		return e
+	}
+	if existing, ok := ctx.Value(transactionKey{}).(*gorm.DB); ok {
 		return fn(existing)
 	}
-	if e := c.ready(); e != nil {
-		return e
-	}
-	t, e := c.DB.BeginTx(ctx, nil)
-	if e != nil {
-		return e
-	}
-	defer t.Rollback()
-	if e = fn(t); e != nil {
-		return e
-	}
-	return t.Commit()
+	return database.RetryBusy(ctx, func() error {
+		return c.GormDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// Acquire the owner write lock before any authorization/read snapshot.
+			if err := tx.Exec("UPDATE identity_users SET id=id WHERE 0").Error; err != nil {
+				return err
+			}
+			return fn(tx)
+		})
+	})
 }
+func (c *Core) db(ctx context.Context) *gorm.DB { return database.FromContext(ctx, c.GormDB) }
+
 func (c *Core) Consume(ctx context.Context, namespace, nonce string, expires time.Time) error {
-	if c != nil && c.GormDB != nil {
-		return c.consumeGORM(ctx, namespace, nonce, expires)
-	}
-	if e := c.ready(); e != nil {
-		return e
-	}
-	if nonce == "" || namespace == "" || !expires.After(c.now()) {
-		return ErrUnauthenticated
-	}
-	// Never overwrite a nonce, even if its token is expired. Cleanup is a separate maintenance operation.
-	r, e := c.DB.ExecContext(ctx, `INSERT INTO identity.assertion_nonces(namespace,nonce,expires_at) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, namespace, nonce, expires)
-	if e != nil {
-		return ErrUnavailable
-	}
-	n, e := r.RowsAffected()
-	if e != nil {
-		return ErrUnavailable
-	}
-	if n != 1 {
-		return ErrUnauthenticated
-	}
-	return nil
+	return c.consumeGORM(ctx, namespace, nonce, expires)
 }
 func (c *Core) SigningKey(ctx context.Context, kid string) (security.Key, error) {
-	if c != nil && c.GormDB != nil {
-		return c.signingKeyGORM(ctx, kid)
-	}
-	k := security.Key{Kid: kid}
-	if e := c.ready(); e != nil {
-		return k, e
-	}
-	var revoked sql.NullTime
-	e := c.DB.QueryRowContext(ctx, `SELECT public_key,not_before,expires_at,revoked_at FROM identity.signing_key_metadata WHERE kid=$1`, kid).Scan(&k.Public, &k.NotBefore, &k.ExpiresAt, &revoked)
-	k.Revoked = revoked.Valid
-	return k, keyError(e)
+	return c.signingKeyGORM(ctx, kid)
 }
 func (c *Core) CallerKey(ctx context.Context, caller, kid string) (security.Key, error) {
-	if c != nil && c.GormDB != nil {
-		return c.callerKeyGORM(ctx, caller, kid)
-	}
-	k := security.Key{Kid: kid}
-	if e := c.ready(); e != nil {
-		return k, e
-	}
-	var revoked, disabled sql.NullTime
-	e := c.DB.QueryRowContext(ctx, `SELECT k.public_key,k.not_before,k.expires_at,k.revoked_at,a.disabled_at FROM identity.service_credentials k JOIN identity.service_accounts a ON a.id=k.service_account_id WHERE a.id::text=$1 AND k.kid=$2`, caller, kid).Scan(&k.Public, &k.NotBefore, &k.ExpiresAt, &revoked, &disabled)
-	k.Revoked = revoked.Valid || disabled.Valid
-	return k, keyError(e)
+	return c.callerKeyGORM(ctx, caller, kid)
 }
 func keyError(e error) error {
 	if errors.Is(e, sql.ErrNoRows) {
@@ -171,70 +126,7 @@ func (c *Core) Verifier() security.Verifier {
 	return security.Verifier{Keys: c, State: c, Nonces: c, Now: c.now}
 }
 func (c *Core) CheckInvocation(ctx context.Context, cl security.Claims) error {
-	if c != nil && c.GormDB != nil {
-		return c.checkInvocationGORM(ctx, cl)
-	}
-	if e := c.ready(); e != nil {
-		return e
-	}
-	if strings.HasPrefix(cl.Subject, "user:") {
-		if cl.SessionID == "" || cl.DelegationID != "" {
-			return ErrUnauthenticated
-		}
-		var ok bool
-		e := c.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM identity.sessions s JOIN identity.users u ON u.id=s.user_id WHERE s.id::text=$1 AND u.id::text=$2 AND s.revoked_at IS NULL AND s.expires_at>$3 AND u.status='active')`, cl.SessionID, strings.TrimPrefix(cl.Subject, "user:"), c.now()).Scan(&ok)
-		if e != nil {
-			return ErrUnavailable
-		}
-		if !ok {
-			return ErrUnauthenticated
-		}
-	} else if strings.HasPrefix(cl.Subject, "service:") {
-		var ok bool
-		e := c.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM identity.service_accounts WHERE id::text=$1 AND disabled_at IS NULL)`, strings.TrimPrefix(cl.Subject, "service:")).Scan(&ok)
-		if e != nil {
-			return ErrUnavailable
-		}
-		if !ok {
-			return ErrUnauthenticated
-		}
-	} else if strings.HasPrefix(cl.Subject, "agent:") {
-		var ok bool
-		e := c.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM identity.agent_identities WHERE id::text=$1 AND disabled_at IS NULL)`, strings.TrimPrefix(cl.Subject, "agent:")).Scan(&ok)
-		if e != nil {
-			return ErrUnavailable
-		}
-		if !ok {
-			return ErrUnauthenticated
-		}
-	} else {
-		return ErrUnauthenticated
-	}
-	if cl.DelegationID != "" {
-		if e := c.checkDelegation(ctx, cl); e != nil {
-			return e
-		}
-	}
-	if cl.WorkspaceID != "" {
-		user := strings.TrimPrefix(cl.Subject, "user:")
-		if cl.OnBehalfOf != "" {
-			user = cl.OnBehalfOf
-		}
-		if strings.HasPrefix(cl.Subject, "user:") || cl.OnBehalfOf != "" {
-			var ok bool
-			e := c.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM identity.memberships WHERE workspace_id::text=$1 AND user_id::text=$2 AND revoked_at IS NULL)`, cl.WorkspaceID, user).Scan(&ok)
-			if e != nil {
-				return ErrUnavailable
-			}
-			if !ok {
-				return ErrDenied
-			}
-		}
-	}
-	if cl.Audience == "gate" && cl.Operation == "" {
-		return nil
-	}
-	return c.allow(ctx, Authorization{Caller: cl.Caller, Actor: cl.Subject, Audience: cl.Audience, Operation: cl.Operation, WorkspaceID: cl.WorkspaceID, DelegationID: cl.DelegationID})
+	return c.checkInvocationGORM(ctx, cl)
 }
 
 // LoadSigningKey must only be called by the Core executable with a Core-only mount.
@@ -257,42 +149,8 @@ func LoadSigningKey(path string) (ed25519.PrivateKey, error) {
 	return ed25519.NewKeyFromSeed(raw), nil
 }
 func (c *Core) PublishSigningKey(ctx context.Context, expires time.Time) error {
-	if c != nil && c.GormDB != nil {
-		return c.publishSigningKeyGORM(ctx, expires)
-	}
-	if len(c.PrivateKey) != 64 || c.SigningKid == "" || !expires.After(c.now()) {
-		return ErrUnavailable
-	}
-	return c.tx(ctx, func(t *sql.Tx) error {
-		_, e := t.ExecContext(ctx, `INSERT INTO identity.signing_key_metadata(kid,public_key,not_before,expires_at) VALUES($1,$2,$3,$4)`, c.SigningKid, []byte(c.PrivateKey.Public().(ed25519.PublicKey)), c.now(), expires)
-		if e != nil {
-			return e
-		}
-		return audit(ctx, t, "core", "signing_keys.publish", c.SigningKid, "ok")
-	})
+	return c.publishSigningKeyGORM(ctx, expires)
 }
 func (c *Core) JWKS(ctx context.Context) (security.JWKS, error) {
-	if c != nil && c.GormDB != nil {
-		return c.jwksGORM(ctx)
-	}
-	if e := c.ready(); e != nil {
-		return security.JWKS{}, e
-	}
-	rows, e := c.DB.QueryContext(ctx, `SELECT kid,public_key,not_before,expires_at FROM identity.signing_key_metadata WHERE revoked_at IS NULL AND not_before<=$1 AND expires_at>$1`, c.now())
-	if e != nil {
-		return security.JWKS{}, e
-	}
-	defer rows.Close()
-	var keys []security.Key
-	for rows.Next() {
-		var k security.Key
-		if e = rows.Scan(&k.Kid, &k.Public, &k.NotBefore, &k.ExpiresAt); e != nil {
-			return security.JWKS{}, e
-		}
-		keys = append(keys, k)
-	}
-	if e = rows.Err(); e != nil {
-		return security.JWKS{}, e
-	}
-	return security.PublicJWKS(keys, c.now()), nil
+	return c.jwksGORM(ctx)
 }

@@ -55,12 +55,12 @@ func TestSQLiteTaskCreateReplayAtomicOutbox(t *testing.T) {
 		}
 		return v
 	}
-	store := events.GormStore{DB: db}
-	first, err := events.CommandGORM(verified("create-once", request), store, compiled, Create, request, svc.createGORM)
+	store := events.Store{DB: db}
+	first, err := events.Command(verified("create-once", request), store, compiled, Create, request, svc.createGORM)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := events.CommandGORM(verified("create-once", request), store, compiled, Create, request, svc.createGORM)
+	second, err := events.Command(verified("create-once", request), store, compiled, Create, request, svc.createGORM)
 	if err != nil || second.ID != first.ID {
 		t.Fatalf("replayed different result: %+v %v", second, err)
 	}
@@ -73,15 +73,15 @@ func TestSQLiteTaskCreateReplayAtomicOutbox(t *testing.T) {
 	}
 	changed := request
 	changed.Title = "different"
-	if _, err := events.CommandGORM(verified("create-once", changed), store, compiled, Create, changed, svc.createGORM); err == nil {
+	if _, err := events.Command(verified("create-once", changed), store, compiled, Create, changed, svc.createGORM); err == nil {
 		t.Fatal("changed request with same replay key accepted")
 	}
 	empty := request
 	empty.Title = "   "
-	if _, err := events.CommandGORM(verified("failed-create", empty), store, compiled, Create, empty, svc.createGORM); err == nil {
+	if _, err := events.Command(verified("failed-create", empty), store, compiled, Create, empty, svc.createGORM); err == nil {
 		t.Fatal("invalid title accepted")
 	}
-	if _, err := events.CommandGORM(verified("failed-create", request), store, compiled, Create, request, svc.createGORM); err != nil {
+	if _, err := events.Command(verified("failed-create", request), store, compiled, Create, request, svc.createGORM); err != nil {
 		t.Fatalf("failed reservation not rolled back: %v", err)
 	}
 }

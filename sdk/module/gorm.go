@@ -9,10 +9,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// BindGORMCommand keeps the typed module contract and telemetry but executes
+// BindCommand keeps the typed module contract and telemetry but executes
 // the handler under the owner-local SQLite GORM replay transaction.
-func BindGORMCommand[Req, Res any](r *Registry, op Command[Req, Res],
-	p Policy, store events.GormStore, h func(context.Context, *gorm.DB, Req) (Res, error)) error {
+func BindCommand[Req, Res any](r *Registry, op Command[Req, Res],
+	p Policy, store events.Store, h func(context.Context, *gorm.DB, Req) (Res, error)) error {
 	if r == nil || h == nil || store.DB == nil {
 		return ErrInvalid
 	}
@@ -22,7 +22,7 @@ func BindGORMCommand[Req, Res any](r *Registry, op Command[Req, Res],
 		return err
 	}
 	mod := r.current
-	if err := sdk.HandleGORMCommand(r.app, op.ID, store, func(ctx context.Context, tx *gorm.DB, req Req) (res Res, err error) {
+	if err := sdk.HandleCommand(r.app, op.ID, store, func(ctx context.Context, tx *gorm.DB, req Req) (res Res, err error) {
 		start := time.Now()
 		defer r.observe(ctx, mod, op.ID, "command", start, &err)
 		return h(ctx, tx, req)

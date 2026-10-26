@@ -3,10 +3,8 @@ package runtime
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 
 	"github.com/pavlith/arc/sdk"
 	"github.com/pavlith/arc/sdk/security"
@@ -21,7 +19,6 @@ var ErrInvalid = errors.New("runtime: invalid deployment")
 type Authorize func(context.Context, string, string) error
 
 type Module struct {
-	DB        *sql.DB
 	GormDB    *gorm.DB
 	Authorize Authorize
 }
@@ -41,7 +38,7 @@ func (m *Module) ID() string { return "runtime" }
 // Runtime exposes no privileged NATS/Docker endpoint in M0. It is an in-process
 // Core module; any future RPC must use a separately approved protected contract.
 func (m *Module) Bind(_ *sdk.Service) (func(), error) {
-	if m == nil || (m.DB == nil && m.GormDB == nil) || m.Authorize == nil {
+	if m == nil || m.GormDB == nil || m.Authorize == nil {
 		return nil, security.ErrUnavailable
 	}
 	return nil, nil
@@ -51,7 +48,7 @@ func (m *Module) Bind(_ *sdk.Service) (func(), error) {
 // greater revisions update only the exact existing state. No side effects occur
 // in a Docker engine and the caller must supply an online checked permission.
 func (m *Module) Put(ctx context.Context, want Desired, expected int64) (Desired, error) {
-	if m == nil || (m.DB == nil && m.GormDB == nil) || m.Authorize == nil {
+	if m == nil || m.GormDB == nil || m.Authorize == nil {
 		return Desired{}, security.ErrUnavailable
 	}
 	if want.ID == "" || want.ServiceName == "" || len(want.Spec) == 0 ||
@@ -66,43 +63,11 @@ func (m *Module) Put(ctx context.Context, want Desired, expected int64) (Desired
 		return Desired{}, ErrInvalid
 	}
 	want.Spec = canonical
-	if m.GormDB != nil {
-		return m.putGORM(ctx, want, expected)
-	}
-	tx, err := m.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return Desired{}, security.ErrUnavailable
-	}
-	defer tx.Rollback()
-	if expected == 0 {
-		err = tx.QueryRowContext(ctx, `
-INSERT INTO runtime.desired_deployments(id,service_name,spec,replicas,revision)
-VALUES($1,$2,$3,$4,1)
-ON CONFLICT(id) DO NOTHING
-RETURNING revision
-`, want.ID, want.ServiceName, []byte(want.Spec), want.Replicas).Scan(&want.Revision)
-	} else {
-		err = tx.QueryRowContext(ctx, `
-UPDATE runtime.desired_deployments
-SET service_name=$2, spec=$3, replicas=$4, revision=revision+1, updated_at=now()
-WHERE id=$1 AND revision=$5
-RETURNING revision
-`, want.ID, want.ServiceName, []byte(want.Spec), want.Replicas, expected).Scan(&want.Revision)
-	}
-	if errors.Is(err, sql.ErrNoRows) {
-		return Desired{}, ErrConflict
-	}
-	if err != nil {
-		return Desired{}, fmt.Errorf("runtime: persist desired state: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return Desired{}, security.ErrUnavailable
-	}
-	return want, nil
+	return m.putGORM(ctx, want, expected)
 }
 
 func (m *Module) Get(ctx context.Context, id string) (Desired, error) {
-	if m == nil || (m.DB == nil && m.GormDB == nil) || m.Authorize == nil {
+	if m == nil || m.GormDB == nil || m.Authorize == nil {
 		return Desired{}, security.ErrUnavailable
 	}
 	if id == "" {
@@ -111,14 +76,5 @@ func (m *Module) Get(ctx context.Context, id string) (Desired, error) {
 	if err := m.Authorize(ctx, "runtime.deployments.read", id); err != nil {
 		return Desired{}, err
 	}
-	if m.GormDB != nil {
-		return m.getGORM(ctx, id)
-	}
-	var out Desired
-	if err := m.DB.QueryRowContext(ctx,
-		`SELECT id,service_name,spec,replicas,revision FROM runtime.desired_deployments WHERE id=$1`, id,
-	).Scan(&out.ID, &out.ServiceName, &out.Spec, &out.Replicas, &out.Revision); err != nil {
-		return Desired{}, err
-	}
-	return out, nil
+	return m.getGORM(ctx, id)
 }

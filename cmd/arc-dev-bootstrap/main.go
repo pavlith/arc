@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/base64"
 	"encoding/pem"
 	"errors"
 	"flag"
@@ -30,14 +29,6 @@ var identities = []nkeyIdentity{
 	{file: "nats-echo-service.seed", name: "echo service"},
 	{file: "nats-smoke-client.seed", name: "smoke client"},
 	{file: "nats-jetstream-admin.seed", name: "JetStream bootstrap"},
-}
-
-var passwordFiles = []string{
-	"postgres-admin-password",
-	"postgres-migrator-password",
-	"postgres-core-password",
-	"postgres-task-password",
-	"postgres-notify-password",
 }
 
 func main() {
@@ -75,9 +66,6 @@ func runWithRuntime(output, runtimeDirectory, storeDirectory string) error {
 		return err
 	}
 	if err := ensureTLS(output); err != nil {
-		return err
-	}
-	if err := ensurePasswords(output); err != nil {
 		return err
 	}
 	return writeNATSConfig(output, runtimeDirectory, storeDirectory, publicKeys)
@@ -214,41 +202,6 @@ func ensureTLS(output string) error {
 		return err
 	}
 	return writeExclusive(paths[2], pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: serverKeyDER}), 0o644)
-}
-
-func ensurePasswords(output string) error {
-	paths := make([]string, 0, len(passwordFiles))
-	for _, name := range passwordFiles {
-		paths = append(paths, filepath.Join(output, name))
-	}
-	exists, err := setState(paths)
-	if err != nil || exists {
-		if exists {
-			for _, path := range paths {
-				if err := requireContainerSecretMode(path); err != nil {
-					return err
-				}
-			}
-		}
-		return err
-	}
-	for _, path := range paths {
-		raw := make([]byte, 32)
-		if _, err := rand.Read(raw); err != nil {
-			return fmt.Errorf("generate database password: %w", err)
-		}
-		password := []byte(base64.RawURLEncoding.EncodeToString(raw) + "\n")
-		for index := range raw {
-			raw[index] = 0
-		}
-		if err := writeExclusive(path, password, 0o644); err != nil {
-			return err
-		}
-		for index := range password {
-			password[index] = 0
-		}
-	}
-	return nil
 }
 
 func writeNATSConfig(output, runtimeDirectory, storeDirectory string, publicKeys map[string]string) error {

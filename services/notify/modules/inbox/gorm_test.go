@@ -46,10 +46,10 @@ func TestSQLiteInboxAndDeliveryStableKey(t *testing.T) {
 		ID: eventID, Type: taskv1.CreatedName, Version: 1,
 		AggregateID: taskID, OccurredAt: time.Now().UTC(), Payload: payload,
 	})
-	inbox := (&Service{GormDB: db}).EffectGORM
-	store := events.GormStore{DB: db}
+	inbox := (&Service{GormDB: db}).Effect
+	store := events.Store{DB: db}
 	for i := 0; i < 2; i++ {
-		if err := store.ConsumeGORM(ctx, Durable, taskv1.CreatedSubject, compiled, raw, inbox); err != nil {
+		if err := store.Consume(ctx, Durable, taskv1.CreatedSubject, compiled, raw, inbox); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -59,10 +59,10 @@ func TestSQLiteInboxAndDeliveryStableKey(t *testing.T) {
 	}
 	provider := &delivery.FakeProvider{Fail: true}
 	sender := &delivery.Service{GormDB: db}
-	if _, err := sender.DeliverGORM(ctx, provider); err == nil {
+	if _, err := sender.Deliver(ctx, provider); err == nil {
 		t.Fatal("uncertain provider timeout not reported")
 	}
-	if n, err := sender.DeliverGORM(ctx, provider); err != nil || n != 1 {
+	if n, err := sender.Deliver(ctx, provider); err != nil || n != 1 {
 		t.Fatalf("retry failed: count=%d error=%v", n, err)
 	}
 	if len(provider.Calls) != 2 || provider.Calls[0] != provider.Calls[1] {

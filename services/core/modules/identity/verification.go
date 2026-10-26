@@ -35,7 +35,7 @@ func (c *Core) verifyRequest(ctx context.Context, q VerifyRequest) (Verification
 		return Verification{}, ErrUnauthenticated
 	}
 	var definition string
-	if e := c.DB.QueryRowContext(ctx, `SELECT service_definition FROM identity.service_accounts WHERE id::text=$1 AND disabled_at IS NULL`, caller.Caller).Scan(&definition); e != nil {
+	if e := c.db(ctx).WithContext(ctx).Raw(`SELECT service_definition FROM identity_service_accounts WHERE id=? AND disabled_at IS NULL`, caller.Caller).Row().Scan(&definition); e != nil {
 		return Verification{}, keyError(e)
 	}
 	verified, e := rpc.InvocationAuthorizer(c.Verifier(), definition+"/v1")(ctx, q.Subject, q.Request)

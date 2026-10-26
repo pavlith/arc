@@ -2,16 +2,16 @@ package tasks_test
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"testing"
 
 	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/task/modules/tasks"
+	"gorm.io/gorm"
 )
 
 func TestNoVerifiedInvocationNoACL(t *testing.T) {
-	svc := &tasks.Service{DB: &sql.DB{}, Check: func(context.Context, string, string) error {
+	svc := &tasks.Service{GormDB: &gorm.DB{}, Check: func(context.Context, string, string) error {
 		t.Fatal("ACL called with unverified actor")
 		return nil
 	}}

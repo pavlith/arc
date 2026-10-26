@@ -2,7 +2,6 @@ package service_test
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"testing"
 
@@ -13,6 +12,7 @@ import (
 	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/sdk/service"
 	"github.com/pavlith/arc/sdk/testcontract"
+	"gorm.io/gorm"
 )
 
 type denyRegistry struct{ calls int }
@@ -53,8 +53,8 @@ func read(r *module.Registry) error {
 }
 func create(r *module.Registry) error {
 	return module.BindCommand(r, module.Command[request, response]{ID: "books.create"}, policy(),
-		events.Store{DB: &sql.DB{}, Schema: "books"},
-		func(_ context.Context, _ *sql.Tx, q request) (response, error) { return response{q.Value}, nil })
+		events.Store{DB: &gorm.DB{}},
+		func(_ context.Context, _ *gorm.DB, q request) (response, error) { return response{q.Value}, nil })
 }
 func config(mods ...module.Module) (service.Config, *denyRegistry) {
 	d := &denyRegistry{}

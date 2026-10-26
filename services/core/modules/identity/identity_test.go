@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
-	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
@@ -12,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pavlith/arc/internal/testdb"
 	"github.com/pavlith/arc/sdk"
 	"github.com/pavlith/arc/sdk/rpc"
 	"github.com/pavlith/arc/sdk/security"
@@ -108,23 +108,12 @@ func TestSigningSecretPermissions(t *testing.T) {
 	}
 }
 func TestM0Identity(t *testing.T) {
-	dsn := os.Getenv("ARC_IDENTITY_TEST_DSN")
-	if dsn == "" {
-		t.Skip("run scripts/test-m0-02.sh for isolated PostgreSQL/NATS guardrails")
-	}
-	db, e := sql.Open("pgx", dsn)
-	if e != nil {
-		t.Fatal(e)
-	}
-	defer db.Close()
-	db.SetMaxOpenConns(8)
+	ownerDB, db := testdb.Open(t, "core")
 	ctx := context.Background()
-	if e = db.PingContext(ctx); e != nil {
-		t.Fatal(e)
-	}
+	var e error
 	now := time.Now().UTC().Truncate(time.Second)
 	policy := &testPolicy{resource: "10000000-0000-4000-8000-000000000001"}
-	c := &Core{DB: db, Policy: policy, PrivateKey: ed25519.NewKeyFromSeed(bytes.Repeat([]byte{3}, 32)), SigningKid: "core-1", Now: func() time.Time { return now }}
+	c := &Core{GormDB: ownerDB, Policy: policy, PrivateKey: ed25519.NewKeyFromSeed(bytes.Repeat([]byte{3}, 32)), SigningKid: "core-1", Now: func() time.Time { return now }}
 	must := func(e error) {
 		t.Helper()
 		if e != nil {
@@ -182,7 +171,7 @@ func TestM0Identity(t *testing.T) {
 		p, e := security.SignProof(gateKey, "rpc.task.v1.read", raw, cl.JTI, security.Proof{Kid: "gate-1", Timestamp: now.Format(time.RFC3339Nano), Nonce: "persistent-nonce-0001"})
 		must(e)
 		must(c.Verifier().Proof(ctx, "rpc.task.v1.read", raw, cl, p))
-		fresh := &Core{DB: db, Policy: policy, Now: c.Now}
+		fresh := &Core{GormDB: ownerDB, Policy: policy, Now: c.Now}
 		if e = fresh.Verifier().Proof(ctx, "rpc.task.v1.read", raw, cl, p); e == nil {
 			t.Fatal("nonce replay survived new Core instance")
 		}
@@ -284,7 +273,7 @@ func TestM0Identity(t *testing.T) {
 		}
 		exp, e := c.CreateDelegation(ctx, auth, Delegation{GranteeKind: "service", GranteeID: worker, Resources: d.Resources, Actions: d.Actions})
 		must(e)
-		_, e = db.ExecContext(ctx, `UPDATE identity.delegations SET created_at=$2,expires_at=$3 WHERE id=$1`, exp.ID, now.Add(-time.Hour), now.Add(-time.Second))
+		_, e = db.ExecContext(ctx, `UPDATE identity_delegations SET created_at=?,expires_at=? WHERE id=?`, now.Add(-time.Hour), now.Add(-time.Second), exp.ID)
 		must(e)
 		if _, e = c.ExchangeService(ctx, ServiceExchange{Assertion: assertion(worker, "worker-1", workerKey), DelegationID: exp.ID, Target: target}); e == nil {
 			t.Fatal("expired delegation accepted")
@@ -294,7 +283,7 @@ func TestM0Identity(t *testing.T) {
 		url := os.Getenv("ARC_IDENTITY_NATS_URL")
 		dir := os.Getenv("ARC_IDENTITY_NATS_SECRETS")
 		if url == "" || dir == "" {
-			t.Fatal("NATS fixture required")
+			t.Skip("run scripts/test-m0-02.sh for NATS guardrails")
 		}
 		cfg := sdk.Config{URL: url, Name: "identity-test", TLSCAFile: filepath.Join(dir, "ca.crt"), NKeySeedFile: filepath.Join(dir, "nats-echo-service.seed")}
 		deadline, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -335,7 +324,7 @@ func TestM0Identity(t *testing.T) {
 			t.Fatal("idempotent command created duplicate delegation")
 		}
 		var audits int
-		must(db.QueryRowContext(ctx, `SELECT count(*) FROM identity.audit WHERE operation='delegations.create' AND target=$1`, first.ID).Scan(&audits))
+		must(db.QueryRowContext(ctx, `SELECT count(*) FROM identity_audit WHERE operation='delegations.create' AND target=?`, first.ID).Scan(&audits))
 		if audits != 1 {
 			t.Fatal("domain mutation/audit were repeated")
 		}

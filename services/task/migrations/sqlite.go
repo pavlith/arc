@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// SQLite returns the owner-local Task schema (no PostgreSQL schema prefixes).
+// SQLite returns the owner-local Task schema (no cross-owner schema prefixes).
 func SQLite() []*gormigrate.Migration {
 	return []*gormigrate.Migration{{
 		ID: "000001_task",

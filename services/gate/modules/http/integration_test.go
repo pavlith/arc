@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
-	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -19,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pavlith/arc/internal/testdb"
 	"github.com/pavlith/arc/sdk"
 	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/events"
@@ -28,6 +28,7 @@ import (
 	"github.com/pavlith/arc/services/core/modules/access"
 	"github.com/pavlith/arc/services/core/modules/fabric"
 	"github.com/pavlith/arc/services/core/modules/identity"
+	"gorm.io/gorm"
 )
 
 func testKey(b byte) ed25519.PrivateKey { return ed25519.NewKeyFromSeed(bytes.Repeat([]byte{b}, 32)) }
@@ -80,9 +81,8 @@ type taskResponse struct {
 }
 
 func TestM0Gate(t *testing.T) {
-	dsn := os.Getenv("ARC_ACCESS_TEST_DSN")
-	if dsn == "" {
-		t.Skip("run scripts/test-m0-05.sh")
+	if os.Getenv("ARC_IDENTITY_NATS_URL") == "" {
+		t.Skip("run scripts/test-m0-04.sh or scripts/test-m0-05.sh")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -92,17 +92,12 @@ func TestM0Gate(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
-	db, e := sql.Open("pgx", dsn)
-	must(e)
-	defer db.Close()
-	db.SetMaxOpenConns(24)
-	migrator, e := sql.Open("pgx", strings.Replace(dsn, "user=arc_core", "user=arc_migrator", 1))
-	must(e)
-	defer migrator.Close()
-	_, e = migrator.ExecContext(ctx, `CREATE SCHEMA gate_fixture; CREATE TABLE gate_fixture.command_results (LIKE fabric.command_results INCLUDING ALL); CREATE TABLE gate_fixture.items(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,value text NOT NULL); GRANT USAGE ON SCHEMA gate_fixture TO arc_core; GRANT ALL ON ALL TABLES IN SCHEMA gate_fixture TO arc_core; GRANT ALL ON ALL SEQUENCES IN SCHEMA gate_fixture TO arc_core`)
+	ownerDB, db := testdb.Open(t, "core")
+	domainDB, domainSQL := testdb.Open(t, "fixture")
+	_, e := domainSQL.Exec("CREATE TABLE items (id INTEGER PRIMARY KEY AUTOINCREMENT, value TEXT NOT NULL)")
 	must(e)
 	operator, coreKey, gateKey, providerKey, trust := testKey(121), testKey(122), testKey(123), testKey(124), testKey(125)
-	id := &identity.Core{DB: db, PrivateKey: coreKey, SigningKid: "gate-core-key"}
+	id := &identity.Core{GormDB: ownerDB, PrivateKey: coreKey, SigningKid: "gate-core-key"}
 	must(id.PublishSigningKey(ctx, time.Now().Add(time.Hour)))
 	owner, _, e := id.BootstrapUser(ctx, "gate-owner@example.test", "gate fixture password")
 	must(e)
@@ -112,7 +107,7 @@ func TestM0Gate(t *testing.T) {
 	baseline := access.Approval{AdminUsers: []string{owner}, Deployments: []access.Deployment{{Definition: "gate", Instance: "m005-gate"}, {Definition: "task", Instance: "m005-task"}}}
 	static, e := access.NewContracts(operator.Public().(ed25519.PublicKey), []access.Approved{signApproval(t, operator, baseline)})
 	must(e)
-	acl := &access.Core{DB: db, Identity: id, Contracts: static}
+	acl := &access.Core{GormDB: ownerDB, Identity: id, Contracts: static}
 	id.Policy = acl
 	gateID, e := id.RegisterService(ctx, session, "gate", "m005-gate")
 	must(e)
@@ -124,7 +119,7 @@ func TestM0Gate(t *testing.T) {
 		baseline.Rules = append(baseline.Rules, access.Rule{Caller: gateID, Audience: "identity/v1", Operation: "identity.v1." + op, ActorKinds: []string{"bootstrap"}})
 	}
 	baseline.Rules = append(baseline.Rules, access.Rule{Caller: gateID, Audience: "fabric/v1", Operation: "fabric.v1.routes", ActorKinds: []string{"bootstrap"}}, access.Rule{Caller: provider, Audience: "identity/v1", Operation: "identity.v1.invocations.exchange_service", ActorKinds: []string{"bootstrap"}})
-	f := &fabric.Core{DB: db, Identity: id, ApprovalKey: operator.Public().(ed25519.PublicKey), Bootstrap: []access.Approved{signApproval(t, operator, baseline)}, SnapshotKey: coreKey, SnapshotKid: id.SigningKid, RouteTrustKey: trust}
+	f := &fabric.Core{GormDB: ownerDB, Identity: id, ApprovalKey: operator.Public().(ed25519.PublicKey), Bootstrap: []access.Approved{signApproval(t, operator, baseline)}, SnapshotKey: coreKey, SnapshotKid: id.SigningKid, RouteTrustKey: trust}
 	acl.ContractSource = f
 	dir := os.Getenv("ARC_IDENTITY_NATS_SECRETS")
 	natsURL := os.Getenv("ARC_IDENTITY_NATS_URL")
@@ -166,7 +161,7 @@ func TestM0Gate(t *testing.T) {
 	_, e = f.Approve(ctx, fabric.SignedInstallation{Payload: raw, Signature: sig})
 	must(e)
 	root := "d0000000-0000-4000-8000-000000000001"
-	_, e = db.ExecContext(ctx, `INSERT INTO access.resources(id,type,provider_service,owner_kind,owner_id,owner_user_id,inherit_acl,state,policy_revision) VALUES($1,$2,$3,'user',$4,$4,true,'active',1)`, root, r.Type, provider, owner)
+	_, e = db.ExecContext(ctx, `INSERT INTO access_resources(id,type,provider_service,owner_kind,owner_id,owner_user_id,inherit_acl,state,policy_revision) VALUES(?,?,?,'user',?,?,true,'active',1)`, root, r.Type, provider, owner, owner)
 	must(e)
 	gateNC, e := sdk.Connect(ctx, cfg("m005-gate", "nats-smoke-client.seed"))
 	must(e)
@@ -242,18 +237,18 @@ func TestM0Gate(t *testing.T) {
 		case "limited":
 			return taskResponse{}, fault(rpc.CodeRateLimited)
 		case "internal":
-			return taskResponse{}, errors.New("postgres password secret stacktrace")
+			return taskResponse{}, errors.New("database password secret stacktrace")
 		case "slow":
 			<-ctx.Done()
 			return taskResponse{}, ctx.Err()
 		}
 		return taskResponse{Value: q.Value}, nil
 	}))
-	store := events.Store{DB: db, Schema: "gate_fixture"}
+	store := events.Store{DB: domainDB}
 	for _, op := range []string{"task.create", "task.accept"} {
-		must(sdk.HandleCommand(app, op, store, func(ctx context.Context, tx *sql.Tx, q taskRequest) (taskResponse, error) {
+		must(sdk.HandleCommand(app, op, store, func(ctx context.Context, tx *gorm.DB, q taskRequest) (taskResponse, error) {
 			executions.Add(1)
-			_, e := tx.ExecContext(ctx, `INSERT INTO gate_fixture.items(value) VALUES($1)`, q.Value)
+			e := tx.WithContext(ctx).Exec(`INSERT INTO items(value) VALUES(?)`, q.Value).Error
 			return taskResponse{Value: q.Value}, e
 		}))
 	}
@@ -347,7 +342,7 @@ func TestM0Gate(t *testing.T) {
 	httpClient.Jar = jarBefore
 	expiredSession, e := id.Login(ctx, "gate-owner@example.test", "gate fixture password")
 	must(e)
-	_, e = db.ExecContext(ctx, `UPDATE identity.sessions SET expires_at=now()-interval '1 second' WHERE id=$1`, expiredSession.Session.ID)
+	_, e = db.ExecContext(ctx, `UPDATE identity_sessions SET expires_at=datetime('now','-1 second') WHERE id=?`, expiredSession.Session.ID)
 	must(e)
 	expiredRequest := httptest.NewRequest("GET", "https://arc.example/api/v1/task/read/"+root+"?value=expired-cookie", nil)
 	expiredRequest.AddCookie(&http.Cookie{Name: "__Host-arc_session", Value: expiredSession.Secret})
@@ -365,7 +360,7 @@ func TestM0Gate(t *testing.T) {
 	expect(do("POST", "/api/v1/task/create/"+root, `{"value":"created"}`, mutation), 201)
 	expect(do("POST", "/api/v1/task/create/"+root, `{"value":"changed"}`, mutation), 409)
 	var count int
-	must(db.QueryRowContext(ctx, `SELECT count(*) FROM gate_fixture.items WHERE value='created'`).Scan(&count))
+	must(domainSQL.QueryRowContext(ctx, `SELECT count(*) FROM items WHERE value='created'`).Scan(&count))
 	if count != 1 {
 		t.Fatal("duplicate HTTP mutation", count)
 	}
@@ -379,7 +374,7 @@ func TestM0Gate(t *testing.T) {
 	expect(do("POST", "/api/v1/task/create/"+root, `{"value":"`+strings.Repeat("x", 210<<10)+`"}`, mutation), 413)
 	for value, status := range map[string]int{"denied": 403, "missing": 404, "conflict": 409, "limited": 429, "internal": 500} {
 		b := expect(do("GET", "/api/v1/task/read/"+root+"?value="+value, "", nil), status)
-		if bytes.Contains(b, []byte("secret")) || bytes.Contains(b, []byte("postgres")) {
+		if bytes.Contains(b, []byte("secret")) || bytes.Contains(b, []byte("database")) {
 			t.Fatal("internal error leaked")
 		}
 	}
@@ -406,7 +401,7 @@ func TestM0Gate(t *testing.T) {
 	defer closeHints()
 	go g.Run(ctx, hints)
 	oldRevision := g.Revision()
-	_, e = db.ExecContext(ctx, `UPDATE fabric.route_state SET revision=revision+1 WHERE singleton`)
+	_, e = db.ExecContext(ctx, `UPDATE fabric_route_state SET revision=revision+1 WHERE singleton`)
 	must(e)
 	until := time.Now().Add(3 * time.Second)
 	for g.Revision() <= oldRevision && time.Now().Before(until) {
@@ -415,7 +410,7 @@ func TestM0Gate(t *testing.T) {
 	if g.Revision() <= oldRevision {
 		t.Fatal("periodic reconciliation missed update")
 	}
-	_, e = db.ExecContext(ctx, `UPDATE fabric.route_state SET revision=revision+1 WHERE singleton`)
+	_, e = db.ExecContext(ctx, `UPDATE fabric_route_state SET revision=revision+1 WHERE singleton`)
 	must(e)
 	must(coreSvc.Connection().Publish(fabric.RoutesChangedSubject, nil))
 	must(coreSvc.Connection().Flush())

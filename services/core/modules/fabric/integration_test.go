@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
-	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -18,6 +17,7 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
+	"github.com/pavlith/arc/internal/testdb"
 	"github.com/pavlith/arc/sdk"
 	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/events"
@@ -26,6 +26,7 @@ import (
 	"github.com/pavlith/arc/sdk/testcontract"
 	"github.com/pavlith/arc/services/core/modules/access"
 	"github.com/pavlith/arc/services/core/modules/identity"
+	"gorm.io/gorm"
 )
 
 func key(b byte) ed25519.PrivateKey { return ed25519.NewKeyFromSeed(bytes.Repeat([]byte{b}, 32)) }
@@ -84,9 +85,8 @@ func credentials(t *testing.T, token, kid string, k ed25519.PrivateKey, idem str
 }
 
 func TestM0Fabric(t *testing.T) {
-	dsn := os.Getenv("ARC_ACCESS_TEST_DSN")
-	if dsn == "" {
-		t.Skip("run scripts/test-m0-04.sh")
+	if os.Getenv("ARC_IDENTITY_NATS_URL") == "" {
+		t.Skip("run scripts/test-m0-04.sh or scripts/test-m0-05.sh")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -96,21 +96,16 @@ func TestM0Fabric(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
-	db, e := sql.Open("pgx", dsn)
-	must(e)
-	defer db.Close()
-	db.SetMaxOpenConns(24)
-	adminDB, e := sql.Open("pgx", strings.Replace(dsn, "user=arc_core", "user=arc_migrator", 1))
-	must(e)
-	defer adminDB.Close()
-	_, e = adminDB.ExecContext(ctx, `CREATE SCHEMA books_fixture; CREATE TABLE books_fixture.command_results (LIKE fabric.command_results INCLUDING ALL); CREATE TABLE books_fixture.outbox (LIKE fabric.outbox INCLUDING ALL); CREATE TABLE books_fixture.inbox (LIKE fabric.inbox INCLUDING ALL); CREATE TABLE books_fixture.items (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,value text NOT NULL); GRANT USAGE ON SCHEMA books_fixture TO arc_core; GRANT ALL ON ALL TABLES IN SCHEMA books_fixture TO arc_core; GRANT ALL ON ALL SEQUENCES IN SCHEMA books_fixture TO arc_core`)
+	ownerDB, db := testdb.Open(t, "core")
+	domainDB, domainSQL := testdb.Open(t, "fixture")
+	_, e := domainSQL.Exec("CREATE TABLE items (id INTEGER PRIMARY KEY AUTOINCREMENT, value TEXT NOT NULL)")
 	must(e)
 	operator := key(101)
 	coreKey := key(102)
 	gateKey := key(103)
 	providerKey := key(104)
 	secondKey := key(105)
-	id := &identity.Core{DB: db, PrivateKey: coreKey, SigningKid: "fabric-core"}
+	id := &identity.Core{GormDB: ownerDB, PrivateKey: coreKey, SigningKid: "fabric-core"}
 	must(id.PublishSigningKey(ctx, time.Now().Add(time.Hour)))
 	owner, _, e := id.BootstrapUser(ctx, "fabric-owner@example.test", "fabric owner password")
 	must(e)
@@ -120,7 +115,7 @@ func TestM0Fabric(t *testing.T) {
 	baseline := access.Approval{AdminUsers: []string{owner}, Deployments: []access.Deployment{{Definition: "gate", Instance: "fabric-gate"}, {Definition: "books", Instance: "books-v1"}, {Definition: "books", Instance: "books-v2"}}}
 	static, e := access.NewContracts(operator.Public().(ed25519.PublicKey), []access.Approved{approved(t, operator, baseline)})
 	must(e)
-	acl := &access.Core{DB: db, Identity: id, Contracts: static}
+	acl := &access.Core{GormDB: ownerDB, Identity: id, Contracts: static}
 	id.Policy = acl
 	gate, e := id.RegisterService(ctx, auth, "gate", "fabric-gate")
 	must(e)
@@ -132,7 +127,7 @@ func TestM0Fabric(t *testing.T) {
 	must(id.AddServiceKey(ctx, auth, provider, "fabric-provider-key", providerKey.Public().(ed25519.PublicKey), "mount:fixture", time.Now().Add(time.Hour)))
 	must(id.AddServiceKey(ctx, auth, provider2, "fabric-second-key", secondKey.Public().(ed25519.PublicKey), "mount:fixture", time.Now().Add(time.Hour)))
 	baseline.Rules = []access.Rule{{Caller: gate, Audience: "identity/v1", Operation: "identity.v1.invocations.exchange_user", ActorKinds: []string{"bootstrap"}}, {Caller: provider, Audience: "identity/v1", Operation: "identity.v1.invocations.exchange_service", ActorKinds: []string{"bootstrap"}}, {Caller: provider2, Audience: "identity/v1", Operation: "identity.v1.invocations.exchange_service", ActorKinds: []string{"bootstrap"}}}
-	f := &Core{DB: db, Identity: id, ApprovalKey: operator.Public().(ed25519.PublicKey), Bootstrap: []access.Approved{approved(t, operator, baseline)}, SnapshotKey: key(106)}
+	f := &Core{GormDB: ownerDB, Identity: id, ApprovalKey: operator.Public().(ed25519.PublicKey), Bootstrap: []access.Approved{approved(t, operator, baseline)}, SnapshotKey: key(106)}
 	acl.ContractSource = f
 	dir := os.Getenv("ARC_IDENTITY_NATS_SECRETS")
 	url := os.Getenv("ARC_IDENTITY_NATS_URL")
@@ -196,11 +191,11 @@ func TestM0Fabric(t *testing.T) {
 	root := "b0000000-0000-4000-8000-000000000001"
 	root2 := "b0000000-0000-4000-8000-000000000002"
 	for n, row := range []struct{ id, typ, provider string }{{root, "books.root_v1", provider}, {root2, "books.root_v2", provider2}} {
-		_, e = db.ExecContext(ctx, `INSERT INTO access.resources(id,type,provider_service,owner_kind,owner_id,owner_user_id,inherit_acl,state,policy_revision) VALUES($1,$2,$3,'user',$4,$4,true,'active',$5)`, row.id, row.typ, row.provider, owner, n+1)
+		_, e = db.ExecContext(ctx, `INSERT INTO access_resources(id,type,provider_service,owner_kind,owner_id,owner_user_id,inherit_acl,state,policy_revision) VALUES(?,?,?,'user',?,?,true,'active',?)`, row.id, row.typ, row.provider, owner, owner, n+1)
 		must(e)
 	}
 	var executed atomic.Int64
-	store := events.Store{DB: db, Schema: "books_fixture"}
+	store := events.Store{DB: domainDB}
 	start := func(artifact contract.Artifact, account, kid string, priv ed25519.PrivateKey, instance, expectedRoot string) (*sdk.App, *Client) {
 		t.Helper()
 		registry := &Client{CoreKey: f.SnapshotKey.Public().(ed25519.PublicKey), Account: account, Kid: kid, Key: priv}
@@ -246,8 +241,8 @@ func TestM0Fabric(t *testing.T) {
 			}
 			return response{fmt.Sprintf("v%d:%s", major, q.Value)}, nil
 		}))
-		must(sdk.HandleCommand(app, "books.create", store, func(ctx context.Context, tx *sql.Tx, q request) (response, error) {
-			if _, e := tx.ExecContext(ctx, `INSERT INTO books_fixture.items(value) VALUES($1)`, q.Value); e != nil {
+		must(sdk.HandleCommand(app, "books.create", store, func(ctx context.Context, tx *gorm.DB, q request) (response, error) {
+			if e := tx.WithContext(ctx).Exec(`INSERT INTO items(value) VALUES(?)`, q.Value).Error; e != nil {
 				return response{}, e
 			}
 			ev := events.Envelope{ID: fmt.Sprintf("c0000000-0000-4000-8000-%012d", executed.Add(1)), Type: "books.item.created", Version: 1, AggregateID: q.RootID, OccurredAt: time.Now().UTC(), Payload: json.RawMessage(`{"value":"created"}`)}
@@ -310,7 +305,7 @@ func TestM0Fabric(t *testing.T) {
 		t.Fatal("control audience mismatch accepted", res)
 	}
 	var mutations int
-	must(db.QueryRowContext(ctx, `SELECT count(*) FROM fabric.instances WHERE instance_id='tampered-instance'`).Scan(&mutations))
+	must(db.QueryRowContext(ctx, `SELECT count(*) FROM fabric_instances WHERE instance_id='tampered-instance'`).Scan(&mutations))
 	if mutations != 0 {
 		t.Fatal("invalid control proof mutated registry")
 	}
@@ -382,7 +377,7 @@ func TestM0Fabric(t *testing.T) {
 		must(e)
 	}
 	var count int
-	must(db.QueryRowContext(ctx, `SELECT count(*) FROM books_fixture.items WHERE value='created'`).Scan(&count))
+	must(domainSQL.QueryRowContext(ctx, `SELECT count(*) FROM items WHERE value='created'`).Scan(&count))
 	if count != 1 {
 		t.Fatal("duplicate command effects", count)
 	}
@@ -394,7 +389,7 @@ func TestM0Fabric(t *testing.T) {
 	if rpc.ErrorCode(e) != rpc.CodeInternal {
 		t.Fatal("response validation before commit", e)
 	}
-	must(db.QueryRowContext(ctx, `SELECT count(*) FROM books_fixture.items WHERE value='rollback'`).Scan(&count))
+	must(domainSQL.QueryRowContext(ctx, `SELECT count(*) FROM items WHERE value='rollback'`).Scan(&count))
 	if count != 0 {
 		t.Fatal("invalid response committed domain effect")
 	}
@@ -409,19 +404,19 @@ func TestM0Fabric(t *testing.T) {
 	}
 	eventSubject := "evt.books.item.created.v1"
 	var raw []byte
-	must(db.QueryRowContext(ctx, `SELECT envelope FROM books_fixture.outbox WHERE published_at IS NOT NULL LIMIT 1`).Scan(&raw))
+	must(domainSQL.QueryRowContext(ctx, `SELECT envelope FROM outbox WHERE published_at IS NOT NULL LIMIT 1`).Scan(&raw))
 	// Force broker redelivery with another message ID; the DB inbox still suppresses it.
 	_, e = js.Publish(eventSubject, raw, nats.MsgId(randomID()))
 	must(e)
-	consume := func(ctx context.Context, tx *sql.Tx, ev events.Envelope) error {
-		_, e := tx.ExecContext(ctx, `INSERT INTO books_fixture.items(value) VALUES('consumed')`)
+	consume := func(ctx context.Context, tx *gorm.DB, ev events.Envelope) error {
+		e := tx.WithContext(ctx).Exec(`INSERT INTO items(value) VALUES('consumed')`).Error
 		return e
 	}
 	pctx, pcancel := context.WithTimeout(ctx, time.Second)
 	e = delivery.Pull(pctx, js, eventSubject, "books-fixture-consumer", consume)
 	pcancel()
 	must(e)
-	must(db.QueryRowContext(ctx, `SELECT count(*) FROM books_fixture.items WHERE value='consumed'`).Scan(&count))
+	must(domainSQL.QueryRowContext(ctx, `SELECT count(*) FROM items WHERE value='consumed'`).Scan(&count))
 	if count != 1 {
 		t.Fatal("duplicate event effects", count)
 	}
@@ -433,8 +428,8 @@ func TestM0Fabric(t *testing.T) {
 	must(json.Unmarshal(raw, &ev))
 	ev.ID = "c0000000-0000-4000-8000-000000009999"
 	retryRaw, _ := json.Marshal(ev)
-	e = store.Consume(ctx, "rollback-consumer", eventSubject, compiled, retryRaw, func(ctx context.Context, tx *sql.Tx, _ events.Envelope) error {
-		_, e := tx.ExecContext(ctx, `INSERT INTO books_fixture.items(value) VALUES('rollback-effect')`)
+	e = store.Consume(ctx, "rollback-consumer", eventSubject, compiled, retryRaw, func(ctx context.Context, tx *gorm.DB, _ events.Envelope) error {
+		e := tx.WithContext(ctx).Exec(`INSERT INTO items(value) VALUES('rollback-effect')`).Error
 		if e != nil {
 			return e
 		}
@@ -444,7 +439,7 @@ func TestM0Fabric(t *testing.T) {
 		t.Fatal("crash not propagated")
 	}
 	must(store.Consume(ctx, "rollback-consumer", eventSubject, compiled, retryRaw, consume))
-	must(db.QueryRowContext(ctx, `SELECT count(*) FROM books_fixture.items WHERE value='rollback-effect'`).Scan(&count))
+	must(domainSQL.QueryRowContext(ctx, `SELECT count(*) FROM items WHERE value='rollback-effect'`).Scan(&count))
 	if count != 0 {
 		t.Fatal("inbox/domain not atomic")
 	}

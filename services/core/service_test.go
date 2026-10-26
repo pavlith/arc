@@ -4,11 +4,11 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"database/sql"
 	"errors"
 	"reflect"
 	"testing"
 
+	"github.com/pavlith/arc/internal/testdb"
 	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/core"
 )
@@ -21,9 +21,9 @@ func TestCoreWiringAndFailClosedConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	db := &sql.DB{}
+	db, _ := testdb.Open(t, "core")
 	cfg := core.Config{
-		DB: db, Version: "0.1.0", IdentitySigningKid: "identity-test",
+		GormDB: db, Version: "0.1.0", IdentitySigningKid: "identity-test",
 		IdentitySigningKey: key, InstallationApprovalKey: pub,
 		SnapshotKid: "snapshot-test", SnapshotSigningKey: key,
 		RouteTrustKey:    key,

@@ -4,7 +4,6 @@ package module
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"regexp"
@@ -13,7 +12,6 @@ import (
 
 	"github.com/pavlith/arc/sdk"
 	"github.com/pavlith/arc/sdk/contract"
-	"github.com/pavlith/arc/sdk/events"
 	"github.com/pavlith/arc/sdk/rpc"
 	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/sdk/telemetry"
@@ -133,29 +131,6 @@ func BindQuery[Req, Res any](r *Registry, op Query[Req, Res], p Policy, h rpc.Ha
 		start := time.Now()
 		defer r.observe(ctx, mod, op.ID, "query", start, &err)
 		return h(ctx, req)
-	}); err != nil {
-		return err
-	}
-	r.policies[op.ID] = policyEntry{module: mod, policy: p}
-	return nil
-}
-
-// BindCommand always uses the domain owner's transactional replay/outbox Store.
-func BindCommand[Req, Res any](r *Registry, op Command[Req, Res],
-	p Policy, store events.Store, h func(context.Context, *sql.Tx, Req) (Res, error)) error {
-	if r == nil || h == nil || store.DB == nil || store.Schema == "" {
-		return ErrInvalid
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if err := r.preflight(op.ID, "command", p); err != nil {
-		return err
-	}
-	mod := r.current
-	if err := sdk.HandleCommand(r.app, op.ID, store, func(ctx context.Context, tx *sql.Tx, req Req) (res Res, err error) {
-		start := time.Now()
-		defer r.observe(ctx, mod, op.ID, "command", start, &err)
-		return h(ctx, tx, req)
 	}); err != nil {
 		return err
 	}

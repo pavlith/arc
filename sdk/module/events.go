@@ -2,11 +2,11 @@ package module
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 
 	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/events"
+	"gorm.io/gorm"
 )
 
 // Event types are tied to an immutable, approved event subject.
@@ -17,7 +17,7 @@ type Event[Payload any] struct {
 
 // EnqueueEvent adds a typed payload to the domain transaction's outbox.
 // It does not publish before commit and cannot authorize a consumer.
-func EnqueueEvent[T any](ctx context.Context, store events.Store, tx *sql.Tx,
+func EnqueueEvent[T any](ctx context.Context, store events.Store, tx *gorm.DB,
 	artifact *contract.Compiled, def Event[T], envelope events.Envelope, payload T) error {
 	if def.Name == "" || def.Subject == "" || envelope.Type != "" && envelope.Type != def.Name {
 		return ErrInvalid
@@ -35,12 +35,12 @@ func EnqueueEvent[T any](ctx context.Context, store events.Store, tx *sql.Tx,
 // Deployments must separately prove EventPermit for the exact source/durable.
 func ConsumeEvent[T any](ctx context.Context, store events.Store, consumer string,
 	artifact *contract.Compiled, def Event[T], raw []byte,
-	handler func(context.Context, *sql.Tx, events.Envelope, T) error) error {
+	handler func(context.Context, *gorm.DB, events.Envelope, T) error) error {
 	if def.Name == "" || def.Subject == "" || handler == nil {
 		return ErrInvalid
 	}
 	return store.Consume(ctx, consumer, def.Subject, artifact, raw,
-		func(ctx context.Context, tx *sql.Tx, envelope events.Envelope) error {
+		func(ctx context.Context, tx *gorm.DB, envelope events.Envelope) error {
 			if envelope.Type != def.Name {
 				return ErrInvalid
 			}

@@ -20,7 +20,7 @@ func TestRunCreatesStablePrivateCredentialsWithoutEmbeddingSecrets(t *testing.T)
 		t.Fatalf("secret directory mode = %o", directory.Mode().Perm())
 	}
 
-	secretFiles := append([]string{}, passwordFiles...)
+	secretFiles := []string{}
 	for _, identity := range identities {
 		secretFiles = append(secretFiles, identity.file)
 	}

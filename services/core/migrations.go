@@ -1,9 +1,9 @@
 package core
 
-import "embed"
+import (
+	"github.com/go-gormigrate/gormigrate/v2"
+	"github.com/pavlith/arc/services/core/migrations"
+)
 
-// Migrations contains the complete Core-owned bootstrap, Identity, ACL, Fabric,
-// and Runtime schemas. Migration ordering is explicit and never run on import.
-//
-//go:embed migrations/*.up.sql
-var Migrations embed.FS
+// Migrations returns the owner's explicit ordered schema migrations.
+func Migrations() []*gormigrate.Migration { return migrations.SQLite() }

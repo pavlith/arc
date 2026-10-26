@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pavlith/arc/sdk/database"
 	"github.com/pavlith/arc/sdk/security"
 	"gorm.io/gorm"
 )
@@ -18,7 +19,7 @@ func (c *Core) snapshotGORM(ctx context.Context, fn func(*gorm.DB, int64) error)
 	if err := c.ready(); err != nil {
 		return err
 	}
-	err := c.GormDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := database.FromContext(ctx, c.GormDB).WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var revision int64
 		if err := tx.Raw("SELECT revision FROM access_policy_state WHERE singleton=1").Row().Scan(&revision); err != nil {
 			return err

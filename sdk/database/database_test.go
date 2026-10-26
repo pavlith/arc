@@ -43,6 +43,25 @@ func TestOpenRequiresPrivateFileBackedOwner(t *testing.T) {
 	}
 }
 
+func TestConnectionReplacementKeepsPragmas(t *testing.T) {
+	db := open(t, "owner #1%.sqlite")
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Force each statement to open a new physical connection.
+	sqlDB.SetMaxIdleConns(0)
+	for i := 0; i < 3; i++ {
+		var enabled, timeout int
+		if err := sqlDB.QueryRow("PRAGMA foreign_keys").Scan(&enabled); err != nil || enabled != 1 {
+			t.Fatalf("replacement connection disabled foreign keys: %d %v", enabled, err)
+		}
+		if err := sqlDB.QueryRow("PRAGMA busy_timeout").Scan(&timeout); err != nil || timeout != 10000 {
+			t.Fatalf("replacement connection lost busy timeout: %d %v", timeout, err)
+		}
+	}
+}
+
 func TestMigrateVersionedAndTransactional(t *testing.T) {
 	ctx := context.Background()
 	db := open(t, "task.sqlite")

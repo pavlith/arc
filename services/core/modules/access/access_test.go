@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
+	"github.com/pavlith/arc/internal/testdb"
 	"github.com/pavlith/arc/sdk"
 	"github.com/pavlith/arc/sdk/rpc"
 	"github.com/pavlith/arc/sdk/security"
@@ -100,23 +101,15 @@ type fixture struct {
 }
 
 func newFixture(t *testing.T) *fixture {
+	if os.Getenv("ARC_IDENTITY_NATS_URL") == "" {
+		t.Skip("run scripts/test-m0-03.sh")
+	}
 	t.Helper()
-	dsn := os.Getenv("ARC_ACCESS_TEST_DSN")
-	if dsn == "" {
-		t.Skip("run scripts/test-m0-03.sh for PostgreSQL/NATS guardrails")
-	}
+	ownerDB, db := testdb.Open(t, "core")
 	ctx := context.Background()
-	db, e := sql.Open("pgx", dsn)
-	if e != nil {
-		t.Fatal(e)
-	}
-	t.Cleanup(func() { db.Close() })
-	db.SetMaxOpenConns(16)
-	if e = db.PingContext(ctx); e != nil {
-		t.Fatal(e)
-	}
+	var e error
 	now := time.Now().UTC().Truncate(time.Second)
-	id := &identity.Core{DB: db, PrivateKey: ed25519.NewKeyFromSeed(bytes32(31)), SigningKid: "access-core-1", Now: func() time.Time { return now }}
+	id := &identity.Core{GormDB: ownerDB, PrivateKey: ed25519.NewKeyFromSeed(bytes32(31)), SigningKid: "access-core-1", Now: func() time.Time { return now }}
 	if e = id.PublishSigningKey(ctx, now.Add(time.Hour)); e != nil {
 		t.Fatal(e)
 	}
@@ -141,7 +134,7 @@ func newFixture(t *testing.T) *fixture {
 	adminApproval := Approval{AdminUsers: []string{owner}, Deployments: deployments}
 	contracts := signedContracts(t, authority, adminApproval)
 	domain := &domainFixture{key: bytes32(51), committed: map[string]bool{}}
-	acl := &Core{DB: db, Identity: id, Contracts: contracts, Domain: domain, Now: func() time.Time { return now }}
+	acl := &Core{GormDB: ownerDB, Identity: id, Contracts: contracts, Domain: domain, Now: func() time.Time { return now }}
 	id.Policy = acl
 	ownerAuth := identity.UserSession{Secret: ownerLogin.Secret, CSRF: ownerLogin.CSRF}
 	memberAuth := identity.UserSession{Secret: memberLogin.Secret, CSRF: memberLogin.CSRF}
@@ -590,7 +583,7 @@ func TestM0Access(t *testing.T) {
 		t.Fatal("explicit self-grant did not allow read")
 	}
 	auditCount := 0
-	if er = f.db.QueryRowContext(f.ctx, `SELECT count(*) FROM access.policy_audit WHERE resource_id=$1 AND change_kind='self_grant' AND grant_id IS NOT NULL AND change->'grant'->>'action'='calendar.read'`, a.ResourceID).Scan(&auditCount); er != nil {
+	if er = f.db.QueryRowContext(f.ctx, `SELECT count(*) FROM access_policy_audit WHERE resource_id=? AND change_kind='self_grant' AND grant_id IS NOT NULL AND change->'grant'->>'action'='calendar.read'`, a.ResourceID).Scan(&auditCount); er != nil {
 		t.Fatal(er)
 	}
 	if auditCount != 1 {
@@ -813,7 +806,7 @@ func TestM0Access(t *testing.T) {
 	}
 
 	// The SQL invariant also forbids reparenting into a cycle.
-	if _, err := f.db.ExecContext(f.ctx, `UPDATE access.resources SET acl_parent_id=$2 WHERE id=$1`, parent.ResourceID, child.ResourceID); err == nil {
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE access_resources SET acl_parent_id=? WHERE id=?`, child.ResourceID, parent.ResourceID); err == nil {
 		t.Fatal("SQL allowed an ACL cycle")
 	}
 	for _, q := range []ReserveRequest{
@@ -914,7 +907,7 @@ func TestM0Access(t *testing.T) {
 	// Invalid proof/JWT fails before handler mutation; no operation row is added.
 	token := f.userToken(f.ownerAuth, "calendar.share", "", "grants.add")
 	before := 0
-	if e = f.db.QueryRowContext(f.ctx, `SELECT count(*) FROM access.operations`).Scan(&before); e != nil {
+	if e = f.db.QueryRowContext(f.ctx, `SELECT count(*) FROM access_operations`).Scan(&before); e != nil {
 		t.Fatal(e)
 	}
 	e = f.accessCallRaw(token, f.providerKid, ed25519.NewKeyFromSeed(bytes32(99)), "grants.add", nextKey(f), GrantRequest{ResourceID: root.ResourceID, PrincipalKind: "user", PrincipalID: f.member, Action: "calendar.read"})
@@ -922,7 +915,7 @@ func TestM0Access(t *testing.T) {
 		t.Fatalf("bad proof accepted: %v", e)
 	}
 	var after int
-	if e = f.db.QueryRowContext(f.ctx, `SELECT count(*) FROM access.operations`).Scan(&after); e != nil {
+	if e = f.db.QueryRowContext(f.ctx, `SELECT count(*) FROM access_operations`).Scan(&after); e != nil {
 		t.Fatal(e)
 	}
 	if after != before {
@@ -950,7 +943,7 @@ func TestM0Access(t *testing.T) {
 		t.Fatal(e)
 	}
 	beforeOps := 0
-	if e = f.db.QueryRowContext(f.ctx, `SELECT count(*) FROM access.operations`).Scan(&beforeOps); e != nil {
+	if e = f.db.QueryRowContext(f.ctx, `SELECT count(*) FROM access_operations`).Scan(&beforeOps); e != nil {
 		t.Fatal(e)
 	}
 	for name, claims := range map[string]security.Claims{
@@ -977,7 +970,7 @@ func TestM0Access(t *testing.T) {
 		}
 	}
 	afterOps := 0
-	if e = f.db.QueryRowContext(f.ctx, `SELECT count(*) FROM access.operations`).Scan(&afterOps); e != nil || afterOps != beforeOps {
+	if e = f.db.QueryRowContext(f.ctx, `SELECT count(*) FROM access_operations`).Scan(&afterOps); e != nil || afterOps != beforeOps {
 		t.Fatalf("invalid JWT caused state change: %d %d %v", beforeOps, afterOps, e)
 	}
 	// Replaying the exact signed command (same request id, proof nonce and
@@ -995,7 +988,7 @@ func TestM0Access(t *testing.T) {
 		t.Fatalf("exact proof replay accepted: %#v %v", replay, e)
 	}
 	replayCount := 0
-	if e = f.db.QueryRowContext(f.ctx, `SELECT count(*) FROM access.operations WHERE operation='grants.add' AND idempotency_key=$1`, idem).Scan(&replayCount); e != nil || replayCount != 1 {
+	if e = f.db.QueryRowContext(f.ctx, `SELECT count(*) FROM access_operations WHERE operation='grants.add' AND idempotency_key=?`, idem).Scan(&replayCount); e != nil || replayCount != 1 {
 		t.Fatalf("replayed mutation count=%d error=%v", replayCount, e)
 	}
 
@@ -1034,10 +1027,10 @@ func TestM0Access(t *testing.T) {
 		}
 	}
 	var count int
-	if e = f.db.QueryRowContext(f.ctx, `SELECT count(*) FROM access.resources WHERE id=$1`, id).Scan(&count); e != nil || count != 1 {
+	if e = f.db.QueryRowContext(f.ctx, `SELECT count(*) FROM access_resources WHERE id=?`, id).Scan(&count); e != nil || count != 1 {
 		t.Fatalf("concurrent reserve rows=%d error=%v", count, e)
 	}
-	if e = f.db.QueryRowContext(f.ctx, `SELECT count(*) FROM access.policy_audit WHERE resource_id=$1`, id).Scan(&count); e != nil || count != 1 {
+	if e = f.db.QueryRowContext(f.ctx, `SELECT count(*) FROM access_policy_audit WHERE resource_id=?`, id).Scan(&count); e != nil || count != 1 {
 		t.Fatalf("concurrent reserve audit count=%d error=%v", count, e)
 	}
 
@@ -1096,7 +1089,7 @@ func TestM0Access(t *testing.T) {
 		t.Fatalf("revoked caller key accepted: %v", err)
 	}
 	broken := *f.id
-	broken.DB = nil
+	broken.GormDB = nil
 	f.acl.Identity = &broken
 	if _, e = f.accessCallDecision(badToken, badClaims, "check", CheckRequest{root.ResourceID, "calendar.read"}); rpc.ErrorCode(e) != rpc.CodeUnavailable {
 		t.Fatalf("missing Identity did not fail closed: %v", e)
@@ -1107,7 +1100,6 @@ func TestM0Access(t *testing.T) {
 	if _, err = f.accessCallDecision(badToken, badClaims, "check", CheckRequest{root.ResourceID, "calendar.read"}); rpc.ErrorCode(err) != rpc.CodeUnavailable {
 		t.Fatalf("no Access responder: %v", err)
 	}
-
 }
 func activatedKey(f *fixture, id string) string { return "activate:" + id }
 

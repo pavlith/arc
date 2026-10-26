@@ -411,3 +411,32 @@ func TestSQLiteAccessShareExpiryCannotEscalate(t *testing.T) {
 		t.Fatalf("bounded grant: %+v (%v)", result, err)
 	}
 }
+
+func TestSQLiteAccessReceiptJoinsOwnerTransaction(t *testing.T) {
+	db, c := openSQLiteAccess(t)
+	key := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{8}, ed25519.SeedSize))
+	if err := db.Exec("UPDATE identity_service_credentials SET public_key=? WHERE kid='test-kid'", []byte(key.Public().(ed25519.PublicKey))).Error; err != nil {
+		t.Fatal(err)
+	}
+	c.Domain = ReceiptVerifier{Keys: c.Identity}
+	register := RegisterRequest{Type: "books.root", ContractDigest: strings.Repeat("a", 64)}
+	if _, err := c.RegisterType(sqliteAccessContext(t, sqliteOwner, sqliteSession, "resource_types.register", "receipt-type", register), register); err != nil {
+		t.Fatal(err)
+	}
+	reserve := ReserveRequest{Type: "books.root", OwnerKind: "user", OwnerID: sqliteOwner}
+	root, err := c.Reserve(sqliteAccessContext(t, sqliteOwner, sqliteSession, "resources.reserve", "receipt-root", reserve), reserve)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := SignDomainReceipt(key, DomainReceipt{Provider: sqliteProvider, Root: root.ResourceID, Operation: "activate", Kid: "test-kid", ExpiresAt: time.Now().Add(time.Minute)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := LifecycleRequest{ResourceID: root.ResourceID, Receipt: receipt}
+	ctx, cancel := context.WithTimeout(sqliteAccessContext(t, sqliteOwner, sqliteSession, "resources.activate", "receipt-activate", request), time.Second)
+	defer cancel()
+	active, err := c.Activate(ctx, request)
+	if err != nil || active.State != "active" {
+		t.Fatalf("live receipt verification inside owner transaction: %+v %v", active, err)
+	}
+}

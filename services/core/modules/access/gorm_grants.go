@@ -86,7 +86,7 @@ func (c *Core) grantAuthorityGORM(tx *gorm.DB, cl security.Claims, resource Reso
 }
 
 // grantExpiryGORM enforces that delegated/shared grants cannot outlive their
-// caller's permissions. The PostgreSQL bool_or aggregate is replaced by a
+// caller's permissions. Grant expiry is checked using a
 // time-bound check of each matched SQLite grant.
 func (c *Core) grantExpiryGORM(tx *gorm.DB, cl security.Claims, resource Resource,
 	action string, expiry *time.Time, manage bool) error {

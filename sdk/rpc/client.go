@@ -43,13 +43,30 @@ func Call[Req, Res any](ctx context.Context, client *Client, operation, subject 
 	if err != nil {
 		return zero, &Error{Code: CodeValidation, Message: "request is not JSON encodable"}
 	}
-	wireRequest, err := json.Marshal(requestEnvelope{
+	envelope := requestEnvelope{
 		RequestID:     requestID,
 		Operation:     operation,
 		SchemaVersion: SchemaVersion,
 		DeadlineAt:    deadline.UTC(),
 		Payload:       payload,
-	})
+	}
+	if credentials, ok := ctx.Value(credentialsKey{}).(Credentials); ok {
+		if credentials.Proof == nil || credentials.Token == "" {
+			return zero, &Error{Code: CodeUnauthenticated, Message: "missing credentials"}
+		}
+		envelope.Auth = credentials.Token
+		envelope.IdempotencyKey = credentials.IdempotencyKey
+		unsigned, err := json.Marshal(envelope)
+		if err != nil {
+			return zero, err
+		}
+		p, err := credentials.Proof(subject, unsigned)
+		if err != nil {
+			return zero, err
+		}
+		envelope.Proof = &p
+	}
+	wireRequest, err := json.Marshal(envelope)
 	if err != nil {
 		return zero, &Error{Code: CodeInternal, Message: "cannot encode request"}
 	}

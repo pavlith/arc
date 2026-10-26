@@ -16,6 +16,10 @@ type Operation struct {
 	Subject    string
 	QueueGroup string
 	Timeout    time.Duration
+	// Authorize validates the signed envelope before invoking the domain handler.
+	Authorize func(context.Context, string, []byte) (context.Context, error)
+	Protected bool
+	Mutation  bool
 }
 
 type Handler[Req, Res any] func(context.Context, Req) (Res, error)
@@ -62,6 +66,10 @@ func handleRequest[Req, Res any](request micro.Request, operation Operation, han
 		respondError(request, requestID, &Error{Code: CodeDeadlineExceeded, Message: "request deadline exceeded", Retryable: true})
 		return
 	}
+	if operation.Mutation && (envelope.IdempotencyKey == "" || len(envelope.IdempotencyKey) > 128) {
+		respondError(request, requestID, &Error{Code: CodeValidation, Message: "idempotency key required"})
+		return
+	}
 	var payload Req
 	if err := decodeStrict(envelope.Payload, &payload); err != nil {
 		respondError(request, requestID, &Error{Code: CodeValidation, Message: "invalid request payload"})
@@ -76,6 +84,23 @@ func handleRequest[Req, Res any](request micro.Request, operation Operation, han
 	ctx, cancel := context.WithDeadline(context.Background(), effectiveDeadline)
 	defer cancel()
 
+	if operation.Protected && operation.Authorize == nil {
+		respondError(request, requestID, &Error{Code: CodeUnavailable, Message: "security unavailable"})
+		return
+	}
+	if operation.Authorize != nil {
+		authorized, err := operation.Authorize(ctx, operation.Subject, request.Data())
+		if err != nil {
+			respondError(request, requestID, publicError(err))
+			return
+		}
+		if authorized == nil {
+			respondError(request, requestID, &Error{Code: CodeUnavailable, Message: "security unavailable"})
+			return
+		}
+		ctx = authorized
+	}
+	ctx = context.WithValue(ctx, metadataKey{}, RequestMetadata{IdempotencyKey: envelope.IdempotencyKey, Payload: envelope.Payload})
 	response, err := invoke(ctx, handler, payload)
 	if err != nil {
 		respondError(request, requestID, publicError(err))

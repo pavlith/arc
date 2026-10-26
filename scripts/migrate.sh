@@ -2,7 +2,7 @@
 set -eu
 
 export PGPASSWORD
-PGPASSWORD=$(tr -d '\r\n' < /run/secrets/postgres_migrator_password)
+PGPASSWORD=$(tr -d '\r\n' < "${PGPASSWORD_FILE:-/run/secrets/postgres_migrator_password}")
 
 psql --set=ON_ERROR_STOP=1 <<'SQL'
 CREATE SCHEMA IF NOT EXISTS system AUTHORIZATION arc_migrator;
@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS system.schema_migrations (
 REVOKE ALL ON TABLE system.schema_migrations FROM PUBLIC;
 SQL
 
-for migration in /migrations/*.up.sql; do
+for migration in "${MIGRATIONS_DIR:-/migrations}"/*.up.sql; do
   [ -f "$migration" ] || continue
   version=$(basename "$migration")
   case "$version" in

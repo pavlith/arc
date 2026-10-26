@@ -64,7 +64,7 @@ func TestTransportErrorsAreTyped(t *testing.T) {
 func TestDecodeStrictRejectsUnknownFields(t *testing.T) {
 	t.Parallel()
 	var envelope requestEnvelope
-	err := decodeStrict([]byte(`{"request_id":"id","operation":"bootstrap.echo","schema_version":1,"deadline_at":"2026-10-25T00:00:00Z","payload":{},"auth":"forged"}`), &envelope)
+	err := decodeStrict([]byte(`{"request_id":"id","operation":"bootstrap.echo","schema_version":1,"deadline_at":"2026-10-25T00:00:00Z","payload":{},"untrusted_header":"forged"}`), &envelope)
 	if err == nil {
 		t.Fatal("unknown field was accepted")
 	}

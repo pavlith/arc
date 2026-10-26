@@ -10,6 +10,8 @@ import (
 	"io"
 	"strings"
 	"time"
+
+	"github.com/pavlith/arc/sdk/security"
 )
 
 const (
@@ -18,11 +20,15 @@ const (
 )
 
 type requestEnvelope struct {
-	RequestID     string          `json:"request_id"`
-	Operation     string          `json:"operation"`
-	SchemaVersion int             `json:"schema_version"`
-	DeadlineAt    time.Time       `json:"deadline_at"`
-	Payload       json.RawMessage `json:"payload"`
+	RequestID      string          `json:"request_id"`
+	Operation      string          `json:"operation"`
+	SchemaVersion  int             `json:"schema_version"`
+	DeadlineAt     time.Time       `json:"deadline_at"`
+	Auth           string          `json:"auth,omitempty"`
+	Proof          *security.Proof `json:"proof,omitempty"`
+	IdempotencyKey string          `json:"idempotency_key,omitempty"`
+	Traceparent    string          `json:"traceparent,omitempty"`
+	Payload        json.RawMessage `json:"payload"`
 }
 
 type responseEnvelope struct {

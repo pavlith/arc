@@ -578,7 +578,7 @@ func TestM006(t *testing.T) {
 			t.Fatal("admin grant replay changed result")
 		}
 		// Valid workspace membership with no grants also denies.
-		_, e := (&access.Client{RPC: rc}).RevokeGrant(grantCtx("grants.revoke"), access.RevokeRequest{GrantID: grants["tasks.read"]})
+		_, e = (&access.Client{RPC: rc}).RevokeGrant(grantCtx("grants.revoke"), access.RevokeRequest{GrantID: grants["tasks.read"]})
 		must(e)
 		s, b := request(client, "GET", base+"/"+task.ID, "", token, "")
 		if s != 403 {

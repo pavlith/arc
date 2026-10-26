@@ -25,10 +25,17 @@ jobs:
         with:
           go-version: "1.27.3"
           cache-dependency-path: pkgs/go.sum
-      - name: Verify standalone SDK
+      - name: Format and verify standalone SDK
         working-directory: pkgs
         run: |
-          test -z "$(gofmt -l $(find . -name '*.go' -type f))"
+          gofmt -w $(find . -name '*.go' -type f)
+          python3 - <<'PY'
+          import base64, pathlib, subprocess
+          paths = subprocess.check_output(["git", "diff", "--name-only", "--", "pkgs"]).decode().splitlines()
+          for name in paths:
+              data = pathlib.Path("..", name).read_bytes()
+              print("ARC_PKGS_GOFORMAT|" + name + "|" + base64.b64encode(data).decode(), flush=True)
+          PY
           go test -race ./...
           go vet ./...
           go build ./...

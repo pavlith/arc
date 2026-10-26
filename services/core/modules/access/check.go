@@ -187,6 +187,10 @@ func (c *Core) evaluate(ctx context.Context, t *sql.Tx, cl security.Claims, q Ch
 	return allowed, e
 }
 func (c *Core) Check(ctx context.Context, q CheckRequest) (Decision, error) {
+ if c != nil && c.GormDB != nil {
+ if c.ContractSource != nil { next,e := c.resolveContracts(ctx); if e != nil { return Decision{}, e }; return next.Check(ctx,q) }
+ return c.checkGORM(ctx,q)
+ }
 	if c != nil && c.ContractSource != nil {
 		next, e := c.resolveContracts(ctx)
 		if e != nil {
@@ -211,6 +215,10 @@ func (c *Core) Check(ctx context.Context, q CheckRequest) (Decision, error) {
 	return out, e
 }
 func (c *Core) CheckMany(ctx context.Context, q CheckManyRequest) (CheckManyResult, error) {
+ if c != nil && c.GormDB != nil {
+ if c.ContractSource != nil { next,e := c.resolveContracts(ctx); if e != nil { return CheckManyResult{}, e }; return next.CheckMany(ctx,q) }
+ return c.checkManyGORM(ctx,q)
+ }
 	if c != nil && c.ContractSource != nil {
 		next, e := c.resolveContracts(ctx)
 		if e != nil {
@@ -250,6 +258,10 @@ func (c *Core) CheckMany(ctx context.Context, q CheckManyRequest) (CheckManyResu
 	return out, nil
 }
 func (c *Core) ListAccessibleRoots(ctx context.Context, q ListRequest) (ListResult, error) {
+ if c != nil && c.GormDB != nil {
+ if c.ContractSource != nil { next,e := c.resolveContracts(ctx); if e != nil { return ListResult{}, e }; return next.ListAccessibleRoots(ctx,q) }
+ return c.listGORM(ctx,q)
+ }
 	if c != nil && c.ContractSource != nil {
 		next, e := c.resolveContracts(ctx)
 		if e != nil {
@@ -326,6 +338,7 @@ func (c *Core) ListAccessibleRoots(ctx context.Context, q ListRequest) (ListResu
 	return out, nil
 }
 func (c *Core) userScope(ctx context.Context, user string, resources, actions []string) error {
+ if c != nil && c.GormDB != nil { return c.userScopeGORM(ctx,user,resources,actions) }
 	if !validUUID(user) {
 		return ErrDenied
 	}

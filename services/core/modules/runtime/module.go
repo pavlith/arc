@@ -10,7 +10,7 @@ import (
 
 	"github.com/pavlith/arc/sdk"
 	"github.com/pavlith/arc/sdk/security"
- "gorm.io/gorm"
+	"gorm.io/gorm"
 )
 
 var ErrConflict = errors.New("runtime: revision conflict")
@@ -22,7 +22,7 @@ type Authorize func(context.Context, string, string) error
 
 type Module struct {
 	DB        *sql.DB
- GormDB    *gorm.DB
+	GormDB    *gorm.DB
 	Authorize Authorize
 }
 
@@ -66,7 +66,9 @@ func (m *Module) Put(ctx context.Context, want Desired, expected int64) (Desired
 		return Desired{}, ErrInvalid
 	}
 	want.Spec = canonical
- if m.GormDB != nil { return m.putGORM(ctx, want, expected) }
+	if m.GormDB != nil {
+		return m.putGORM(ctx, want, expected)
+	}
 	tx, err := m.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return Desired{}, security.ErrUnavailable
@@ -109,8 +111,10 @@ func (m *Module) Get(ctx context.Context, id string) (Desired, error) {
 	if err := m.Authorize(ctx, "runtime.deployments.read", id); err != nil {
 		return Desired{}, err
 	}
-	if m.GormDB != nil { return m.getGORM(ctx, id) }
- var out Desired
+	if m.GormDB != nil {
+		return m.getGORM(ctx, id)
+	}
+	var out Desired
 	if err := m.DB.QueryRowContext(ctx,
 		`SELECT id,service_name,spec,replicas,revision FROM runtime.desired_deployments WHERE id=$1`, id,
 	).Scan(&out.ID, &out.ServiceName, &out.Spec, &out.Replicas, &out.Revision); err != nil {

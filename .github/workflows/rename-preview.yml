@@ -1,0 +1,42 @@
+name: Arc service rename preview
+on:
+  push:
+    branches: [dev]
+    paths:
+      - ".github/scripts/rename_services.py"
+      - ".github/workflows/rename-preview.yml"
+permissions:
+  contents: read
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.3"
+          cache-dependency-path: go.sum
+      - name: Apply non-committing rename and output exact files
+        run: |
+          python3 .github/scripts/rename_services.py
+          gofmt -w $(find sdk services cmd -name '*.go' -type f)
+          python3 - <<'PY'
+          import base64, subprocess, pathlib
+          names = subprocess.check_output(["git","-c","status.showUntrackedFiles=all","status","--porcelain","-z"]).split(b"\0")
+          for raw in names:
+            if not raw: continue
+            status, name = raw[:2].decode(), raw[3:].decode()
+            if status == " D":
+              print("ARC_RENAME_DELETE|" + name, flush=True)
+            elif status in (" M", "??", "M "):
+              data = pathlib.Path(name).read_bytes()
+              print("ARC_RENAME_FILE|" + name + "|" + base64.b64encode(data).decode(), flush=True)
+            else:
+              raise RuntimeError("unexpected git status "+repr((status,name)))
+          PY
+      - name: Verify renamed module and binary builds
+        run: |
+          go test -race ./...
+          go vet ./...
+          go build ./cmd/...

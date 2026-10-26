@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/pavlith/arc/sdk"
 	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/database"
 	"github.com/pavlith/arc/sdk/security"
@@ -119,6 +120,24 @@ func TestSQLiteFabricSignedCatalogAndRouteSnapshots(t *testing.T) {
 	if snapshot.Revision != 1 || len(snapshot.Routes) == 0 ||
 		len(snapshot.Artifacts[compiled.Digest].Manifest) == 0 {
 		t.Fatalf("unexpected snapshot: %+v", snapshot)
+	}
+	reg := sdk.Registration{
+		Service: "books", Instance: "books-prod-1",
+		Build: compiled.Manifest.Service.BuildVersion, Digest: compiled.Digest,
+	}
+	must(f.registerInstanceGORM(ctx, account, reg))
+	if err := f.touchGORM(ctx, account, reg, false); !errors.Is(err, security.ErrDenied) {
+		t.Fatalf("unprobed instance became ready: %v", err)
+	}
+	must(f.touchGORM(ctx, account, reg, true))
+	must(f.touchGORM(ctx, account, reg, false))
+	other := reg
+	other.Build = "forged"
+	if err := f.registerInstanceGORM(ctx, account, other); !errors.Is(err, security.ErrDenied) {
+		t.Fatalf("instance claimed with mismatched build: %v", err)
+	}
+	if err := f.touchGORM(ctx, "another-owner", reg, true); !errors.Is(err, security.ErrDenied) {
+		t.Fatalf("instance claimed with mismatched owner: %v", err)
 	}
 	must(db.Exec("UPDATE identity_service_accounts SET disabled_at=CURRENT_TIMESTAMP WHERE id=?", account).Error)
 	if _, err := f.active(ctx, account, compiled.Digest); !errors.Is(err, security.ErrDenied) {

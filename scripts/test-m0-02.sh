@@ -21,6 +21,9 @@ export PGUSER=arc_migrator PGDATABASE=arc PGPASSWORD_FILE="$scratch/password" MI
 touch "$PGPASSWORD_FILE"
 sh scripts/migrate.sh
 sh scripts/migrate.sh
+if [[ ${ARC_TEST_GATE:-0} == 1 ]]; then
+  PGUSER=postgres PGDATABASE=postgres psql -X -v ON_ERROR_STOP=1 -c 'CREATE DATABASE arc_gate OWNER arc_migrator TEMPLATE arc;' >/dev/null
+fi
 export ARC_IDENTITY_TEST_DSN="host=$scratch user=arc_core dbname=arc sslmode=disable"
 export ARC_ACCESS_TEST_DSN="$ARC_IDENTITY_TEST_DSN"
 # Use the existing M0-01 TLS/NKey bootstrap and smoke client unchanged.
@@ -86,6 +89,20 @@ for operation in ('PING','INFO','STATS'):
 p.write_text(s)
 PYTHON_FABRIC
 fi
+if [[ ${ARC_TEST_GATE:-0} == 1 ]]; then
+  python3 - "$scratch/secrets/nats-server.conf" <<'PYTHON_GATE'
+import pathlib,sys
+p=pathlib.Path(sys.argv[1]);s=p.read_text()
+s=s.replace('"rpc.books.v2.>"','"rpc.books.v2.>", "rpc.tasks.v1.>", "ctl.arc.fabric.routes"')
+s=s.replace('"ctl.arc.fabric.check",','"ctl.arc.fabric.check", "ctl.arc.fabric.routes", "evt.arc.fabric.routes.changed",')
+s=s.replace('subscribe: { allow: ["_INBOX.>"] }','subscribe: { allow: ["_INBOX.>", "evt.arc.fabric.routes.changed"] }')
+s=s.replace('"$SRV.INFO.books.>"','"$SRV.INFO.books.>", "$SRV.INFO.tasks.>"')
+for op in ('PING','INFO','STATS'):
+    for suffix in ('','.>'):
+        x=f'"$SRV.{op}.books{suffix}"';s=s.replace(x,x+f', "$SRV.{op}.tasks{suffix}"')
+p.write_text(s)
+PYTHON_GATE
+fi
 start_nats
 export ARC_IDENTITY_NATS_URL="tls://localhost:$port" ARC_IDENTITY_NATS_SECRETS="$scratch/secrets"
 (cd sdk && go test -count=1 -run TestM0Identity -v ./identity)
@@ -94,5 +111,8 @@ if [[ ${ARC_TEST_ACCESS:-0} == 1 ]]; then
 fi
 if [[ ${ARC_TEST_FABRIC:-0} == 1 ]]; then
   (cd sdk && go test -race -count=1 -run TestM0Fabric -v ./fabric)
+fi
+if [[ ${ARC_TEST_GATE:-0} == 1 ]]; then
+  (cd sdk && ARC_ACCESS_TEST_DSN="host=$scratch user=arc_core dbname=arc_gate sslmode=disable" go test -race -count=1 -run TestM0Gate -v ./gate)
 fi
 echo 'Requested M0 integration guardrails passed; M7 not run.'

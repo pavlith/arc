@@ -1,6 +1,6 @@
 GO ?= go
 
-.PHONY: bootstrap-dev verify m0-01-smoke m0-03-smoke m0-04-smoke
+.PHONY: bootstrap-dev verify m0-01-smoke m0-03-smoke m0-04-smoke m0-05-smoke
 
 bootstrap-dev:
 	cd sdk && $(GO) run ./cmd/arc-dev-bootstrap -out ../.secrets/dev
@@ -16,3 +16,6 @@ m0-03-smoke:
 
 m0-04-smoke:
 	bash scripts/test-m0-04.sh
+
+m0-05-smoke:
+	bash scripts/test-m0-05.sh

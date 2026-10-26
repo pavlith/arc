@@ -29,8 +29,7 @@ docker compose --profile tools run --rm rpc-smoke
 
 
 M0-02 Identity реализован в `sdk/identity` как Core-only модуль внутри существующего
-Go module; `sdk/security` и `sdk/rpc` проверяют JWT и request proof. Публичного HTTP
-входа нет. Внутренние NATS endpoints регистрирует `Core.BindInternal`, тестовый
+Go module; `sdk/security` и `sdk/rpc` проверяют JWT и request proof. Публичный HTTP вход реализован отдельным Gate M0-05. Внутренние NATS endpoints регистрирует `Core.BindInternal`, тестовый
 клиент — `identity.TestClient` / `identity.TestCall`. Private key Core загружается
 из отдельного файла seed с правами `0600`; в PostgreSQL публикуются только metadata
 и public key. Первичный пользователь и offline recovery code создаются локальным
@@ -41,7 +40,7 @@ Go module; `sdk/security` и `sdk/rpc` проверяют JWT и request proof. 
 права пользователя, scope/consent делегации, разрешённые tools и downstream
 сужение по `Incoming`. Операции с `needs_approval` запрещаются без подтверждения.
 Отсутствие адаптера закрывает доступ; production allow-all реализации нет.
-Gate в M0-05 обязан проверять origin/CSRF и использовать cookie-контракт
+Gate в M0-05 проверяет origin/CSRF и использовать cookie-контракт
 `SessionCookie`; внешний access JWT проверяется через `Verifier.Access` с живой
 проверкой сессии. Ресурсные side effects требуют онлайн Access в M0-03.
 
@@ -56,7 +55,7 @@ bash scripts/test-m0-02.sh
 Скрипт создаёт временные PostgreSQL/NATS, применяет миграции дважды, запускает
 существующий M0-01 RPC/JetStream smoke и M0-02 guardrails, затем удаляет временные
 данные. Без `ARC_IDENTITY_TEST_DSN` обычный `go test` явно пропускает интеграцию.
-Полная M7-матрица, Gate ingress и Fabric остаются своим этапам.
+Полная M7-матрица остаётся отдельным этапом; Fabric и Gate описаны ниже.
 
 Команды `delegations.create/revoke` требуют подписанный `idempotency_key`;
 `TestClient.IdempotencyKey` позволяет сохранить ключ при повторе после timeout.
@@ -132,3 +131,49 @@ bash scripts/test-m0-04.sh
 и Fabric guardrails с race detector. Полная replica/reconnect/timeout/recovery
 матрица остаётся M7. Таблицы replay/outbox/inbox domain-owner размещает в своей БД;
 права на точные event/DLQ subjects выдаются при установке deployment.
+
+### M0-05 Arc Gate
+
+```sh
+cd sdk
+go build -o /tmp/arc-gate ./cmd/arc-gate
+/tmp/arc-gate -config /path/to/gate-config.json
+```
+
+Пример без секретов: `deploy/gate/config.example.json`. Укажите реальный Gate
+ServiceAccount/kid, scoped NATS credentials, service Ed25519 seed (0600), TLS
+certificate/key и root public key Core (base64 JSON string, 32 bytes).
+Для HTTPS reverse proxy вместо TLS files задайте точные `trusted_proxies` CIDRs;
+без TLS или trusted proxy Gate не запускается. Единственный публичный порт — Gate;
+существующие Compose-порты PostgreSQL/NATS ограничены loopback для разработки.
+
+Core host связывает `identity.Core.BindInternal`, Access и
+`fabric.Core.BindRoutes`; `SnapshotKid` берётся из действующих Identity signing-key
+metadata, `RouteTrustKey` — отдельный Core-only ключ. Gate получает только public
+trust root. Доверенная установка заранее разрешает Gate точные Identity auth/
+exchange RPC, `ctl.arc.fabric.routes`, approved business subjects и подписку на
+`evt.arc.fabric.routes.changed`; никаких control wildcards для публичного клиента.
+`identity.Client` — production имя существующего service-proof клиента;
+`TestClient/TestCall` сохраняются для совместимости.
+
+Auth: `POST /api/v1/arc/auth/login`, `/refresh`, `/logout`,
+`GET /api/v1/arc/auth/session`. Login требует разрешённый HTTPS Origin; cookie
+mutations — тот же Origin и `X-CSRF-Token`. Login выдаёт session/CSRF/access JWT,
+а session/refresh credentials сохраняются Secure cookies. Bearer access JWT
+проверяется online в Core; domain service получает отдельный invocation + proof.
+Не отправляйте одновременно Bearer и session cookie.
+
+Таблица маршрутов заменяется атомарно после проверки signature/digest/live JWKS,
+contract schemas и bindings. Cold start закрыт; notification и periodic fetch
+восстанавливают обновления. Сохранённая таблица не заменяет online auth. Readiness
+проверяется через `/readyz`, liveness — `/healthz`. Полная M7-матрица и DAV/WS здесь
+не реализованы.
+
+```sh
+make m0-05-smoke
+```
+
+Тест создаёт временные PostgreSQL/NATS и отдельную чистую БД Gate fixture,
+проверяет HTTP/CSRF/CORS/session/bearer/security, signed snapshots, race replacement,
+real Identity→Gate→domain→Access, ошибки, replay и регрессии M0-01–M0-04.
+Новая SQL-миграция для Gate не нужна: он использует действующие Core-контракты.

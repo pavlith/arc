@@ -62,6 +62,9 @@ signed Core invocation verification. Unlike the legacy combined
 own domain schema migration; **do not apply both migration strategies to the
 same database**.
 
-Existing `sdk/tasks`, `sdk/notifications`, `sdk/domainrun` and deployed
-binaries remain unchanged until a separate cutover with NATS/PostgreSQL
-end-to-end tests.
+Standalone `cmd/arc-tasks` and `cmd/arc-notifications` each load their own
+service-specific bootstrap config, credentials, DB, NATS connections, workers,
+and SDK runtime. The common `sdk/bootstrap` owns only reusable infrastructure
+initialization; it never selects domain services or composes multiple services
+into one process. Each image/container is deployed independently.
+

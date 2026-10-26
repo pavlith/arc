@@ -3,7 +3,7 @@ GO ?= go
 .PHONY: bootstrap-dev verify m0-01-smoke m0-03-smoke m0-04-smoke m0-05-smoke
 
 bootstrap-dev:
-	$(GO) run ./cmd/arc-dev-bootstrap -out ../.secrets/dev
+	$(GO) run ./cmd/arc-dev-bootstrap -out .secrets/dev
 
 verify:
 	bash scripts/verify-changed.sh

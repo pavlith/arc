@@ -1,22 +1,23 @@
 package main
 
 import (
-	"context"
-	"flag"
-	"github.com/pavlith/arc/internal/domainrun"
-	"log"
-	"os"
-	"os/signal"
-	"syscall"
+ "context"
+ "flag"
+ "log"
+ "os"
+ "os/signal"
+ "syscall"
+
+ "github.com/pavlith/arc/services/task"
 )
 
 func main() {
-	file := flag.String("config", "", "path to domain JSON configuration")
-	flag.Parse()
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-	if e := domainrun.Run(ctx, "tasks", *file); e != nil {
-		log.Print(e)
-		os.Exit(1)
-	}
+ file:=flag.String("config","","path to Tasks JSON configuration")
+ flag.Parse()
+ ctx,stop:=signal.NotifyContext(context.Background(),os.Interrupt,syscall.SIGTERM)
+ defer stop()
+ if err:=task.Run(ctx,*file);err!=nil{
+  log.Print(err)
+  os.Exit(1)
+ }
 }

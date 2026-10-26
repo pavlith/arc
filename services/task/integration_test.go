@@ -23,7 +23,9 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
-	"github.com/pavlith/arc/internal/domainrun"
+	"github.com/pavlith/arc/sdk/bootstrap"
+ taskservice "github.com/pavlith/arc/services/task"
+ notifyservice "github.com/pavlith/arc/services/notify"
 	"github.com/pavlith/arc/sdk"
 	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/events"
@@ -295,7 +297,9 @@ func TestM006(t *testing.T) {
 		must(os.WriteFile(keyFile, k.Seed(), 0600))
 		dsnFile := filepath.Join(confDir, kind+".dsn")
 		must(os.WriteFile(dsnFile, []byte(strings.Replace(dsn, "user=arc_core", "user=arc_"+kind, 1)), 0600))
-		config := domainrun.Config{NATS: cfg("m006-"+kind, "nats-"+kind+".seed"), DSNFile: dsnFile, ServiceID: account, Kid: kid, KeyFile: keyFile, CoreKeyFile: coreFile, Instance: "m006-" + kind, Subscription: sub}
+		base := bootstrap.Config{NATS: cfg("m006-"+kind, "nats-"+kind+".seed"), DSNFile: dsnFile, ServiceID: account, Kid: kid, KeyFile: keyFile, CoreKeyFile: coreFile, Instance: "m006-" + kind}
+  var config any=taskservice.BootstrapConfig{Config:base}
+  if kind=="notifications" {config=notifyservice.BootstrapConfig{Config:base,Subscription:sub}}
 		file := write(kind+".json", config)
 		cmd := exec.Command(filepath.Join(os.Getenv("ARC_DOMAIN_BIN_DIR"), "arc-"+kind), "-config", file)
 		logFile, e := os.Create(filepath.Join(confDir, kind+".log"))
@@ -311,7 +315,7 @@ func TestM006(t *testing.T) {
 		t.Cleanup(stop)
 		eventually(t, func() bool {
 			var ready bool
-			_ = db.QueryRow(`SELECT ready AND observed_at>$2 FROM fabric.instances WHERE instance_id=$1`, config.Instance, processStarted).Scan(&ready)
+			_ = db.QueryRow(`SELECT ready AND observed_at>$2 FROM fabric.instances WHERE instance_id=$1`, base.Instance, processStarted).Scan(&ready)
 			return ready
 		}, func() string {
 			b, _ := os.ReadFile(logFile.Name())

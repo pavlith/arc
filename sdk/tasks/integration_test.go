@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -428,10 +429,16 @@ func TestM006(t *testing.T) {
 	must(e)
 	notifyRegistry := &fabric.Client{NC: notifyNC, Account: consumer, Kid: "m006-notify-key", Key: notifyKey, CoreKey: coreKey.Public().(ed25519.PublicKey)}
 	nr := sdk.Registration{Service: "notifications", Instance: "m006-notifications", Build: nm.Manifest.Service.BuildVersion, Digest: nm.Digest}
-	wrong := subscription
-	wrong.Durable = "unapproved"
-	if notifyRegistry.EventPermit(ctx, nr, wrong) == nil {
-		t.Fatal("unapproved durable accepted")
+	// Every subscription dimension is bound to the operator-approved installation.
+	for _, wrong := range []fabric.EventSubscription{
+		{Provider: provider, Digest: tm.Digest, Subject: tasks.Created, Durable: "unapproved"},
+		{Provider: consumer, Digest: tm.Digest, Subject: tasks.Created, Durable: notifications.Durable},
+		{Provider: provider, Digest: strings.Repeat("0", len(tm.Digest)), Subject: tasks.Created, Durable: notifications.Durable},
+		{Provider: provider, Digest: tm.Digest, Subject: "evt.tasks.task.deleted.v1", Durable: notifications.Durable},
+	} {
+		if notifyRegistry.EventPermit(ctx, nr, wrong) == nil {
+			t.Fatalf("unapproved subscription accepted: %+v", wrong)
+		}
 	}
 	must(notifyRegistry.EventPermit(ctx, nr, subscription))
 
@@ -469,6 +476,83 @@ func TestM006(t *testing.T) {
 	countsMu.Lock()
 	t.Logf("warm create → notification + fake intent delivery latency=%s; observed Core RPC including background approval polls=%v; request path=5 actor RPC + 1 Fabric lease RPC", time.Since(warmStart), counts)
 	countsMu.Unlock()
+	// Report a sample distribution, not a one-off value that also included consumer startup.
+	// Measure each request until its own durable fake-delivery intent completes.
+	latencies := []time.Duration{time.Since(warmStart)}
+	for i := 0; i < 9; i++ {
+		started := time.Now()
+		status, b = request(client, "POST", base, fmt.Sprintf(`{"title":"Running consumer sample %d"}`, i), token, fmt.Sprintf("latency-sample-%d", i))
+		if status != 201 {
+			t.Fatalf("sample %d create %d %s", i, status, b)
+		}
+		var created tasks.Task
+		must(json.Unmarshal(b, &created))
+		taskCount++
+		notificationCount++
+		eventually(t, func() bool {
+			var eventID string
+			if e := tdb.QueryRow(`SELECT event_id FROM tasks.outbox WHERE envelope->>'aggregate_id'=$1`, created.ID).Scan(&eventID); e != nil {
+				return false
+			}
+			return count(ndb, `SELECT count(*) FROM notifications.notifications n JOIN notifications.delivery_intents d ON d.notification_id=n.id WHERE n.event_id=$1 AND d.delivered_at IS NOT NULL`, eventID) == 1
+		}, nil)
+		latencies = append(latencies, time.Since(started))
+	}
+	sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
+	percentile := func(n int) time.Duration { return latencies[(len(latencies)*n+99)/100-1] }
+	t.Logf("running-consumer create -> notification -> fake delivery: samples=%d p50=%s p95=%s max=%s (25ms observation polling, 100ms worker ticks; not a load benchmark)", len(latencies), percentile(50), percentile(95), latencies[len(latencies)-1])
+	if count(tdb, `SELECT count(*) FROM tasks.tasks`) != taskCount || count(ndb, `SELECT count(*) FROM notifications.delivery_intents WHERE delivered_at IS NOT NULL`) != notificationCount {
+		t.Fatal("running-consumer samples lost an effect")
+	}
+	t.Run("missing-permit-fail-closed", func(t *testing.T) {
+		blocked := events.Delivery{Store: events.Store{DB: ndb, Schema: "notifications"}, Contract: tm}
+		if e := blocked.Pull(ctx, js, tasks.Created, notifications.Durable, (&notifications.Service{DB: ndb}).Effect); !errors.Is(e, security.ErrUnavailable) {
+			t.Fatalf("pull without current approval: %v", e)
+		}
+		if _, e := (events.Delivery{Store: events.Store{DB: tdb, Schema: "tasks"}, Contract: tm}).PublishBatch(ctx, js, 10); !errors.Is(e, security.ErrUnavailable) {
+			t.Fatalf("publish without current approval: %v", e)
+		}
+	})
+	t.Run("revoked-consumer-fail-closed", func(t *testing.T) {
+		beforeInbox := count(ndb, `SELECT count(*) FROM notifications.inbox`)
+		beforeEffects := count(ndb, `SELECT count(*) FROM notifications.notifications`)
+		revocation, sig := signed(operator, fabric.Revocation{Digest: nm.Digest, Revoke: true})
+		must(f.Revoke(ctx, revocation, sig))
+		// Restoration is a privileged test-fixture operation, never a runtime API.
+		defer func() {
+			if _, e := migrator.Exec(`UPDATE fabric.contracts SET revoked_at=NULL WHERE digest=$1`, nm.Digest); e != nil {
+				t.Error(e)
+			}
+		}()
+		if notifyRegistry.EventPermit(ctx, nr, subscription) == nil {
+			t.Fatal("revoked consumer still has event permit")
+		}
+		status, b := request(client, "POST", base, `{"title":"While consumer revoked"}`, token, "revoked-consumer-proof")
+		if status != 201 {
+			t.Fatalf("create while consumer revoked %d %s", status, b)
+		}
+		taskCount++
+		notificationCount++
+		var withheld tasks.Task
+		must(json.Unmarshal(b, &withheld))
+		eventually(t, func() bool {
+			var published bool
+			_ = tdb.QueryRow(`SELECT published_at IS NOT NULL FROM tasks.outbox WHERE envelope->>'aggregate_id'=$1`, withheld.ID).Scan(&published)
+			return published
+		}, nil)
+		// The already-running consumer must not commit or ACK newly published work.
+		time.Sleep(500 * time.Millisecond)
+		if count(ndb, `SELECT count(*) FROM notifications.inbox`) != beforeInbox || count(ndb, `SELECT count(*) FROM notifications.notifications`) != beforeEffects {
+			t.Fatal("revoked consumer committed a delivery effect")
+		}
+		_, e := migrator.Exec(`UPDATE fabric.contracts SET revoked_at=NULL WHERE digest=$1`, nm.Digest)
+		must(e)
+		eventually(t, func() bool { return notifyRegistry.EventPermit(ctx, nr, subscription) == nil }, nil)
+		eventually(t, func() bool {
+			return count(ndb, `SELECT count(*) FROM notifications.inbox`) == beforeInbox+1 &&
+				count(ndb, `SELECT count(*) FROM notifications.delivery_intents WHERE delivered_at IS NOT NULL`) == notificationCount
+		}, nil)
+	})
 	t.Run("security", func(t *testing.T) {
 		outsiderToken := loginHTTP("proof-outsider@example.test")
 		for _, op := range []struct{ method, path, body string }{{"POST", base, `{"title":"denied"}`}, {"GET", base + "/" + task.ID, ""}} {

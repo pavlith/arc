@@ -56,7 +56,7 @@ bash scripts/test-m0-02.sh
 Скрипт создаёт временные PostgreSQL/NATS, применяет миграции дважды, запускает
 существующий M0-01 RPC/JetStream smoke и M0-02 guardrails, затем удаляет временные
 данные. Без `ARC_IDENTITY_TEST_DSN` обычный `go test` явно пропускает интеграцию.
-Полная M7-матрица, Gate ingress, Resource ACL и Fabric остаются своим этапам.
+Полная M7-матрица, Gate ingress и Fabric остаются своим этапам.
 
 Команды `delegations.create/revoke` требуют подписанный `idempotency_key`;
 `TestClient.IdempotencyKey` позволяет сохранить ключ при повторе после timeout.
@@ -67,3 +67,40 @@ bash scripts/test-m0-02.sh
 позволяет policy дополнительно сократить допустимый срок consent; Core ограничивает
 его 24 часами. Очистка audit/истёкших nonce и эксплуатационная ротация секретов
 требуют политики retention при M7 hardening.
+
+M0-03 Access находится в `sdk/access`, миграция — `000003_access.up.sql`.
+`Core.BindInternal` и typed `access.Client` обслуживают `access.v1.resource_types.register`,
+`resources.reserve/activate/abort/begin_delete/finalize_delete`, `check`, `check_many`,
+`list_accessible_roots`, `grants.add/revoke` через существующий защищённый NATS RPC.
+Контекст клиента задаётся через `rpc.WithCredentials`; commands требуют стабильный
+idempotency key и deadline. JWT/proof и актуальные Identity principals проверяются
+на каждом запросе. `CheckMany` использует один PostgreSQL repeatable-read snapshot
+для максимум 100 пар; положительного кэша нет.
+
+До Fabric утверждения загружаются локально через `access.NewContracts`:
+Ed25519 public key authority закреплён в конфигурации Core, подпись покрывает
+RFC 8785 payload `access.Approval` с точными resource types/provider UUID, deployment
+pairs, caller/audience/operation/action rules, точной картой downstream actions и agent tool scopes.
+`source_aud/source_op` нового JWT подписываются Core из проверенного входящего token;
+поэтому `free_busy` → `Access.Check` не расширяется до `read` даже для owner. Authority key
+и approvals не принимаются из RPC. Назначение `identity.Core.Policy = accessCore`
+связывает модули: `Authorize` проверяет утверждённые операции и downstream provenance,
+а права делегации читает напрямую из SQL. Обратных вызовов Identity из Access policy
+нет. Пустые зависимости и неизвестные операции закрывают доступ.
+
+`DomainOwner.Confirm` обязан сверять resource/provider/operation/receipt с собственным
+доменным commit. Реальные Calendar/Files подключат этот интерфейс и `RootLookup`;
+`GuardObject` проверяет object → root по данным сервиса-владельца. Без подтверждения
+`activate/abort/finalize_delete` запрещены. После crash domain-owner повторяет шаг
+с тем же ключом; сохранённый результат, revision и audit фиксируются одной транзакцией
+Core. Reconciler/outbox доменных сервисов остаются ответственностью этих сервисов.
+
+```sh
+make m0-03-smoke
+```
+
+Команда использует временные PostgreSQL/NATS, повторяет миграции и выполняет
+регрессию M0-01 RPC/JetStream, M0-02 и M0-03 guardrails. Отдельный workflow
+`m0-03.yml` также выполняет быстрые Go-тесты и `go vet`. Для локального обычного
+`go test ./...` интеграция требует `ARC_ACCESS_TEST_DSN` и NATS fixtures;
+готовый harness задаёт их сам. M7 и публичный Gate API здесь не реализуются.

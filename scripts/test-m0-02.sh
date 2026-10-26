@@ -22,6 +22,7 @@ touch "$PGPASSWORD_FILE"
 sh scripts/migrate.sh
 sh scripts/migrate.sh
 export ARC_IDENTITY_TEST_DSN="host=$scratch user=arc_core dbname=arc sslmode=disable"
+export ARC_ACCESS_TEST_DSN="$ARC_IDENTITY_TEST_DSN"
 # Use the existing M0-01 TLS/NKey bootstrap and smoke client unchanged.
 (cd sdk && go run ./cmd/arc-dev-bootstrap -out "$scratch/secrets" -runtime-dir "$scratch/secrets" -store-dir "$scratch/jetstream")
 # Bind an ephemeral port; the generated config has port 4222, replaced below.
@@ -57,7 +58,21 @@ wait "$nats_pid" || true
 nats_pid=
 # Only this isolated test deployment grants Identity subjects to the two test NKeys.
 sed -i 's/rpc.bootstrap.v1.echo/rpc.identity.v1.>/g' "$scratch/secrets/nats-server.conf"
+sed -i 's/"rpc.identity.v1.>"/"rpc.identity.v1.>", "rpc.access.v1.>"/g' "$scratch/secrets/nats-server.conf"
+python3 - "$scratch/secrets/nats-server.conf" <<'PYTHON'
+import pathlib, sys
+path = pathlib.Path(sys.argv[1])
+config = path.read_text()
+for operation in ('PING', 'INFO', 'STATS'):
+    for suffix in ('', '.>'):
+        subject = f'"$SRV.{operation}.arc-bootstrap{suffix}"'
+        config = config.replace(subject, subject + f', "$SRV.{operation}.arc-access{suffix}"')
+path.write_text(config)
+PYTHON
 start_nats
 export ARC_IDENTITY_NATS_URL="tls://localhost:$port" ARC_IDENTITY_NATS_SECRETS="$scratch/secrets"
 (cd sdk && go test -count=1 -run TestM0Identity -v ./identity)
-echo 'M0-02 integration guardrails and M0-01 RPC smoke passed; M7 not run.'
+if [[ ${ARC_TEST_ACCESS:-0} == 1 ]]; then
+  (cd sdk && go test -race -count=1 -run TestM0Access -v ./access)
+fi
+echo 'Requested M0 integration guardrails passed; M7 not run.'

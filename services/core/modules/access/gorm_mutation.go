@@ -73,7 +73,7 @@ func (c *Core) mutationGORM(ctx context.Context, op string, payload any,
 			if err != nil {
 				return err
 			}
-			out.Revision = rev+1
+			out.Revision = rev + 1
 			serialized, err := json.Marshal(out)
 			if err != nil {
 				return err

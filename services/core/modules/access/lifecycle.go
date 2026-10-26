@@ -8,10 +8,16 @@ import (
 )
 
 func (c *Core) RegisterType(ctx context.Context, q RegisterRequest) (MutationResult, error) {
- if c != nil && c.GormDB != nil {
- if c.ContractSource != nil { next,e := c.resolveContracts(ctx); if e != nil { return MutationResult{},e }; return next.RegisterType(ctx,q) }
- return c.registerTypeGORM(ctx,q)
- }
+	if c != nil && c.GormDB != nil {
+		if c.ContractSource != nil {
+			next, e := c.resolveContracts(ctx)
+			if e != nil {
+				return MutationResult{}, e
+			}
+			return next.RegisterType(ctx, q)
+		}
+		return c.registerTypeGORM(ctx, q)
+	}
 
 	if c != nil && c.ContractSource != nil {
 		next, e := c.resolveContracts(ctx)
@@ -41,10 +47,16 @@ func (c *Core) RegisterType(ctx context.Context, q RegisterRequest) (MutationRes
 	})
 }
 func (c *Core) Reserve(ctx context.Context, q ReserveRequest) (MutationResult, error) {
- if c != nil && c.GormDB != nil {
- if c.ContractSource != nil { next,e := c.resolveContracts(ctx); if e != nil { return MutationResult{},e }; return next.Reserve(ctx,q) }
- return c.reserveGORM(ctx,q)
- }
+	if c != nil && c.GormDB != nil {
+		if c.ContractSource != nil {
+			next, e := c.resolveContracts(ctx)
+			if e != nil {
+				return MutationResult{}, e
+			}
+			return next.Reserve(ctx, q)
+		}
+		return c.reserveGORM(ctx, q)
+	}
 
 	if c != nil && c.ContractSource != nil {
 		next, e := c.resolveContracts(ctx)
@@ -126,10 +138,16 @@ func (c *Core) Reserve(ctx context.Context, q ReserveRequest) (MutationResult, e
 	})
 }
 func (c *Core) Activate(ctx context.Context, q LifecycleRequest) (MutationResult, error) {
- if c != nil && c.GormDB != nil {
- if c.ContractSource != nil { next,e := c.resolveContracts(ctx); if e != nil { return MutationResult{},e }; return next.Activate(ctx,q) }
- return c.transitionGORM(ctx,"activate",q)
- }
+	if c != nil && c.GormDB != nil {
+		if c.ContractSource != nil {
+			next, e := c.resolveContracts(ctx)
+			if e != nil {
+				return MutationResult{}, e
+			}
+			return next.Activate(ctx, q)
+		}
+		return c.transitionGORM(ctx, "activate", q)
+	}
 
 	if c != nil && c.ContractSource != nil {
 		next, e := c.resolveContracts(ctx)
@@ -141,10 +159,16 @@ func (c *Core) Activate(ctx context.Context, q LifecycleRequest) (MutationResult
 	return c.transition(ctx, "activate", q)
 }
 func (c *Core) Abort(ctx context.Context, q LifecycleRequest) (MutationResult, error) {
- if c != nil && c.GormDB != nil {
- if c.ContractSource != nil { next,e := c.resolveContracts(ctx); if e != nil { return MutationResult{},e }; return next.Abort(ctx,q) }
- return c.transitionGORM(ctx,"abort",q)
- }
+	if c != nil && c.GormDB != nil {
+		if c.ContractSource != nil {
+			next, e := c.resolveContracts(ctx)
+			if e != nil {
+				return MutationResult{}, e
+			}
+			return next.Abort(ctx, q)
+		}
+		return c.transitionGORM(ctx, "abort", q)
+	}
 
 	if c != nil && c.ContractSource != nil {
 		next, e := c.resolveContracts(ctx)
@@ -156,10 +180,16 @@ func (c *Core) Abort(ctx context.Context, q LifecycleRequest) (MutationResult, e
 	return c.transition(ctx, "abort", q)
 }
 func (c *Core) BeginDelete(ctx context.Context, q LifecycleRequest) (MutationResult, error) {
- if c != nil && c.GormDB != nil {
- if c.ContractSource != nil { next,e := c.resolveContracts(ctx); if e != nil { return MutationResult{},e }; return next.BeginDelete(ctx,q) }
- return c.transitionGORM(ctx,"begin_delete",q)
- }
+	if c != nil && c.GormDB != nil {
+		if c.ContractSource != nil {
+			next, e := c.resolveContracts(ctx)
+			if e != nil {
+				return MutationResult{}, e
+			}
+			return next.BeginDelete(ctx, q)
+		}
+		return c.transitionGORM(ctx, "begin_delete", q)
+	}
 
 	if c != nil && c.ContractSource != nil {
 		next, e := c.resolveContracts(ctx)
@@ -171,10 +201,16 @@ func (c *Core) BeginDelete(ctx context.Context, q LifecycleRequest) (MutationRes
 	return c.transition(ctx, "begin_delete", q)
 }
 func (c *Core) FinalizeDelete(ctx context.Context, q LifecycleRequest) (MutationResult, error) {
- if c != nil && c.GormDB != nil {
- if c.ContractSource != nil { next,e := c.resolveContracts(ctx); if e != nil { return MutationResult{},e }; return next.FinalizeDelete(ctx,q) }
- return c.transitionGORM(ctx,"finalize_delete",q)
- }
+	if c != nil && c.GormDB != nil {
+		if c.ContractSource != nil {
+			next, e := c.resolveContracts(ctx)
+			if e != nil {
+				return MutationResult{}, e
+			}
+			return next.FinalizeDelete(ctx, q)
+		}
+		return c.transitionGORM(ctx, "finalize_delete", q)
+	}
 
 	if c != nil && c.ContractSource != nil {
 		next, e := c.resolveContracts(ctx)

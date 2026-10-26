@@ -15,7 +15,7 @@ import (
 	"github.com/pavlith/arc/sdk/rpc"
 	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/core/modules/identity"
- "gorm.io/gorm"
+	"gorm.io/gorm"
 )
 
 var ErrDenied = security.ErrDenied
@@ -34,7 +34,7 @@ type ContractSource interface {
 type Core struct {
 	ContractSource ContractSource
 	DB             *sql.DB
- GormDB         *gorm.DB
+	GormDB         *gorm.DB
 	Identity       *identity.Core
 	Contracts      *Contracts
 	Domain         DomainOwner
@@ -49,13 +49,15 @@ func (c *Core) now() time.Time {
 }
 func (c *Core) ready() error {
 	if c == nil || c.Identity == nil || (c.Contracts == nil && c.ContractSource == nil) {
- return ErrUnavailable
- }
- if c.GormDB != nil {
- if c.Identity.GormDB != c.GormDB { return ErrUnavailable }
- return nil
- }
- if c.DB == nil || c.Identity.DB != c.DB {
+		return ErrUnavailable
+	}
+	if c.GormDB != nil {
+		if c.Identity.GormDB != c.GormDB {
+			return ErrUnavailable
+		}
+		return nil
+	}
+	if c.DB == nil || c.Identity.DB != c.DB {
 		return ErrUnavailable
 	}
 	return nil

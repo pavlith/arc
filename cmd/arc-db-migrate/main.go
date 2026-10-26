@@ -13,18 +13,21 @@ import (
 
  "github.com/go-gormigrate/gormigrate/v2"
  "github.com/pavlith/arc/sdk/database"
+ coremigrations "github.com/pavlith/arc/services/core/migrations"
  notifymigrations "github.com/pavlith/arc/services/notify/migrations"
  taskmigrations "github.com/pavlith/arc/services/task/migrations"
 )
 
 func migrations(owner string) ([]*gormigrate.Migration, error) {
  switch owner {
+ case "core":
+  return coremigrations.SQLite(), nil
  case "task":
   return taskmigrations.SQLite(), nil
  case "notify":
   return notifymigrations.SQLite(), nil
  default:
-  return nil, fmt.Errorf("unsupported SQLite migration owner %q (supported: task, notify)", owner)
+  return nil, fmt.Errorf("unsupported SQLite migration owner %q (supported: core, task, notify)", owner)
  }
 }
 
@@ -44,7 +47,7 @@ func run(ctx context.Context, owner, path string) error {
 }
 
 func main() {
- owner := flag.String("service", "", "SQLite owner: task or notify")
+ owner := flag.String("service", "", "SQLite owner: core, task or notify")
  path := flag.String("db", "", "absolute path to the owner's SQLite file")
  flag.Parse()
  ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

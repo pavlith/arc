@@ -80,7 +80,7 @@ func sqliteAccessFixture(t *testing.T, db *gorm.DB) *Core {
 		{`INSERT INTO identity_sessions(id,user_id,secret_hash,csrf_hash,expires_at)
 		VALUES(?,?,x'0102',x'0304',?)`, []any{sqliteSession,sqliteOwner,now.Add(time.Hour)}},
 		{`INSERT INTO identity_sessions(id,user_id,secret_hash,csrf_hash,expires_at)
-		VALUES(?,?,x'0102',x'0304',?)`, []any{sqliteMemberSession,sqliteMember,now.Add(time.Hour)}},
+		VALUES(?,?,x'0506',x'0708',?)`, []any{sqliteMemberSession,sqliteMember,now.Add(time.Hour)}},
 	}
 	for _, query := range queries {
 		if err := db.Exec(query.statement,query.values...).Error; err != nil {

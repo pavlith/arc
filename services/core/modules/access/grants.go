@@ -136,6 +136,11 @@ func (c *Core) grantExpiry(ctx context.Context, t *sql.Tx, cl security.Claims, r
 	return nil
 }
 func (c *Core) AddGrant(ctx context.Context, q GrantRequest) (MutationResult, error) {
+ if c != nil && c.GormDB != nil {
+ if c.ContractSource != nil { next,e := c.resolveContracts(ctx); if e != nil { return MutationResult{},e }; return next.AddGrant(ctx,q) }
+ return c.addGrantGORM(ctx,q)
+ }
+
 	if c != nil && c.ContractSource != nil {
 		next, e := c.resolveContracts(ctx)
 		if e != nil {
@@ -180,6 +185,11 @@ func (c *Core) AddGrant(ctx context.Context, q GrantRequest) (MutationResult, er
 	})
 }
 func (c *Core) RevokeGrant(ctx context.Context, q RevokeRequest) (MutationResult, error) {
+ if c != nil && c.GormDB != nil {
+ if c.ContractSource != nil { next,e := c.resolveContracts(ctx); if e != nil { return MutationResult{},e }; return next.RevokeGrant(ctx,q) }
+ return c.revokeGrantGORM(ctx,q)
+ }
+
 	if c != nil && c.ContractSource != nil {
 		next, e := c.resolveContracts(ctx)
 		if e != nil {

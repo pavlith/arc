@@ -9,7 +9,7 @@ import (
 )
 
 func TestOwnerMigrations(t *testing.T) {
- for _, owner := range []string{"task", "notify"} {
+ for _, owner := range []string{"core", "task", "notify"} {
   t.Run(owner, func(t *testing.T) {
    path := filepath.Join(t.TempDir(), owner+".sqlite")
    if err := run(context.Background(), owner, path); err != nil { t.Fatal(err) }
@@ -20,6 +20,7 @@ func TestOwnerMigrations(t *testing.T) {
    if !db.Migrator().HasTable("schema_migrations") { t.Fatal("migration history missing") }
    table := "tasks"
    if owner == "notify" { table = "notifications" }
+   if owner == "core" { table = "identity_users" }
    if !db.Migrator().HasTable(table) { t.Fatalf("%s table missing", table) }
   })
  }
@@ -27,6 +28,6 @@ func TestOwnerMigrations(t *testing.T) {
 
 func TestRejectInvalidOwnerBeforeOpeningDatabase(t *testing.T) {
  path := filepath.Join(t.TempDir(), "unknown.sqlite")
- if err := run(context.Background(), "core", path); err == nil { t.Fatal("unimplemented core migration accepted") }
+ if err := run(context.Background(), "unknown", path); err == nil { t.Fatal("unsupported migration owner accepted") }
  if err := run(context.Background(), "task", "relative.sqlite"); err == nil { t.Fatal("relative path accepted") }
 }

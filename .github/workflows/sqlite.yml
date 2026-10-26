@@ -1,0 +1,38 @@
+name: SQLite / GORM migration
+
+on:
+  push:
+    branches: [dev, main]
+    paths:
+      - 'sdk/database/**'
+      - 'sdk/events/**'
+      - 'services/task/migrations/**'
+      - 'services/task/models/**'
+      - 'services/notify/migrations/**'
+      - 'services/notify/models/**'
+      - 'services/sqlite_migrations_test.go'
+      - 'cmd/arc-sqlite-migrate/**'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/sqlite.yml'
+  workflow_dispatch:
+
+jobs:
+  sqlite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Check Go formatting
+        run: |
+          files=$(gofmt -l sdk/database sdk/events services/task/migrations services/task/models services/notify/migrations services/notify/models services/sqlite_migrations_test.go cmd/arc-sqlite-migrate)
+          if [ -n "$files" ]; then
+            printf 'Unformatted Go files:\n%s\n' "$files"
+            exit 1
+          fi
+      - name: Run SQLite unit and concurrency tests
+        if: always()
+        run: go test -count=1 ./sdk/database ./sdk/events ./services ./services/task/migrations ./services/notify/migrations ./cmd/arc-sqlite-migrate

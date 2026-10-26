@@ -13,8 +13,8 @@ import (
 	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/database"
 	"github.com/pavlith/arc/sdk/events"
-	taskv1 "github.com/pavlith/arc/services/task/api/v1"
 	notifydb "github.com/pavlith/arc/services/notify/migrations"
+	taskv1 "github.com/pavlith/arc/services/task/api/v1"
 	"gorm.io/gorm"
 )
 

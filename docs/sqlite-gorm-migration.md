@@ -33,3 +33,18 @@ Status: implementation plan; PostgreSQL remains active until the service cutover
 - Each migration is deterministic, repeatable and failure-safe.
 - Concurrent replay and consumer tests pass against file-backed SQLite.
 - Existing tests and the M0-06 end-to-end proof pass before declaring migration complete.
+
+## Implementation checkpoints (2026-10-26)
+
+- Implemented: `sdk/database` GORM connection, pragmas, busy retry and ordered Gormigrate runner.
+- Implemented: Task and Notify SQLite migrations and GORM persistence models.
+- Implemented: GORM command replay + inbox/outbox transaction helpers and concurrency tests.
+- Implemented: standalone `cmd/arc-sqlite-migrate` for task and notify; CI coverage in `.github/workflows/sqlite.yml`.
+- Pending: Core schema and Core repositories, changing each service's live DB config to GORM, GORM JetStream delivery adapters, removal of PostgreSQL, full M0-06 proof.
+
+```bash
+CGO_ENABLED=1 go run ./cmd/arc-sqlite-migrate -service task -db /var/lib/arc/task/task.sqlite
+CGO_ENABLED=1 go run ./cmd/arc-sqlite-migrate -service notify -db /var/lib/arc/notify/notify.sqlite
+```
+
+Keep PostgreSQL services running until the complete cutover has been verified.

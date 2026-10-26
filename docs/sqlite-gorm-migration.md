@@ -1,59 +1,20 @@
-# SQLite / GORM migration contract
+# SQLite / GORM storage contract
 
-Status: implementation plan; PostgreSQL remains active until the service cutovers are tested.
+Core, Task and Notify each own a local SQLite file, GORM repositories and an ordered Gormigrate history. Gate has no database. The SDK supplies connection/transaction/retry helpers, without service models or automatic migrations.
 
-## Decisions
+- Configure an absolute `sqlite_path`; parent directories must already exist and belong to the service user. Files start with mode 0600. Mount only that owner's directory, including WAL/SHM sidecars.
+- Use WAL, foreign keys and a 10-second busy timeout on every connection. SQLite has one writer; acquire its write lock before reading mutable authorization/domain state and retry complete short transactions on busy errors.
+- Run immutable explicit migrations before traffic. AutoMigrate during service startup is forbidden. Only one owner migrator may run at a time; unknown migration IDs fail closed.
+- Domain mutation, audit, command result and outbox share one GORM transaction. Same actor/operation/key and canonical payload replays the result; changed payload conflicts; failed handlers leave no effects.
+- Inbox deduplication and internal effects commit together. Stable event IDs and provider keys survive retry/restart; external sends require provider idempotency.
+- Core modules share one database and can join the current in-process transaction for live policy checks. Different service owners communicate only through RPC/events.
+- Local processes of one owner may share one file; independent databases on different hosts and network filesystems are unsupported. Gate replicas remain independent.
+- Back up through SQLite backup API or with the owner stopped and its committed WAL state preserved. Existing data from the former database backend requires a separately verified export/import; switching storage does not transfer it.
 
-- Each independently deployed SQL-owning service (core, task, notify) owns its own SQLite database file. Gate does not own a database.
-- Shared connection and migration utilities belong in `sdk/database`. Service-specific models, queries, and ordered migrations stay in each service.
-- Use `gorm.io/gorm`, `gorm.io/driver/sqlite`, and `github.com/go-gormigrate/gormigrate/v2`. Do not call GORM AutoMigrate in production startup.
-- Every migration has an immutable ID and is run by an explicit owner migrator, before service traffic starts. A running service must not silently migrate its database.
-- Configure foreign keys, busy timeout, and WAL; verify pragmas on actual connections. Do not use an in-memory database in concurrency proofs.
-- SQLite has no PostgreSQL schemas: replace schema-qualified identifiers with owner-local tables. Remove PostgreSQL-only advisory locks, `$n` placeholders, JSONB/array syntax and `FOR UPDATE` where applicable.
-- Preserve command replay semantics: identical actor/operation/idempotency key + identical canonical payload returns the original result; changed payload conflicts; failed handlers leave no result.
-- Preserve inbox semantics: same consumer/event ID + identical canonical payload is a no-op; changed payload conflicts; inbox insert and domain effects commit atomically.
-- Preserve outbox semantics: domain mutations and outbox inserts share a single transaction. External publication occurs after commit; retries use stable event IDs.
-- Use database constraints and write transactions to serialize conflicting writes; do not rely on a process-local mutex for correctness across service instances.
-- Existing PostgreSQL data is not automatically migrated by switching the driver. Any production data transfer requires a separately tested export/import procedure.
-
-## Cutover sequence
-
-1. Add GORM/Gormigrate dependencies and reproducible `go.sum`; introduce `sdk/database` with SQLite open/close, pragmas and explicit migration runner, plus connection and migration tests.
-2. Port `sdk/events` to GORM transactions and SQLite-compatible SQL. Prove concurrent command replay, conflict, handler rollback, inbox deduplication and outbox atomicity.
-3. Port Core models, repositories and migrations. Replace `core.*` identifiers and validate identity, ACL and Fabric behavior.
-4. Port Task models, repositories and migrations. Prove task mutation + outbox atomicity and concurrent replay.
-5. Port Notify models, repositories and migrations. Prove inbox + notification effects and stable outbound retry keys.
-6. Switch each service's bootstrap/config to its own SQLite path; remove PostgreSQL wiring and dependencies only after every service and CLI is migrated.
-7. Update Compose, CI, test fixtures and documentation. Run `go test ./...`, `go vet ./...`, race/concurrency tests and the running-consumer end-to-end chain.
-
-## Release gates
-
-- No service references PostgreSQL driver, schema names or PostgreSQL-specific SQL.
-- No service can read or write another service's database.
-- Each migration is deterministic, repeatable and failure-safe.
-- Concurrent replay and consumer tests pass against file-backed SQLite.
-- Existing tests and the M0-06 end-to-end proof pass before declaring migration complete.
-
-## Implementation checkpoints (2026-10-26)
-
-- Implemented: `sdk/database` with SQLite WAL, foreign-key enforcement, busy retry and Gormigrate.
-- Implemented: owner-local SQLite schemas and migration CLI for Core, Task and Notify.
-- Implemented: GORM-based SDK command replay and inbox/outbox helpers, plus Task and Notify persistence paths.
-- Implemented: Core Runtime GORM desired-state compare-and-swap with multi-connection concurrency tests.
-- Implemented: Core Identity GORM signing-key metadata, JWKS, service-credential revocation, nonce replay protection, session and delegation live-state checks.
-- Implemented: Core Fabric GORM signed approval, rollback-safe revocation, ACL catalog loading, signed route snapshots, and instance lease/ready persistence.
-- Implemented: Core Access GORM/SQLite live caller/session/delegation checks, consistent read snapshots, root traversal and listing, ACL inheritance, resource type registration, lifecycle mutations, grants and revocation.
-- Implemented: transactional GORM Access command replay, conflict detection, policy revision CAS and append-only audit, with concurrent two-connection tests.
-- Verified: SQLite / GORM GitHub Actions test suite at commit `e4d1bc9` (`go test -count=1 ./...` and formatting).
-
-- Verified: SQLite unit test suite in GitHub Actions at commit `bd2d582`; source formatting fixes are included.
-- **Not yet implemented:** Core Identity account/session mutation and token exchange repositories; full Core service composition using GORM; PostgreSQL removal; live multi-service M0-06 SQLite proof.
-- **Deployment caution:** `arc-sqlite-migrate` builds the new database schemas, but does NOT switch the Core binary to SQLite. Core still requires PostgreSQL until the remaining modules and bootstrap have been ported.
-
-```bash
-CGO_ENABLED=1 go run ./cmd/arc-sqlite-migrate -service core -db /var/lib/arc/core/core.sqlite
-CGO_ENABLED=1 go run ./cmd/arc-sqlite-migrate -service task -db /var/lib/arc/task/task.sqlite
-CGO_ENABLED=1 go run ./cmd/arc-sqlite-migrate -service notify -db /var/lib/arc/notify/notify.sqlite
+```sh
+bash scripts/migrate.sh core /var/lib/arc/core/core.sqlite
+bash scripts/migrate.sh task /var/lib/arc/task/task.sqlite
+bash scripts/migrate.sh notify /var/lib/arc/notify/notify.sqlite
 ```
 
-Keep PostgreSQL services running until the complete cutover has been verified.
+Build with `CGO_ENABLED=1` and a C compiler. Compose migration containers and domain containers use separate owner volumes. `go test ./...` covers file-backed repositories and migration replay; `scripts/test-m0-06.sh` supplies TLS/NKey NATS and real Task/Notify process restart guardrails. Full M7 recovery/load testing remains deferred.

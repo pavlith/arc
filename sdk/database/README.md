@@ -33,9 +33,4 @@ Create the parent directories with appropriate owner permissions first. Run the
 migrator as a separate deployment step with no other migrator active. The
 command rejects unknown owners before opening or creating a database.
 
-**Migration status:** SQLite repositories are being introduced incrementally.
-Core Identity, Access and Fabric repositories and other PostgreSQL paths
-have not yet been cut over. Do not
-interpret a successful migration command as proof that the corresponding
-service is fully SQLite-only; verify its runtime wiring and end-to-end tests
-before deployment.
+Core, Task and Notify runtime wiring uses these GORM handles exclusively. Gate has no database. Compose uses separate owner volumes and explicit migration containers; never mount another owner's data directory into a domain service. SQLite requires local storage and a single shared file for processes of the same owner; independent file replicas across hosts are unsupported. Back up a consistent snapshot including committed WAL state.

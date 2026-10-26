@@ -20,18 +20,20 @@ Arc — русскоязычная self-hosted платформа для сов�
 
 ```bash
 make bootstrap-dev
-docker compose up -d postgres nats
-docker compose --profile tools run --rm migrate
+docker compose up -d nats
+for owner in core task notify; do
+  docker compose --profile tools run --rm "migrate-$owner"
+done
 docker compose --profile tools run --rm rpc-smoke
 ```
 
 Полная проверка M0-01 с двумя чистыми запусками: `make m0-01-smoke`.
 
 
-M0-02 Identity реализован в `sdk/identity` как Core-only модуль внутри существующего
+M0-02 Identity реализован в `services/core/modules/identity` как Core-only модуль внутри существующего
 Go module; `sdk/security` и `sdk/rpc` проверяют JWT и request proof. Публичный HTTP вход реализован отдельным Gate M0-05. Внутренние NATS endpoints регистрирует `Core.BindInternal`, тестовый
 клиент — `identity.TestClient` / `identity.TestCall`. Private key Core загружается
-из отдельного файла seed с правами `0600`; в PostgreSQL публикуются только metadata
+из отдельного файла seed с правами `0600`; в SQLite Core публикуются только metadata
 и public key. Первичный пользователь и offline recovery code создаются локальным
 `Core.BootstrapUser`, который не опубликован в RPC.
 
@@ -44,7 +46,7 @@ Gate в M0-05 проверяет origin/CSRF и использовать cookie-
 `SessionCookie`; внешний access JWT проверяется через `Verifier.Access` с живой
 проверкой сессии. Ресурсные side effects требуют онлайн Access в M0-03.
 
-Для узких интеграционных guardrails нужны `initdb`, `pg_ctl`, `psql`,
+Для узких интеграционных guardrails нужны C compiler (CGO), Python 3,
 `nats-server` и Go в PATH:
 
 ```sh
@@ -52,9 +54,9 @@ bash scripts/verify-changed.sh
 bash scripts/test-m0-02.sh
 ```
 
-Скрипт создаёт временные PostgreSQL/NATS, применяет миграции дважды, запускает
+Скрипт создаёт временные SQLite-файлы и TLS/NKey NATS, применяет миграции дважды, запускает
 существующий M0-01 RPC/JetStream smoke и M0-02 guardrails, затем удаляет временные
-данные. Без `ARC_IDENTITY_TEST_DSN` обычный `go test` явно пропускает интеграцию.
+данные. Обычный `go test` проверяет SQLite-репозитории; сетевые guardrails запускаются скриптами с NATS fixtures.
 Полная M7-матрица остаётся отдельным этапом; Fabric и Gate описаны ниже.
 
 Команды `delegations.create/revoke` требуют подписанный `idempotency_key`;
@@ -67,13 +69,13 @@ bash scripts/test-m0-02.sh
 его 24 часами. Очистка audit/истёкших nonce и эксплуатационная ротация секретов
 требуют политики retention при M7 hardening.
 
-M0-03 Access находится в `sdk/access`, миграция — `000003_access.up.sql`.
+M0-03 Access находится в `services/core/modules/access`, миграция — `services/core/migrations` (`000003_access`).
 `Core.BindInternal` и typed `access.Client` обслуживают `access.v1.resource_types.register`,
 `resources.reserve/activate/abort/begin_delete/finalize_delete`, `check`, `check_many`,
 `list_accessible_roots`, `grants.add/revoke` через существующий защищённый NATS RPC.
 Контекст клиента задаётся через `rpc.WithCredentials`; commands требуют стабильный
 idempotency key и deadline. JWT/proof и актуальные Identity principals проверяются
-на каждом запросе. `CheckMany` использует один PostgreSQL repeatable-read snapshot
+на каждом запросе. `CheckMany` использует один согласованный SQLite read snapshot
 для максимум 100 пар; положительного кэша нет.
 
 До Fabric утверждения загружаются локально через `access.NewContracts`:
@@ -98,15 +100,15 @@ Core. Reconciler/outbox доменных сервисов остаются от�
 make m0-03-smoke
 ```
 
-Команда использует временные PostgreSQL/NATS, повторяет миграции и выполняет
+Команда использует временные SQLite-файлы и TLS/NKey NATS, повторяет миграции и выполняет
 регрессию M0-01 RPC/JetStream, M0-02 и M0-03 guardrails. Отдельный workflow
 `m0-03.yml` также выполняет быстрые Go-тесты и `go vet`. Для локального обычного
-`go test ./...` интеграция требует `ARC_ACCESS_TEST_DSN` и NATS fixtures;
+`go test ./...` пропускает сетевую интеграцию без NATS fixtures;
 готовый harness задаёт их сам. M7 и публичный Gate API здесь не реализуются.
 
 ### M0-04 SDK и Fabric
 
-`migrations/000004_fabric.up.sql` добавляет immutable approved contracts,
+`services/core/migrations` (`000004_fabric`) добавляет immutable approved contracts,
 scoped deployments, instance leases, route revision и transaction storage shapes.
 `fabric.Core.Approve` — закрытая установка подписанного оператором JSON artifact;
 публичного approval endpoint нет. `fabric.Core` подключается к
@@ -126,7 +128,7 @@ subjects утверждённого deployment. `sdk.Call` проверяет wi
 bash scripts/test-m0-04.sh
 ```
 
-Нужны PostgreSQL tools и NATS server, как для M0-03. Проверка создаёт изолированную
+Нужны CGO/C compiler и NATS server, как для M0-03. Проверка создаёт изолированную
 БД, применяет/повторяет миграции, запускает M0-01 smoke, Identity/Access regression
 и Fabric guardrails с race detector. Полная replica/reconnect/timeout/recovery
 матрица остаётся M7. Таблицы replay/outbox/inbox domain-owner размещает в своей БД;
@@ -135,7 +137,6 @@ bash scripts/test-m0-04.sh
 ### M0-05 Arc Gate
 
 ```sh
-cd sdk
 go build -o /tmp/arc-gate ./cmd/arc-gate
 /tmp/arc-gate -config /path/to/gate-config.json
 ```
@@ -145,7 +146,7 @@ ServiceAccount/kid, scoped NATS credentials, service Ed25519 seed (0600), TLS
 certificate/key и root public key Core (base64 JSON string, 32 bytes).
 Для HTTPS reverse proxy вместо TLS files задайте точные `trusted_proxies` CIDRs;
 без TLS или trusted proxy Gate не запускается. Единственный публичный порт — Gate;
-существующие Compose-порты PostgreSQL/NATS ограничены loopback для разработки.
+Compose-порты NATS ограничены loopback для разработки; SQLite не открывает сетевых портов.
 
 Core host связывает `identity.Core.BindInternal`, Access и
 `fabric.Core.BindRoutes`; `SnapshotKid` берётся из действующих Identity signing-key
@@ -173,7 +174,9 @@ contract schemas и bindings. Cold start закрыт; notification и periodic 
 make m0-05-smoke
 ```
 
-Тест создаёт временные PostgreSQL/NATS и отдельную чистую БД Gate fixture,
+Тест создаёт временные SQLite-файлы и TLS/NKey NATS и отдельную чистую БД Gate fixture,
 проверяет HTTP/CSRF/CORS/session/bearer/security, signed snapshots, race replacement,
 real Identity→Gate→domain→Access, ошибки, replay и регрессии M0-01–M0-04.
 Новая SQL-миграция для Gate не нужна: он использует действующие Core-контракты.
+
+SQL-хранилища: GORM + Gormigrate, отдельные файлы/тома Core, Task и Notify; Gate без БД. Сборка требует `CGO_ENABLED=1` и C compiler. `sqlite_path` задаётся абсолютным путём; миграции выполняются отдельно (`bash scripts/migrate.sh task /absolute/task.sqlite`) до запуска сервиса. Файлы разных владельцев не монтируются в один доменный контейнер. Детали и ограничения: [SQLite/GORM](docs/sqlite-gorm-migration.md).

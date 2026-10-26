@@ -1,6 +1,6 @@
 # Техническое задание: Arc
 
-> **Версия:** 0.8 · **Статус:** M0 — архитектурная ревизия, согласованные контракты и стратегия отложенной полной верификации · **Дата:** 2026-10-25  
+> **Версия:** 0.9 · **Статус:** M0 — архитектурная ревизия, согласованные контракты и стратегия отложенной полной верификации · **Дата:** 2026-10-26
 > **Архитектура:** [ARCHITECTURE.md](ARCHITECTURE.md)  
 > **Назначение:** спецификация Arc для реализации на базе [Kuayle](https://github.com/carbogninalberto/kuayle); без обязательной GitHub-ориентированной модели.  
 > **Приоритеты:** `P0` — инфраструктурный минимум; `P1` — офисный MVP; `P2` — автоматизация/агенты; `P3` — расширенное управление инфраструктурой. Требования «позже» не входят в критерии MVP.
@@ -62,7 +62,7 @@
 - **F-08:** API breaking change требует новый major subject и HTTP prefix; build SemVer не равен API major. Contract tests проверяют обратную совместимость additive changes и сосуществование версий. Автогенерация клиентов не блокирует M0.
 - **F-09:** SDK предоставляет package-level typed register/call helpers, scopes и безопасный handler pipeline. Tool/workflow и HTTP exposure — **явный opt-in**; SDK не пропускает ACL через прямой RPC и не принимает недостоверные identity headers.
 
-M0-04 использует подписанные локальным оператором install artifacts, PostgreSQL Fabric catalog и онлайн `ContractSource` Access. Регистрация instance требует отдельные assertion/proof; readiness связывает signed probe с Micro INFO, всеми endpoints и queue groups. Domain commands проходят `HandleCommand` с атомарными result/effect/outbox и response validation до commit; event consumer фиксирует inbox/effect перед ACK. `incoming_api_major` расширяет downstream exchange без снятия audience/action checks. До rolling upgrade действует один активный digest на service/API major; Gate ingress реализуется в M0-05.
+M0-04 использует подписанные локальным оператором install artifacts, SQLite Fabric catalog в Core и онлайн `ContractSource` Access. Регистрация instance требует отдельные assertion/proof; readiness связывает signed probe с Micro INFO, всеми endpoints и queue groups. Domain commands проходят `HandleCommand` с атомарными result/effect/outbox и response validation до commit; event consumer фиксирует inbox/effect перед ACK. `incoming_api_major` расширяет downstream exchange без снятия audience/action checks. До rolling upgrade действует один активный digest на service/API major; Gate ingress реализуется в M0-05.
 
 **Сценарии верификации Fabric:** два разных digest — only approved allowed; неизвестный ресурс/action/HTTP route и conflict параметризованного пути отклоняются; три реплики одной версии выполняют RPC через одну queue group; incompatible majors изолированы; invalid request/response schema отклоняются; подделка identity/proof запрещена; stop/reconnect/no responders → управляемая ошибка; при timeout после успешной записи повтор mutation с тем же ключом не создаёт дубль; публикация через outbox и повтор JetStream event не создают второго эффекта. M0 guardrail автоматизирует digest/action/schema/proof, разделение major, idempotency и duplicate event; многорепличность и полный recovery завершаются в M7.
 
@@ -166,7 +166,7 @@ providers отложены до M1; полная crash/load/recovery матри�
 ### 2.13 Runtime Control и Arc Infrastructure Agent (`P3`, безопасный каркас в `P0`)
 
 - **R-01 (M0):** `RuntimeNode`, `RuntimeTemplate`, `Deployment`, immutable spec revision, `RuntimeOperation`, `InstanceObservation`, схемы БД и `RuntimeProvider` интерфейс; разделить desired state в Core, наблюдения от Agent и подтверждённую Fabric readiness.
-- **R-02 (M0):** bootstrap Compose/systemd запускает PostgreSQL, NATS, Arc Core и Arc Gate независимо от управляющего API; **реального Arc Infrastructure Agent в M0 нет**, только fake Agent для контрактных guardrails. В M6 реальный Agent запускается отдельно и не управляет bootstrap. `arc.runtime.manage` отдельно от workspace-admin, default deny.
+- **R-02 (M0):** bootstrap Compose/systemd готовит SQLite-тома и запускает NATS, Arc Core и Arc Gate независимо от управляющего API; **реального Arc Infrastructure Agent в M0 нет**, только fake Agent для контрактных guardrails. В M6 реальный Agent запускается отдельно и не управляет bootstrap. `arc.runtime.manage` отдельно от workspace-admin, default deny.
 - **R-03 (M0):** контракт NATS desired snapshot/observations с per-node service credentials, invocation/proof, version/revision, идемпотентностью; fake Agent и negative contract tests. M0 **не** включает фактическое управление Docker из UI.
 - **R-04 (M6):** единственный поддерживаемый host — один доверенный Linux/Docker node; Agent выполняет только approved templates/immutable image digests и управляет **только** подтверждённо принадлежащими deployment контейнерами. Никакого arbitrary Compose, shell, privileged containers, host mounts, Docker socket/host network в managed workloads.
 - **R-05 (M6):** create/start/stop/restart/update/delete managed deployment, replica count, quotas CPU/RAM/PIDs/disk, health/logs/observations; secrets только по ссылкам, без записи чувствительных значений в БД/сообщения/логи. Destructive volume purge отдельно подтверждается.
@@ -194,6 +194,11 @@ providers отложены до M1; полная crash/load/recovery матри�
 | N-11 Runtime Boundary | Bootstrap независим от управляющего API; Agent-only Docker access, no privileged/host mount и только approved image digests | Критические privilege guardrails в M6, полная host/permission matrix в M7 |
 
 **Нормативные M0 defaults:** RPC query 5 с, command 10 с, payload/response ≤256 KiB, replay window idempotency ≥24 ч, access JWT ≤10 мин, invocation JWT ≤60 сек, client assertion ≤30 сек, срок одноразовой делегации по умолчанию 24 ч; никакого положительного decision cache. Отзыв доступа: новая проверка после commit запрещает действие; уже начатые операции могут закончиться. Остальные числовые SLO (p95/RTO/RPO/нагрузка) определяются замерами, а не выдуманными гарантиями.
+
+### 3.1 Хранение SQL-данных (решение 2026-10-26)
+
+Core, Task и Notify используют GORM и отдельные локальные SQLite-файлы; Gate не имеет БД. История миграций принадлежит сервису; Gormigrate запускается явно до приёма трафика, повтор безопасен, неизвестные версии запрещены. WAL, foreign keys и busy timeout обязательны на каждом соединении. Изоляция владельцев обеспечивается отдельными файловыми mounts/правами ОС и RPC/events; общий файл, ATTACH и SQL к чужому владельцу запрещены. Мутация, audit, replay и outbox либо inbox/effect атомарны; SQLite writer lock приобретается до чтения изменяемого состояния, transient busy повторяет всю транзакцию. Многонодовая репликация независимых SQLite-файлов не поддерживается; полная recovery/load matrix остаётся M7.
+
 
 ## 4. План этапов и выходные артефакты
 
@@ -247,7 +252,7 @@ M0 выполняется без рефакторинга всего Kuayle: м�
 
 | Порядок | Обязательная поставка M0 | Критерий готовности |
 |---|---|---|
-| 1 | Bootstrap NATS/PostgreSQL/Compose, миграции, доверенные service accounts/keys и **минимальный SDK transport** (`connect/request/reply`, typed error) | Повторный startup и smoke RPC без Gate; секреты не попадают в БД/логи |
+| 1 | Bootstrap NATS/SQLite/Compose, миграции, доверенные service accounts/keys и **минимальный SDK transport** (`connect/request/reply`, typed error) | Повторный startup и smoke RPC без Gate; секреты не попадают в БД/логи |
 | 2 | Identity поверх транспортного SDK: login/session+refresh rotation, memberships/groups, service accounts/keys, signed invocation+request proof, delegation и token exchange (пока через test client, без Gate) | Test vectors proof/canonical payload, `aud/op/caller`, replay assertion, один revoke-path и запрет self-delegation проходят; полная negative matrix — M7 |
 | 3 | Access: утверждённые resource types, grants, ACL roots, `reserve/activate/abort/delete`, `Check/CheckMany/ListAccessibleRoots` | Guardrails owner/no-grant, revoke, cross-root spoofing, fail-closed и повтор `reserve/activate`; полная матрица и recovery — M7 |
 | 4 | **Доработка** `arc-sdk` + Fabric: проверяемый manifest/schema digest, Micro discovery, instance proof/readiness, RPC schema/error/versioning и JetStream | Rogue digest/action/schema отвергается; majors изолированы; idempotency и duplicate event проверены; replicas/reconnect/timeout matrix — M7 |
@@ -266,7 +271,7 @@ M0 выполняется без рефакторинга всего Kuayle: м�
 M7 начинается после feature freeze M0–M6 и включает:
 
 1. Unit tests сложной бизнес-логики, policy evaluation, recurrence/conflict и преобразований данных.
-2. Integration tests PostgreSQL, NATS/JetStream, object storage, migrations и внешних adapters.
+2. Integration tests SQLite/GORM/Gormigrate, NATS/JetStream, object storage, migrations и внешних adapters.
 3. Полные contract/security matrices Identity, ACL, Fabric, Gate, agents/workflows и Runtime.
 4. Browser E2E, RU/EN, accessibility и поддерживаемые CalDAV/CardDAV/WebDAV clients.
 5. Crash/network/restart, duplicate delivery, stale revisions, backup/restore и upgrade/failure recovery.

@@ -1,6 +1,6 @@
 # Архитектура Arc
 
-> **Версия:** 0.8 · **Статус:** M0 — архитектурная ревизия, контракты согласованы для быстрой реализации с отложенной полной верификацией · **Дата:** 2026-10-25  
+> **Версия:** 0.9 · **Статус:** M0 — архитектурная ревизия, контракты согласованы для быстрой реализации с отложенной полной верификацией · **Дата:** 2026-10-26
 > **Связанный документ:** [REQUIREMENTS.md](REQUIREMENTS.md)  
 > **Основа:** переориентация [Kuayle](https://github.com/carbogninalberto/kuayle) (Go/Echo + Svelte 5) с сохранением применимых модулей.  
 > **Маркировка:** **Решено** — согласованное направление; **M0 baseline** — проектный контракт для реализации и минимальной исполняемой проверки; **Открыто** — вопрос следующего этапа.
@@ -19,8 +19,8 @@ flowchart TB
     Gate <--> NATS[NATS Core + JetStream]
     Core[Arc Core\nIdentity | Access | Fabric | Runtime] <--> NATS
     Apps[Task | Calendar | Contacts | Files | Pages\nAgents | Workflows | Connectors] <--> NATS
-    Core --> PG[(Arc PostgreSQL)]
-    Apps --> Domain[(Domain storage / object storage)]
+    Core --> CoreDB[(Core SQLite)]
+    Apps --> Domain[(SQLite per service / object storage)]
     Agent[Arc Infrastructure Agent] <--> NATS
     Agent --> Host[Container runtime / managed nodes]
 ```
@@ -40,7 +40,7 @@ flowchart TB
 | `arc-sdk` | NATS Micro, typed RPC/events, контракты, контекст доступа, telemetry | Не доверяет полям `user_id` от клиента без аттестации |
 | Доменные сервисы | Свои таблицы, инварианты и бизнес-объекты; policy enforcement | Не читают/меняют чужие таблицы напрямую |
 
-**Базовое допущение:** один кластер PostgreSQL на MVP, отдельные схемы и учётные записи по владельцу данных; Arc Core имеет одну БД с четырьмя схемами и общей транзакцией для собственных административных изменений. Redis из Kuayle не является обязательным источником истины и может быть исключён, если нет конкретного потребителя.
+**Базовое допущение:** каждый SQL-владелец (Core, Task, Notify) хранит данные в отдельном SQLite-файле через GORM; Core объединяет четыре модуля в одной БД с таблицами `identity_*`, `access_*`, `fabric_*`, `runtime_*` и общей транзакцией административных изменений. Миграции Gormigrate запускаются отдельной командой до сервиса; AutoMigrate при startup запрещён. Каждый процесс получает файловый доступ только к своей БД, WAL и SHM. Gate БД не имеет. Redis из Kuayle не является обязательным источником истины и может быть исключён, если нет конкретного потребителя.
 
 ## 3. Identity, Service Accounts и Delegation — контракт M0
 
@@ -143,7 +143,7 @@ Workspace-group/role grants допустимы только для ресурс�
 
 При отказе проверки по политике возвращается `PERMISSION_DENIED` (либо скрывающий ресурс `NOT_FOUND` по контракту), а при недоступности Identity/Access — `UNAVAILABLE`/HTTP `503`, **не** фиктивный отказ «нет прав». Это нужно для корректных повторов клиента и диагностики.
 
-Все защищённые запросы выполняют `Access.Check` **онлайн** (PostgreSQL committed policy, без положительного кэша M0), включая прямой NATS RPC. При недоступности Access — **fail closed**. Отзыв grants/membership гарантированно влияет на проверки, начавшиеся *после commit* изменения; уже выполняющиеся операции могут завершиться. Потоковые загрузки и совместное редактирование требуют дополнительных проверок в профильных этапах.
+Все защищённые запросы выполняют `Access.Check` **онлайн** (SQLite committed policy, без положительного кэша M0), включая прямой NATS RPC. При недоступности Access — **fail closed**. Отзыв grants/membership гарантированно влияет на проверки, начавшиеся *после commit* изменения; уже выполняющиеся операции могут завершиться. Потоковые загрузки и совместное редактирование требуют дополнительных проверок в профильных этапах.
 
 ### 4.3. Внутреннее API Access v1
 
@@ -280,7 +280,7 @@ Subjects состоят из **фиксированных** токенов ут�
 
 Событие содержит `event_id`, `type`, `schema_version`, `aggregate_id`, `occurred_at`, `traceparent`, разрешённый минимум metadata; бизнес-payload без секретов/PII там, где в этом нет необходимости. Обязателен transactional outbox в DB доменного владельца и JetStream publish после commit; durable consumers имеют inbox dedup по `event_id`, retry/backoff и DLQ. Для *внутренних DB side effects* inbox и изменение доменных таблиц фиксируются **одной транзакцией**; внешняя отправка email/webhook не обладает гарантией exactly-once и требует идемпотентного провайдера/ключа или честно допускает дубли. Event-подписка **не** предоставляет права читать связанные resources. Долгие agent/workflow операции — асинхронная job (`202`/`job_id`), не висящий Core NATS RPC.
 
-M0-04 `sdk/events.Store` работает в БД владельца домена: command result, доменный effect и outbox фиксируются в одной транзакции; записи replay не удаляются автоматически (≥24 ч). `HandleCommand` требует этот transaction helper и проверяет response schema до commit. `Delivery.PublishBatch` публикует committed outbox с постоянным JetStream message ID; durable consumer фиксирует inbox + внутренний effect атомарно, ACK после commit. Ошибки повторяются с backoff; после пяти доставок копия попадает в `dlq.<approved-event-subject>.<durable>`, затем original message завершается. Права publish/subscribe/DLQ должны быть заранее выделены deployment; `Permit` обязателен, события не дают ACL полномочий. Таблицы миграции `000004` дают Core/test layout; доменные БД используют такую же структуру в собственной схеме.
+M0-04 `sdk/events.Store` работает в БД владельца домена: command result, доменный effect и outbox фиксируются в одной транзакции; записи replay не удаляются автоматически (≥24 ч). `HandleCommand` требует этот transaction helper и проверяет response schema до commit. `Delivery.PublishBatch` публикует committed outbox с постоянным JetStream message ID; durable consumer фиксирует inbox + внутренний effect атомарно, ACK после commit. Ошибки повторяются с backoff; после пяти доставок копия попадает в `dlq.<approved-event-subject>.<durable>`, затем original message завершается. Права publish/subscribe/DLQ должны быть заранее выделены deployment; `Permit` обязателен, события не дают ACL полномочий. Каждый владелец создаёт replay/outbox/inbox своими версионными Gormigrate migrations; записи команды и доменные изменения используют один `*gorm.DB` transaction.
 
 Для входящей audience service exchange принимает `incoming_api_major` (по умолчанию 1); подписанный JWT обязан совпасть с `<service_definition>/v<major>`, а approved downstream map — с исходной парой audience/operation. Поле не позволяет произвольно подменить service identity или расширить права.
 
@@ -337,11 +337,11 @@ Gate для каждого защищённого запроса вызывае�
 | `RuntimeOperation` | `operation_id`, `deployment_id`, `requested_revision`, `idempotency_key`, `requested_by`, `approval`, status `pending|running|succeeded|failed|cancelled`, timestamps, error code и audit. |
 | `InstanceObservation` | Эфемерное сообщение Agent: host/container ID, deployment/revision, image digest, health, restart count, observed time; **не** источник полномочий. |
 
-Данные в PostgreSQL `runtime.nodes`, `runtime.templates`, `runtime.deployments`, `runtime.deployment_revisions`, `runtime.operations`, `runtime.observations`, `runtime.leases`, `system.outbox/audit`; secret values и Docker socket туда не попадают. `ServiceDefinition` определяет логический сервис, `Deployment` — желаемый запуск, `InstanceObservation` — процесс на хосте, а `ServiceInstance` из Fabric — **подтверждённый NATS-обработчик**. Они связаны ID, но не взаимозаменяемы. `running` контейнера и Docker healthcheck **не** равны готовности API: для `Ready` дополнительно нужны утверждённый manifest/digest, активные subscriptions и подтверждённый readiness сервиса (см. §5.1).
+Данные в SQLite Core `runtime.nodes`, `runtime.templates`, `runtime.deployments`, `runtime.deployment_revisions`, `runtime.operations`, `runtime.observations`, `runtime.leases`, `system.outbox/audit`; secret values и Docker socket туда не попадают. `ServiceDefinition` определяет логический сервис, `Deployment` — желаемый запуск, `InstanceObservation` — процесс на хосте, а `ServiceInstance` из Fabric — **подтверждённый NATS-обработчик**. Они связаны ID, но не взаимозаменяемы. `running` контейнера и Docker healthcheck **не** равны готовности API: для `Ready` дополнительно нужны утверждённый manifest/digest, активные subscriptions и подтверждённый readiness сервиса (см. §5.1).
 
 ### 7.2. Протокол управления (не произвольный Docker RPC)
 
-1. Администратор с `arc.runtime.manage` выбирает **утверждённый** template и node. Runtime сохраняет новую immutable spec revision + audit/outbox в PostgreSQL и создаёт operation. Изменение `expected_revision` при конкурирующем обновлении даёт `CONFLICT`.
+1. Администратор с `arc.runtime.manage` выбирает **утверждённый** template и node. Runtime сохраняет новую immutable spec revision + audit/outbox в SQLite Core и создаёт operation. Изменение `expected_revision` при конкурирующем обновлении даёт `CONFLICT`.
 2. Agent с собственной NATS identity, закреплённой за `node_id`, получает сигнал об изменении **как подсказку**, затем запрашивает через `ctl.runtime.v1.desired.get` **актуальный** подписанный/аттестованный снимок желаемого состояния, адресованный именно его node; подписанный ответ проверяется по caller proof/ключам Core (§3). Никакого исполнения команды непосредственно из payload события.
 3. Agent проверяет revision, lease/срок снимка, approved image digest, отсутствие запрещённых host-параметров, права node, границы managed namespace; после этого приводит **только принадлежащие этому deployment** контейнеры к desired state через Docker Engine API.
 4. Agent публикует attested `ctl.runtime.v1.node.<node-id>.report` с observation и `operation_id`; Core делает idempotent update, сверяет readiness с Fabric и завершает operation. `event_id`/`operation_id`/`revision` защищают от повторов. Сигналы могут доставляться повторно или теряться: периодический pull/reconciliation обязателен.
@@ -350,7 +350,7 @@ Gate для каждого защищённого запроса вызывае�
 
 ### 7.3. Reconciliation, операции и аварии
 
-- **Core reconciler** под PostgreSQL lease/одним активным владельцем сравнивает desired state с последними доверенными observations и инициирует повторную сверку; **Agent reconciler** сериализует операции на конкретном узле, сохраняет локальный high-water mark revisions/operation IDs и выполняет их идемпотентно. Повтор сообщения/рестарт процесса не запускает второй идентичный rollout.
+- **Core reconciler** под lease в Core SQLite/одним активным владельцем сравнивает desired state с последними доверенными observations и инициирует повторную сверку; **Agent reconciler** сериализует операции на конкретном узле, сохраняет локальный high-water mark revisions/operation IDs и выполняет их идемпотентно. Повтор сообщения/рестарт процесса не запускает второй идентичный rollout.
 - `RuntimeOperation` — аудит выполнения, **не команда к повторному воспроизведению**. Старое событие или команда с revision ниже текущей не вправе перезаписать новую конфигурацию. При потере NATS или Core Agent **не** разворачивает новые workloads из кэшированных команд и не удаляет контейнеры; существующие остаются под restart policy Docker, состояние Core помечается stale/degraded.
 - Node offline, невалидный proof, недоступный image registry, нехватка диска/CPU, ошибка health/readiness → ограниченные повторы с backoff, состояние `Degraded`/`Failed`, объяснимый error code; без бесконечного цикла pull/перезапусков. Host restart: Agent переобнаруживает **только свои** контейнеры по зафиксированным deployment identity + Docker labels/metadata и сверяет их с Core. Одна Docker label сама по себе не подтверждает право «усыновить» чужой контейнер.
 - Обновление создаёт новую spec revision с immutable image digest; для M6 достаточно **single-node recreate** с явным возможным downtime. Rolling update без простоя и rollback образа — позже, при проверенной совместимости БД и состоянии. Удаление deployment **не удаляет volumes/данные автоматически**; destructive purge — отдельная подтверждаемая операция с audit и backup requirement.
@@ -358,7 +358,7 @@ Gate для каждого защищённого запроса вызывае�
 
 ### 7.4. Граница безопасности и bootstrap
 
-**Bootstrap (вне Runtime Control):** PostgreSQL, NATS/JetStream, Arc Core, Arc Gate и корневые credentials/trust anchors. В **M0 реальный Arc Infrastructure Agent не запускается**: контракт проверяется fake Agent. Начиная с **M6**, реальный Agent также запускается независимо и никогда не управляет собственным контейнером. Обязательную базовую инфраструктуру запускает независимый Compose/systemd, и её можно восстановить через CLI без работающих Core/NATS. Runtime может **показывать** их статус, но не переустанавливать, удалять или менять их конфигурацию. Доступ к управлению managed workloads — только Arc-admin с отдельным `arc.runtime.manage`; workspace-admin не получает это право по умолчанию, agent/workflow/tool — тем более. Делегирование infra-management в workspace исключено из M0/M6 baseline.
+**Bootstrap (вне Runtime Control):** файлы/тома SQLite, NATS/JetStream, Arc Core, Arc Gate и корневые credentials/trust anchors. В **M0 реальный Arc Infrastructure Agent не запускается**: контракт проверяется fake Agent. Начиная с **M6**, реальный Agent также запускается независимо и никогда не управляет собственным контейнером. Обязательную базовую инфраструктуру запускает независимый Compose/systemd, и её можно восстановить через CLI без работающих Core/NATS. Runtime может **показывать** их статус, но не переустанавливать, удалять или менять их конфигурацию. Доступ к управлению managed workloads — только Arc-admin с отдельным `arc.runtime.manage`; workspace-admin не получает это право по умолчанию, agent/workflow/tool — тем более. Делегирование infra-management в workspace исключено из M0/M6 baseline.
 
 Agent единственный владеет Docker socket/эквивалентным privileged API. Его компрометация потенциально означает компрометацию всего Docker-хоста; **Docker не является безопасной границей для враждебного кода**. Минимальная политика managed containers: только approved immutable image digest, запрет `privileged`, host PID/network/IPC, Docker socket, host devices, произвольных host bind mounts, capability additions, произвольных entrypoint/command/env, неконтролируемых exposed ports; лимиты CPU/RAM/PIDs/disk, non-root, dropped capabilities, seccomp/AppArmor и network allowlist — по совместимости template. Секреты передаются короткоживущими mounts/references от доверенного provider, никогда как исходящие NATS events/logs. Config и secret changes дают новую spec revision. Public ingress — **только Gate**; host port publishing managed workloads запрещён по умолчанию. Недоверенные agent plugins/произвольный код требуют отдельной VM/microVM-изоляции или сильнее защищённого runtime, это не гарантия обычного Docker.
 
@@ -386,7 +386,7 @@ Agent единственный владеет Docker socket/эквивалент
 Общие `resource_links` позволяют связывать task ↔ calendar event ↔ contact ↔ page ↔ file. Разрешение прочитать одну ссылку **не даёт** право прочитать связанный объект. Глобальный поиск индексирует разрешённые метаданные с обязательной перепроверкой ACL при выдаче результатов.
 
 M0-06 реализует отдельные `arc-task` и `arc-notify` поверх `sdk.App` и
-`sdk/events`, с owner-local PostgreSQL schemas/roles и отдельными NATS credentials.
+`sdk/events`, с отдельными owner-local SQLite-файлами и NATS credentials.
 Task `create/get/list` используют workspace ACL root; list ограничен 100 задачами
 текущего пользователя. Task→root/workspace проверяется по Task DB до онлайн
 Access.Check и до command replay. Root создаётся через Reserve, committed domain
@@ -417,12 +417,12 @@ retry fake provider. Внешний эффект не имеет exactly-once г
 
 ## 9. Storage, наблюдаемость, отказоустойчивость
 
-- Arc PostgreSQL: схемы `identity`, `access`, `fabric`, `runtime`, `system` (outbox/audit). У сервисов — собственные схемы/credentials или отдельные БД по мере роста. Нельзя выполнять SQL-запросы в схему другого владельца.
+- GORM + SQLite: Core, Task и Notify имеют отдельные абсолютные `sqlite_path`, таблицы и историю Gormigrate. Между владельцами доступны только RPC/events, SQL к чужой БД запрещён. Включены WAL, foreign keys и busy timeout на каждом соединении; конфликтующие записи сериализуются транзакциями/constraints с повтором всей транзакции при SQLITE_BUSY. Несколько процессов одного владельца допускаются только на одном хосте с одним локальным файлом; независимые реплики файла и сетевые файловые системы не обеспечивают общий state.
 - Файловые bytes: local storage или S3-compatible; БД хранит дерево, версии, ACL links, метаданные, ETags; не передавать большие файлы через NATS.
 - Трассировка: корреляция `request_id`, `traceparent`, `actor`, `service_instance`, `resource_id` и `job_id`; структурированные logs и метрики RPC/JetStream/DAV.
-- Gate и Core допускают репликацию; runtime jobs требуют lease/leader или идемпотентного распределения. Gate сохраняет утверждённые routes, но **не** обходит Core для получения новых прав.
+- Gate допускает независимые реплики; Core с SQLite не поддерживает независимые копии БД на разных узлах; runtime jobs требуют lease/leader или идемпотентного распределения. Gate сохраняет утверждённые routes, но **не** обходит Core для получения новых прав.
 - Если Core/ACL недоступен, **все защищённые запросы M0 fail-closed**; read-only grace/ревизионный кэш допускаются только после отдельного безопасного ADR и тестов. Если NATS недоступен — публичные RPC отвечают `503`, bootstrap recovery возможен вне системы.
-- Резервное копирование — PostgreSQL, object storage, secrets/config, JetStream при необходимости; экспорт workspace **не** заменяет disaster-recovery backup.
+- Резервное копирование — согласованные SQLite backups через backup API либо остановку владельца с учётом WAL, object storage, secrets/config, JetStream при необходимости; экспорт workspace **не** заменяет disaster-recovery backup.
 
 ### Ограничения стоимости M0 (после ревизии v0.8)
 
@@ -496,7 +496,7 @@ docs/{ARCHITECTURE,REQUIREMENTS}.md
 | M0-04 | **M0 baseline v0.8** | Immutable contract + deterministic manifest/schema digest, instance identity + readiness, exact queue group, approval до Micro business subscriptions; отсутствие responder ≠ удаление контракта |
 | M0-05 | **M0 baseline v0.8** | Typed SDK + JSON Schema, immutable operation binding; 256 KiB/5с/10с; idempotency ≥24ч; стабильные error codes; route snapshots/compatibility contract tests |
 | M0-06 | **M0 baseline v0.8** | `reserve → active → deleting → deleted` (+ `abort`), reconciler, transactional outbox, идемпотентные consumers |
-| M0-07 | **M0 baseline** | Один PostgreSQL cluster с ownership per schema; ядро и Gate могут реплицироваться; runtime/bootstrap отдельно |
+| M0-07 | **M0 baseline** | GORM + SQLite: отдельный файл на SQL-владельца; единая Core БД; Gate без БД; локальные WAL/constraints, явные Gormigrate migrations; runtime/bootstrap отдельно |
 | M0-09 | **M0 baseline v0.8** | Runtime = desired state в Core, отдельный Arc Infrastructure Agent; M0 schema/mock contract; M6 single-node Docker executor, pull-current-revision, идемпотентный reconcile, bootstrap вне управления |
 | M0-10 | **M0 baseline v0.8** | Invocation `op` bound к утверждённой операции; ACL-admin self-grant аудируется; подписанный RouteSnapshot; exactly-once только в локальной транзакции inbox+effect; настоящий Arc Infrastructure Agent не требуется до M6 |
 | T-01 | **Решено v0.8** | M0–M6 — Build Phase со статусом `Integrated`; полная тестовая автоматизация и hardening вынесены в M7; production требует `Verified` |

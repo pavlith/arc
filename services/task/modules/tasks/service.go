@@ -15,8 +15,8 @@ import (
 	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/core/modules/access"
 	"github.com/pavlith/arc/services/core/modules/identity"
-	"gorm.io/gorm"
 	taskv1 "github.com/pavlith/arc/services/task/api/v1"
+	"gorm.io/gorm"
 	"strings"
 	"time"
 )

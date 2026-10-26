@@ -54,7 +54,7 @@ func (m *Module) Run(ctx context.Context) error {
 		Contract: m.Contract, Permit: m.Permit,
 	}
 	gormDelivery := events.GormDelivery{
-		Store: events.GormStore{DB: m.GormDB},
+		Store:    events.GormStore{DB: m.GormDB},
 		Contract: m.Contract, Permit: m.Permit,
 	}
 	effect := (&Service{DB: m.DB}).Effect

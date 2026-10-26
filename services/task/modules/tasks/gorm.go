@@ -11,8 +11,8 @@ import (
 	"github.com/pavlith/arc/sdk/rpc"
 	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/core/modules/access"
-	"github.com/pavlith/arc/services/task/models"
 	taskv1 "github.com/pavlith/arc/services/task/api/v1"
+	"github.com/pavlith/arc/services/task/models"
 	"gorm.io/gorm"
 )
 

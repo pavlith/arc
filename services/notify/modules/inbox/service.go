@@ -10,13 +10,16 @@ import (
 	"github.com/pavlith/arc/sdk/events"
 	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/notify/modules/delivery"
-	"gorm.io/gorm"
 	taskv1 "github.com/pavlith/arc/services/task/api/v1"
+	"gorm.io/gorm"
 )
 
 const Durable = "notify-task-created-v1"
 
-type Service struct { DB *sql.DB; GormDB *gorm.DB }
+type Service struct {
+	DB     *sql.DB
+	GormDB *gorm.DB
+}
 
 // Effect uses operator-managed active addressing, never a recipient from the event.
 // No private task data is fetched or copied into the notification.

@@ -12,7 +12,10 @@ import (
 	"sync"
 )
 
-type Service struct { DB *sql.DB; GormDB *gorm.DB }
+type Service struct {
+	DB     *sql.DB
+	GormDB *gorm.DB
+}
 
 func DedupKey(notification, recipient, channel string) string {
 	b, _ := json.Marshal([]string{notification, recipient, channel})

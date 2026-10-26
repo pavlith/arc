@@ -16,7 +16,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pavlith/arc/sdk/security"
- "gorm.io/gorm"
+	"gorm.io/gorm"
 )
 
 var ErrUnauthenticated = security.ErrUnauthenticated
@@ -39,7 +39,7 @@ type Policy interface {
 }
 type Core struct {
 	DB         *sql.DB
- GormDB     *gorm.DB
+	GormDB     *gorm.DB
 	Policy     Policy
 	PrivateKey ed25519.PrivateKey
 	SigningKid string
@@ -109,7 +109,9 @@ func (c *Core) tx(ctx context.Context, fn func(*sql.Tx) error) error {
 	return t.Commit()
 }
 func (c *Core) Consume(ctx context.Context, namespace, nonce string, expires time.Time) error {
- if c != nil && c.GormDB != nil { return c.consumeGORM(ctx, namespace, nonce, expires) }
+	if c != nil && c.GormDB != nil {
+		return c.consumeGORM(ctx, namespace, nonce, expires)
+	}
 	if e := c.ready(); e != nil {
 		return e
 	}
@@ -131,7 +133,9 @@ func (c *Core) Consume(ctx context.Context, namespace, nonce string, expires tim
 	return nil
 }
 func (c *Core) SigningKey(ctx context.Context, kid string) (security.Key, error) {
- if c != nil && c.GormDB != nil { return c.signingKeyGORM(ctx, kid) }
+	if c != nil && c.GormDB != nil {
+		return c.signingKeyGORM(ctx, kid)
+	}
 	k := security.Key{Kid: kid}
 	if e := c.ready(); e != nil {
 		return k, e
@@ -142,7 +146,9 @@ func (c *Core) SigningKey(ctx context.Context, kid string) (security.Key, error)
 	return k, keyError(e)
 }
 func (c *Core) CallerKey(ctx context.Context, caller, kid string) (security.Key, error) {
- if c != nil && c.GormDB != nil { return c.callerKeyGORM(ctx, caller, kid) }
+	if c != nil && c.GormDB != nil {
+		return c.callerKeyGORM(ctx, caller, kid)
+	}
 	k := security.Key{Kid: kid}
 	if e := c.ready(); e != nil {
 		return k, e
@@ -165,7 +171,9 @@ func (c *Core) Verifier() security.Verifier {
 	return security.Verifier{Keys: c, State: c, Nonces: c, Now: c.now}
 }
 func (c *Core) CheckInvocation(ctx context.Context, cl security.Claims) error {
- if c != nil && c.GormDB != nil { return c.checkInvocationGORM(ctx, cl) }
+	if c != nil && c.GormDB != nil {
+		return c.checkInvocationGORM(ctx, cl)
+	}
 	if e := c.ready(); e != nil {
 		return e
 	}
@@ -249,7 +257,9 @@ func LoadSigningKey(path string) (ed25519.PrivateKey, error) {
 	return ed25519.NewKeyFromSeed(raw), nil
 }
 func (c *Core) PublishSigningKey(ctx context.Context, expires time.Time) error {
- if c != nil && c.GormDB != nil { return c.publishSigningKeyGORM(ctx, expires) }
+	if c != nil && c.GormDB != nil {
+		return c.publishSigningKeyGORM(ctx, expires)
+	}
 	if len(c.PrivateKey) != 64 || c.SigningKid == "" || !expires.After(c.now()) {
 		return ErrUnavailable
 	}
@@ -262,7 +272,9 @@ func (c *Core) PublishSigningKey(ctx context.Context, expires time.Time) error {
 	})
 }
 func (c *Core) JWKS(ctx context.Context) (security.JWKS, error) {
- if c != nil && c.GormDB != nil { return c.jwksGORM(ctx) }
+	if c != nil && c.GormDB != nil {
+		return c.jwksGORM(ctx)
+	}
 	if e := c.ready(); e != nil {
 		return security.JWKS{}, e
 	}

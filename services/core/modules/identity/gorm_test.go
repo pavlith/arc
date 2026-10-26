@@ -89,11 +89,17 @@ func TestSQLiteIdentityNonceReplayAcrossConnections(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "core.sqlite")
 	first, err := database.Open(ctx, path)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer database.Close(first)
-	if err := database.Migrate(ctx, first, coremigrations.SQLite()); err != nil { t.Fatal(err) }
+	if err := database.Migrate(ctx, first, coremigrations.SQLite()); err != nil {
+		t.Fatal(err)
+	}
 	second, err := database.Open(ctx, path)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer database.Close(second)
 	now := time.Now().UTC()
 	owners := []*Core{
@@ -117,10 +123,17 @@ func TestSQLiteIdentityNonceReplayAcrossConnections(t *testing.T) {
 	close(outcomes)
 	wins := 0
 	for err := range outcomes {
-		if err == nil { wins++; continue }
-		if !errors.Is(err, ErrUnauthenticated) { t.Errorf("unexpected nonce error: %v", err) }
+		if err == nil {
+			wins++
+			continue
+		}
+		if !errors.Is(err, ErrUnauthenticated) {
+			t.Errorf("unexpected nonce error: %v", err)
+		}
 	}
-	if wins != 1 { t.Fatalf("nonce replay yielded %d accepted assertions", wins) }
+	if wins != 1 {
+		t.Fatalf("nonce replay yielded %d accepted assertions", wins)
+	}
 	if err := owners[0].Consume(ctx, "assertion:svc", "nonce", now.Add(time.Minute)); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("replay accepted: %v", err)
 	}
@@ -138,7 +151,9 @@ func TestSQLiteIdentityInvocationRechecksUserAndDelegation(t *testing.T) {
 		"INSERT INTO identity_service_accounts(id,service_definition,deployment) VALUES('svc','task','prod')",
 	}
 	for _, q := range queries {
-		if err := db.Exec(q).Error; err != nil { t.Fatal(err) }
+		if err := db.Exec(q).Error; err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := db.Exec(`INSERT INTO identity_sessions
 		(id,user_id,secret_hash,csrf_hash,expires_at) VALUES('s','u',?,?,?)`,

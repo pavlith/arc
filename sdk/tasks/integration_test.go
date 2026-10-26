@@ -753,7 +753,8 @@ func TestM006(t *testing.T) {
 		if count(tdb, `SELECT count(*) FROM tasks.outbox WHERE published_at IS NULL`) != taskCount {
 			t.Fatal("event lost on publish failure")
 		}
-		n, e := delivery.PublishBatch(ctx, js, 10)
+		// More than one publisher batch can be pending after the latency samples.
+		n, e := delivery.PublishBatch(ctx, js, 100)
 		must(e)
 		if n != taskCount {
 			t.Fatal("publisher retry did not recover")

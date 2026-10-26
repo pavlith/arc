@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pavlith/arc/sdk/rpc"
 	"github.com/pavlith/arc/sdk/security"
 	"gorm.io/gorm"
 )
@@ -437,6 +436,3 @@ func (c *Core) userScopeGORM(ctx context.Context, user string, resources, action
 		return nil
 	})
 }
-
-// Compile-time check: read methods cannot take a caller-chosen identity or token.
-var _ = rpc.VerifiedClaims

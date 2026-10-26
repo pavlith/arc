@@ -337,3 +337,77 @@ func TestSQLiteAccessConcurrentReplayAcrossTwoConnections(t *testing.T) {
 		t.Fatalf("duplicate write changed audit: count=%d error=%v", audit, err)
 	}
 }
+
+func TestSQLiteAccessShareExpiryCannotEscalate(t *testing.T) {
+	db, core := openSQLiteAccess(t)
+	now := core.now()
+	typ := RegisterRequest{Type: "books.root", ContractDigest: strings.Repeat("a", 64)}
+	if _, err := core.RegisterType(
+		sqliteAccessContext(t, sqliteOwner, sqliteSession, "resource_types.register", "type", typ), typ,
+	); err != nil {
+		t.Fatal(err)
+	}
+	reserve := ReserveRequest{Type: "books.root", OwnerKind: "user", OwnerID: sqliteOwner}
+	root, err := core.Reserve(
+		sqliteAccessContext(t, sqliteOwner, sqliteSession, "resources.reserve", "root", reserve), reserve,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	activate := LifecycleRequest{ResourceID: root.ResourceID, Receipt: "fixture-committed"}
+	if _, err := core.Activate(
+		sqliteAccessContext(t, sqliteOwner, sqliteSession, "resources.activate", "activate", activate), activate,
+	); err != nil {
+		t.Fatal(err)
+	}
+	until := now.Add(10 * time.Minute)
+	for _, action := range []string{"books.share", "books.read"} {
+		q := GrantRequest{
+			ResourceID: root.ResourceID, PrincipalKind: "user",
+			PrincipalID: sqliteMember, Action: action, ExpiresAt: &until,
+		}
+		if _, err := core.AddGrant(
+			sqliteAccessContext(t, sqliteOwner, sqliteSession, "grants.add", "owner-"+action, q), q,
+		); err != nil {
+			t.Fatalf("owner granted %s: %v", action, err)
+		}
+	}
+	const target = "66666666-6666-4666-8666-666666666666"
+	if err := db.Exec(
+		"INSERT INTO identity_users(id,email) VALUES(?,?)", target, "recipient@arc.test",
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	share := GrantRequest{
+		ResourceID: root.ResourceID, PrincipalKind: "user", PrincipalID: target,
+		Action: "books.read",
+	}
+	if _, err := core.AddGrant(
+		sqliteAccessContext(t, sqliteMember, sqliteMemberSession, "grants.add", "unlimited", share), share,
+	); !errors.Is(err, ErrDenied) {
+		t.Fatalf("shared permanent grant accepted: %v", err)
+	}
+	tooLate := now.Add(11 * time.Minute)
+	share.ExpiresAt = &tooLate
+	if _, err := core.AddGrant(
+		sqliteAccessContext(t, sqliteMember, sqliteMemberSession, "grants.add", "beyond", share), share,
+	); !errors.Is(err, ErrDenied) {
+		t.Fatalf("grant beyond share expiry accepted: %v", err)
+	}
+	var revision int64
+	if err := db.Raw("SELECT revision FROM access_policy_state WHERE singleton=1").
+		Row().Scan(&revision); err != nil {
+		t.Fatal(err)
+	}
+	if revision != 5 {
+		t.Fatalf("denied grants changed policy revision: %d", revision)
+	}
+	allowedUntil := now.Add(5 * time.Minute)
+	share.ExpiresAt = &allowedUntil
+	result, err := core.AddGrant(
+		sqliteAccessContext(t, sqliteMember, sqliteMemberSession, "grants.add", "bounded", share), share,
+	)
+	if err != nil || result.GrantID == "" || result.Revision != 6 {
+		t.Fatalf("bounded grant: %+v (%v)", result, err)
+	}
+}

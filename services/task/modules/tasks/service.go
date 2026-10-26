@@ -15,6 +15,7 @@ import (
 	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/core/modules/access"
 	"github.com/pavlith/arc/services/core/modules/identity"
+	"gorm.io/gorm"
 	taskv1 "github.com/pavlith/arc/services/task/api/v1"
 	"strings"
 	"time"
@@ -22,6 +23,7 @@ import (
 
 type Service struct {
 	DB       *sql.DB
+	GormDB   *gorm.DB
 	Identity identity.Client
 	Contract *contract.Compiled
 	Check    func(context.Context, string, string) error
@@ -47,16 +49,26 @@ func (s *Service) ID() string { return "task" }
 // Register binds every approved Tasks v1 operation; protected resource checks
 // happen before command replay, including on idempotent retries.
 func (s *Service) Register(r *module.Registry) error {
-	if s == nil || s.DB == nil || s.Contract == nil || s.Check == nil {
+	if s == nil || (s.DB == nil && s.GormDB == nil) || s.Contract == nil || s.Check == nil {
 		return security.ErrUnavailable
 	}
 	policy := module.Policy{Resource: s.Authorize}
-	store := events.Store{DB: s.DB, Schema: "task"}
-	if err := module.BindCommand(r, taskv1.Create, policy, store, s.create); err != nil {
-		return err
-	}
-	if err := module.BindCommand(r, taskv1.Admin, policy, store, s.grants); err != nil {
-		return err
+	if s.GormDB != nil {
+		store := events.GormStore{DB: s.GormDB}
+		if err := module.BindGORMCommand(r, taskv1.Create, policy, store, s.createGORM); err != nil {
+			return err
+		}
+		if err := module.BindGORMCommand(r, taskv1.Admin, policy, store, s.grantsGORM); err != nil {
+			return err
+		}
+	} else {
+		store := events.Store{DB: s.DB, Schema: "task"}
+		if err := module.BindCommand(r, taskv1.Create, policy, store, s.create); err != nil {
+			return err
+		}
+		if err := module.BindCommand(r, taskv1.Admin, policy, store, s.grants); err != nil {
+			return err
+		}
 	}
 	if err := module.BindQuery(r, taskv1.Get, policy, s.get); err != nil {
 		return err
@@ -67,6 +79,9 @@ func (s *Service) Register(r *module.Registry) error {
 // Authorize verifies the actual task/root/workspace relation before Access.Check.
 // This runs before Command replay, so revocation also denies cached results.
 func (s *Service) Authorize(ctx context.Context, root, action string) error {
+	if s.GormDB != nil {
+		return s.authorizeGORM(ctx, root, action)
+	}
 	meta, ok := rpc.Metadata(ctx)
 	cl, verified := rpc.VerifiedClaims(ctx)
 	if !ok || !verified || !strings.HasPrefix(cl.Subject, "user:") {
@@ -123,6 +138,9 @@ func scan(row interface{ Scan(...any) error }) (Task, error) {
 	return v, e
 }
 func (s *Service) get(ctx context.Context, q GetRequest) (Task, error) {
+	if s.GormDB != nil {
+		return s.getGORM(ctx, q)
+	}
 	v, e := scan(s.DB.QueryRowContext(ctx, `SELECT `+columns+` FROM task.tasks WHERE id=$1 AND workspace_id=$2 AND acl_root_id=$3`, q.TaskID, q.WorkspaceID, q.RootID))
 	if e == sql.ErrNoRows {
 		return Task{}, &rpc.Error{Code: rpc.CodeNotFound, Message: "task not found"}
@@ -130,6 +148,9 @@ func (s *Service) get(ctx context.Context, q GetRequest) (Task, error) {
 	return v, unavailable(e)
 }
 func (s *Service) list(ctx context.Context, q ListRequest) (ListResponse, error) {
+	if s.GormDB != nil {
+		return s.listGORM(ctx, q)
+	}
 	cl, _ := rpc.VerifiedClaims(ctx)
 	rows, e := s.DB.QueryContext(ctx, `SELECT `+columns+` FROM task.tasks WHERE workspace_id=$1 AND acl_root_id=$2 AND created_by=$3 ORDER BY created_at,id LIMIT $4`, q.WorkspaceID, q.RootID, strings.TrimPrefix(cl.Subject, "user:"), q.Limit)
 	if e != nil {
@@ -150,6 +171,9 @@ func (s *Service) list(ctx context.Context, q ListRequest) (ListResponse, error)
 // PrepareRoot commits the domain binding before issuing its activation receipt.
 // Caller must first reserve the root through the approved Access lifecycle.
 func (s *Service) PrepareRoot(ctx context.Context, q Scope, key ed25519.PrivateKey, kid, provider string) (string, error) {
+	if s.GormDB != nil {
+		return s.prepareRootGORM(ctx, q, key, kid, provider)
+	}
 	_, e := s.DB.ExecContext(ctx, `INSERT INTO task.roots(acl_root_id,workspace_id,state) VALUES($1,$2,'prepared') ON CONFLICT(acl_root_id) DO NOTHING`, q.RootID, q.WorkspaceID)
 	if e != nil {
 		return "", e
@@ -164,6 +188,9 @@ func (s *Service) PrepareRoot(ctx context.Context, q Scope, key ed25519.PrivateK
 	return access.SignDomainReceipt(key, access.DomainReceipt{Provider: provider, Root: q.RootID, Operation: "activate", Kid: kid, ExpiresAt: time.Now().Add(time.Minute)})
 }
 func (s *Service) ActivateRoot(ctx context.Context, q Scope) error {
+	if s.GormDB != nil {
+		return s.activateRootGORM(ctx, q)
+	}
 	r, e := s.DB.ExecContext(ctx, `UPDATE task.roots SET state='active' WHERE acl_root_id=$1 AND workspace_id=$2`, q.RootID, q.WorkspaceID)
 	if e != nil {
 		return e

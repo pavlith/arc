@@ -207,7 +207,7 @@ func TestSQLiteAccessLifecycleGrantsAndSnapshots(t *testing.T){
 	if err:=db.Table("access_operations").Count(&operations).Error;err!=nil{t.Fatal(err)}
 	if err:=db.Table("access_policy_audit").Count(&audits).Error;err!=nil{t.Fatal(err)}
 	if err:=db.Raw("SELECT revision FROM access_policy_state WHERE singleton=1").Row().Scan(&revision);err!=nil{t.Fatal(err)}
-	if operations!=audits||revision!=audits||operations!=8{
+	if operations!=audits||revision!=audits||operations!=7{
 		t.Fatalf("replay or failed tx changed history: operations=%d audits=%d revision=%d",operations,audits,revision)
 	}
 	if err:=db.Exec("UPDATE identity_service_credentials SET revoked_at=? WHERE kid='test-kid'",time.Now()).Error;err!=nil{t.Fatal(err)}

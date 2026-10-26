@@ -36,12 +36,15 @@ Status: implementation plan; PostgreSQL remains active until the service cutover
 
 ## Implementation checkpoints (2026-10-26)
 
-- Implemented: `sdk/database` GORM connection, pragmas, busy retry and ordered Gormigrate runner.
-- Implemented: Task and Notify SQLite migrations and GORM persistence models.
-- Implemented: GORM command replay + inbox/outbox transaction helpers and concurrency tests.
-- Implemented: standalone `cmd/arc-sqlite-migrate` for core, task and notify; CI coverage in `.github/workflows/sqlite.yml`.
-- Implemented: Core SQLite migrations for Identity, Access, Fabric and Runtime; Core Runtime GORM repository and concurrent CAS tests.
-- Pending: Core Identity, Access and Fabric GORM repositories, changing each service's live DB config to GORM, GORM JetStream delivery adapters, removal of PostgreSQL, full M0-06 proof.
+- Implemented: `sdk/database` with SQLite WAL, foreign-key enforcement, busy retry and Gormigrate.
+- Implemented: owner-local SQLite schemas and migration CLI for Core, Task and Notify.
+- Implemented: GORM-based SDK command replay and inbox/outbox helpers, plus Task and Notify persistence paths.
+- Implemented: Core Runtime GORM desired-state compare-and-swap with multi-connection concurrency tests.
+- Implemented: Core Identity GORM signing-key metadata, JWKS, service-credential revocation, nonce replay protection, session and delegation live-state checks.
+- Implemented: Core Fabric GORM signed approval, rollback-safe revocation, ACL catalog loading, signed route snapshots, and instance lease/ready persistence.
+- Verified: SQLite unit test suite in GitHub Actions at commit `bd2d582`; source formatting fixes are included.
+- **Not yet implemented:** Core Identity account/session mutation and token exchange repositories; Core Access resource/grant/check mutation paths; full Core service composition using GORM; PostgreSQL removal; live multi-service M0-06 SQLite proof.
+- **Deployment caution:** `arc-sqlite-migrate` builds the new database schemas, but does NOT switch the Core binary to SQLite. Core still requires PostgreSQL until the remaining modules and bootstrap have been ported.
 
 ```bash
 CGO_ENABLED=1 go run ./cmd/arc-sqlite-migrate -service core -db /var/lib/arc/core/core.sqlite

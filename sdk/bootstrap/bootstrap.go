@@ -18,7 +18,9 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/pavlith/arc/sdk"
 	"github.com/pavlith/arc/sdk/contract"
+	"github.com/pavlith/arc/sdk/database"
 	"github.com/pavlith/arc/sdk/rpc"
+	"gorm.io/gorm"
 )
 
 var ErrInvalid = errors.New("bootstrap: invalid configuration")
@@ -27,6 +29,7 @@ var ErrInvalid = errors.New("bootstrap: invalid configuration")
 type Config struct {
 	NATS        sdk.Config `json:"nats"`
 	DSNFile     string     `json:"dsn_file"`
+	SQLitePath  string     `json:"sqlite_path"`
 	ServiceID   string     `json:"service_id"`
 	Kid         string     `json:"kid"`
 	KeyFile     string     `json:"key_file"`
@@ -57,6 +60,7 @@ func ReadConfig(path string, out any) error {
 
 type Resources struct {
 	DB        *sql.DB
+	GormDB    *gorm.DB
 	Control   *nats.Conn
 	RPC       *rpc.Client
 	Key       ed25519.PrivateKey
@@ -70,7 +74,7 @@ type Resources struct {
 // connection after service-specific composition; nothing is registered here.
 func Open(ctx context.Context, cfg Config) (*Resources, error) {
 	if ctx == nil || cfg.ServiceID == "" || cfg.Kid == "" || cfg.Instance == "" ||
-		cfg.KeyFile == "" || cfg.CoreKeyFile == "" || cfg.DSNFile == "" {
+		cfg.KeyFile == "" || cfg.CoreKeyFile == "" || (cfg.DSNFile == "") == (cfg.SQLitePath == "") {
 		return nil, ErrInvalid
 	}
 	keyInfo, err := os.Stat(cfg.KeyFile)
@@ -93,37 +97,53 @@ func Open(ctx context.Context, cfg Config) (*Resources, error) {
 	if err = json.Unmarshal(trusted, &core); err != nil || len(core) != ed25519.PublicKeySize {
 		return nil, ErrInvalid
 	}
-	dsn, err := os.ReadFile(cfg.DSNFile)
-	if err != nil {
-		return nil, errors.New("bootstrap: owner DSN unavailable")
+	var db *sql.DB
+	var gormDB *gorm.DB
+	if cfg.SQLitePath != "" {
+		gormDB, err = database.Open(ctx, cfg.SQLitePath)
+		if err != nil {
+			return nil, errors.New("bootstrap: owner SQLite DB unavailable")
+		}
+	} else {
+		dsn, readErr := os.ReadFile(cfg.DSNFile)
+		if readErr != nil {
+			return nil, errors.New("bootstrap: owner DSN unavailable")
+		}
+		if strings.TrimSpace(string(dsn)) == "" {
+			return nil, ErrInvalid
+		}
+		db, err = sql.Open("pgx", strings.TrimSpace(string(dsn)))
+		for i := range dsn {
+			dsn[i] = 0
+		}
+		if err != nil {
+			return nil, ErrInvalid
+		}
+		db.SetMaxOpenConns(12)
+		if err = db.PingContext(ctx); err != nil {
+			_ = db.Close()
+			return nil, errors.New("bootstrap: owner DB unreachable")
+		}
 	}
-	if strings.TrimSpace(string(dsn)) == "" {
-		return nil, ErrInvalid
-	}
-	db, err := sql.Open("pgx", strings.TrimSpace(string(dsn)))
-	for i := range dsn {
-		dsn[i] = 0
-	}
-	if err != nil {
-		return nil, ErrInvalid
-	}
-	db.SetMaxOpenConns(12)
-	if err = db.PingContext(ctx); err != nil {
-		_ = db.Close()
-		return nil, errors.New("bootstrap: owner DB unreachable")
+	closeDB := func() {
+		if gormDB != nil {
+			_ = database.Close(gormDB)
+		} else if db != nil {
+			_ = db.Close()
+		}
 	}
 	nc, err := sdk.Connect(ctx, cfg.NATS)
 	if err != nil {
-		_ = db.Close()
+		closeDB()
 		return nil, errors.New("bootstrap: private NATS connection failed")
 	}
 	client, err := rpc.NewClient(nc)
 	if err != nil {
 		nc.Close()
-		_ = db.Close()
+		closeDB()
 		return nil, err
 	}
-	return &Resources{DB: db, Control: nc, RPC: client, Key: private, CoreTrust: core}, nil
+	return &Resources{DB: db, GormDB: gormDB, Control: nc, RPC: client, Key: private, CoreTrust: core}, nil
 }
 
 // A caller passes its own Fabric Registry. SDK bootstrap deliberately does not
@@ -144,6 +164,9 @@ func (r *Resources) Close() error {
 	r.closed = true
 	if r.Control != nil {
 		r.Control.Close()
+	}
+	if r.GormDB != nil {
+		return database.Close(r.GormDB)
 	}
 	if r.DB != nil {
 		return r.DB.Close()

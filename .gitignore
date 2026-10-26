@@ -1,1 +1,9 @@
 .secrets/
+
+# Local SQLite owner stores (including WAL/shm companions)
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.db-wal
+*.db-shm

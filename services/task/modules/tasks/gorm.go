@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"strings"
 	"time"
@@ -128,7 +129,7 @@ func (s *Service) authorizeGORM(ctx context.Context, root, action string) error 
 	return s.Check(ctx, root, action)
 }
 
-func (s *Service) prepareRootGORM(ctx context.Context, q Scope, key []byte, kid, provider string) (string, error) {
+func (s *Service) prepareRootGORM(ctx context.Context, q Scope, key ed25519.PrivateKey, kid, provider string) (string, error) {
 	if err := s.GormDB.WithContext(ctx).
 		Exec("INSERT INTO roots(acl_root_id,workspace_id,state) VALUES(?,?,'prepared') ON CONFLICT(acl_root_id) DO NOTHING",
 			q.RootID, q.WorkspaceID).Error; err != nil {

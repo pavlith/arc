@@ -5,7 +5,7 @@
     "NKeySeedFile": "/run/arc/nats.seed",
     "TLSCAFile": "/run/arc/ca.crt"
   },
-  "dsn_file": "/run/arc/database.dsn",
+  "sqlite_path": "/var/lib/arc/notify/notify.sqlite",
   "service_id": "<registered service account uuid>",
   "kid": "notifications-key-v1",
   "key_file": "/run/arc/service.seed",

@@ -39,6 +39,7 @@ type SignedSnapshot struct {
 }
 
 func (c *Core) Routes(ctx context.Context) (SignedSnapshot, error) {
+ if c != nil && c.GormDB != nil { return c.routesGORM(ctx) }
 	if e := c.ready(); e != nil {
 		return SignedSnapshot{}, e
 	}

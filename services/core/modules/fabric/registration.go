@@ -136,6 +136,7 @@ func (c *Core) control(ctx context.Context, nc *nats.Conn, subject string, raw [
 	}
 	switch subject {
 	case RegisterSubject:
+		if c.GormDB != nil { return c.registerInstanceGORM(ctx, cl.Caller, r) }
 		res, e := c.DB.ExecContext(ctx, `INSERT INTO fabric.instances(instance_id,service_account_id,digest,build_version,lease_until) VALUES($1,$2,$3,$4,now()+interval '30 seconds') ON CONFLICT(instance_id) DO UPDATE SET ready=false,lease_until=excluded.lease_until,observed_at=now() WHERE fabric.instances.service_account_id=excluded.service_account_id AND fabric.instances.digest=excluded.digest AND fabric.instances.build_version=excluded.build_version`, r.Instance, cl.Caller, r.Digest, r.Build)
 		if e != nil {
 			return security.ErrUnavailable
@@ -197,7 +198,12 @@ func (c *Core) control(ctx context.Context, nc *nats.Conn, subject string, raw [
 			return e
 		}
 		var installRaw []byte
-		if e = c.DB.QueryRowContext(ctx, `SELECT installation FROM fabric.contracts WHERE digest=$1 AND revoked_at IS NULL`, r.Digest).Scan(&installRaw); e != nil {
+		if c.GormDB != nil {
+			installRaw, e = c.installationGORM(ctx, r.Digest)
+		} else {
+			e = c.DB.QueryRowContext(ctx, `SELECT installation FROM fabric.contracts WHERE digest=$1 AND revoked_at IS NULL`, r.Digest).Scan(&installRaw)
+		}
+		if e != nil {
 			return security.ErrUnavailable
 		}
 		var install Installation
@@ -229,6 +235,7 @@ func (c *Core) control(ctx context.Context, nc *nats.Conn, subject string, raw [
 	return security.ErrDenied
 }
 func (c *Core) touch(ctx context.Context, account string, r sdk.Registration, ready bool) error {
+ if c != nil && c.GormDB != nil { return c.touchGORM(ctx, account, r, ready) }
 	res, e := c.DB.ExecContext(ctx, `UPDATE fabric.instances SET ready=true,lease_until=now()+interval '30 seconds',observed_at=now() WHERE instance_id=$1 AND service_account_id::text=$2 AND digest=$3 AND build_version=$4 AND lease_until>now() AND ($5 OR ready)`, r.Instance, account, r.Digest, r.Build, ready)
 	if e != nil {
 		return security.ErrUnavailable

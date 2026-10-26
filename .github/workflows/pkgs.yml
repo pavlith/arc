@@ -31,7 +31,7 @@ jobs:
           gofmt -w $(find . -name '*.go' -type f)
           python3 - <<'PY'
           import base64, pathlib, subprocess
-          paths = subprocess.check_output(["git", "diff", "--name-only", "--", "pkgs"]).decode().splitlines()
+          paths = subprocess.check_output(["git", "-C", "..", "diff", "--name-only", "--", "pkgs"]).decode().splitlines()
           for name in paths:
               data = pathlib.Path("..", name).read_bytes()
               print("ARC_PKGS_GOFORMAT|" + name + "|" + base64.b64encode(data).decode(), flush=True)

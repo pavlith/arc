@@ -149,7 +149,7 @@ func BindCommand[Req, Res any](r *Registry, op Command[Req, Res],
 
 func (r *Registry) observe(ctx context.Context, module, op, kind string, start time.Time, err *error) {
     if r.observer == nil { return }
-    code := ""
+    code := rpc.Code("")
     if *err != nil { code = rpc.ErrorCode(*err) }
     r.observer.Observe(ctx, telemetry.Observation{
         Service: r.service, Module: module, Operation: op, Kind: kind,
@@ -161,7 +161,7 @@ func (r *Registry) AddWorker(w Worker) error {
     if r == nil || w.Run == nil || !moduleID.MatchString(w.ID) { return ErrInvalid }
     r.mu.Lock()
     defer r.mu.Unlock()
-    if r.sealed || r.current == "" || r.workers[w.ID] .Run != nil { return ErrInvalid }
+    if r.sealed || r.current == "" || r.workers[w.ID].Run != nil { return ErrInvalid }
     r.workers[w.ID] = w
     return nil
 }

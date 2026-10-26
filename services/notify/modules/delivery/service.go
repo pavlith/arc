@@ -8,10 +8,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"github.com/pavlith/arc/sdk/security"
+	"gorm.io/gorm"
 	"sync"
 )
 
-type Service struct{ DB *sql.DB }
+type Service struct { DB *sql.DB; GormDB *gorm.DB }
 
 func DedupKey(notification, recipient, channel string) string {
 	b, _ := json.Marshal([]string{notification, recipient, channel})

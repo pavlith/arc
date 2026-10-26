@@ -12,10 +12,12 @@ import (
 	"github.com/pavlith/arc/sdk/module"
 	"github.com/pavlith/arc/sdk/security"
 	taskv1 "github.com/pavlith/arc/services/task/api/v1"
+	"gorm.io/gorm"
 )
 
 type Module struct {
 	DB         *sql.DB
+	GormDB     *gorm.DB
 	Contract   *contract.Compiled // Approved producer artifact (Tasks).
 	Permit     func(context.Context) error
 	Connection func() *nats.Conn
@@ -23,7 +25,7 @@ type Module struct {
 
 func (*Module) ID() string { return "inbox" }
 func (m *Module) Register(r *module.Registry) error {
-	if m == nil || m.DB == nil || m.Contract == nil || m.Permit == nil ||
+	if m == nil || (m.DB == nil && m.GormDB == nil) || m.Contract == nil || m.Permit == nil ||
 		m.Connection == nil {
 		return module.ErrInvalid
 	}
@@ -51,7 +53,12 @@ func (m *Module) Run(ctx context.Context) error {
 		Store:    events.Store{DB: m.DB, Schema: "notify"},
 		Contract: m.Contract, Permit: m.Permit,
 	}
+	gormDelivery := events.GormDelivery{
+		Store: events.GormStore{DB: m.GormDB},
+		Contract: m.Contract, Permit: m.Permit,
+	}
 	effect := (&Service{DB: m.DB}).Effect
+	gormEffect := (&Service{GormDB: m.GormDB}).EffectGORM
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -60,7 +67,11 @@ func (m *Module) Run(ctx context.Context) error {
 			return nil
 		case <-ticker.C:
 			work, cancel := context.WithTimeout(ctx, 5*time.Second)
-			err = delivery.Pull(work, js, taskv1.CreatedSubject, Durable, effect)
+			if m.GormDB != nil {
+				err = gormDelivery.Pull(work, js, taskv1.CreatedSubject, Durable, gormEffect)
+			} else {
+				err = delivery.Pull(work, js, taskv1.CreatedSubject, Durable, effect)
+			}
 			cancel()
 			if err == nil || errors.Is(err, nats.ErrTimeout) ||
 				errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {

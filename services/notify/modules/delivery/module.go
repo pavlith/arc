@@ -8,23 +8,25 @@ import (
 
 	"github.com/pavlith/arc/sdk/module"
 	"github.com/pavlith/arc/sdk/security"
+	"gorm.io/gorm"
 )
 
 type Module struct {
 	DB       *sql.DB
+	GormDB   *gorm.DB
 	Provider Provider
 	Permit   func(context.Context) error
 }
 
 func (*Module) ID() string { return "delivery" }
 func (m *Module) Register(r *module.Registry) error {
-	if m == nil || m.DB == nil || m.Provider == nil || m.Permit == nil {
+	if m == nil || (m.DB == nil && m.GormDB == nil) || m.Provider == nil || m.Permit == nil {
 		return module.ErrInvalid
 	}
 	return r.AddWorker(module.Worker{ID: "notification-delivery", Run: m.Run})
 }
 func (m *Module) Run(ctx context.Context) error {
-	writer := &Service{DB: m.DB}
+	writer := &Service{DB: m.DB, GormDB: m.GormDB}
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -40,7 +42,12 @@ func (m *Module) Run(ctx context.Context) error {
 				}
 				return err // fail closed on unapproved consumer/producer.
 			}
-			_, err := writer.Deliver(work, m.Provider)
+			var err error
+			if m.GormDB != nil {
+				_, err = writer.DeliverGORM(work, m.Provider)
+			} else {
+				_, err = writer.Deliver(work, m.Provider)
+			}
 			cancel()
 			if err != nil && ctx.Err() == nil {
 				if errors.Is(err, security.ErrDenied) || errors.Is(err, security.ErrUnauthenticated) {

@@ -20,6 +20,7 @@ import (
 	"github.com/pavlith/arc/services/notify/modules/health"
 	"github.com/pavlith/arc/services/notify/modules/inbox"
 	taskv1 "github.com/pavlith/arc/services/task/api/v1"
+	"gorm.io/gorm"
 )
 
 var ErrInvalid = errors.New("notify: invalid service dependencies")
@@ -33,6 +34,7 @@ type EventRegistry interface {
 
 type Config struct {
 	DB           *sql.DB
+	GormDB       *gorm.DB
 	Runtime      sdk.AppConfig
 	Identity     identity.Client
 	CoreTrust    ed25519.PublicKey
@@ -48,7 +50,7 @@ type Service struct {
 }
 
 func New(cfg Config) (*Service, error) {
-	if cfg.DB == nil || cfg.Identity.RPC == nil ||
+	if (cfg.DB == nil && cfg.GormDB == nil) || cfg.Identity.RPC == nil ||
 		cfg.Identity.ServiceID == "" || cfg.Identity.Kid == "" ||
 		len(cfg.Identity.PrivateKey) != ed25519.PrivateKeySize ||
 		len(cfg.CoreTrust) != ed25519.PublicKeySize ||
@@ -83,7 +85,15 @@ func New(cfg Config) (*Service, error) {
 	cfg.Runtime.Artifact = artifact
 	cfg.Runtime.Registry = cfg.Registry
 	cfg.Runtime.Authorize = identity.RemoteAuthorizer(cfg.Identity, cfg.CoreTrust, "notify/v1")
-	cfg.Runtime.SelfCheck = cfg.DB.PingContext
+	if cfg.GormDB != nil {
+		owner, err := cfg.GormDB.DB()
+		if err != nil {
+			return nil, ErrInvalid
+		}
+		cfg.Runtime.SelfCheck = owner.PingContext
+	} else {
+		cfg.Runtime.SelfCheck = cfg.DB.PingContext
+	}
 
 	registration := sdk.Registration{
 		Service: "notify", Instance: cfg.Runtime.Instance,
@@ -94,7 +104,7 @@ func New(cfg Config) (*Service, error) {
 	}
 	s := &Service{}
 	receiver := &inbox.Module{
-		DB: cfg.DB, Contract: source, Permit: permit,
+		DB: cfg.DB, GormDB: cfg.GormDB, Contract: source, Permit: permit,
 		Connection: func() *nats.Conn {
 			if s.App == nil {
 				return nil
@@ -102,7 +112,7 @@ func New(cfg Config) (*Service, error) {
 			return s.App.Connection()
 		},
 	}
-	sender := &delivery.Module{DB: cfg.DB, Provider: cfg.Provider, Permit: permit}
+	sender := &delivery.Module{DB: cfg.DB, GormDB: cfg.GormDB, Provider: cfg.Provider, Permit: permit}
 	app, err := service.Compose(service.Config{
 		Definition: service.Definition{
 			Name: "notify", APIMajor: 1, Kind: service.Domain,

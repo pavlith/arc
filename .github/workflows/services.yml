@@ -1,0 +1,44 @@
+name: Arc Core and Gate service packages
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - "services/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/services.yml"
+  pull_request:
+    branches: [dev]
+    paths:
+      - "services/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/services.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  services:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.3"
+          cache-dependency-path: go.sum
+      - name: Format and test new services
+        run: |
+          gofmt -w $(find services -name '*.go' -type f)
+          python3 - <<'PY'
+          import base64, pathlib, subprocess
+          paths = subprocess.check_output(["git", "diff", "--name-only", "--", "services"]).decode().splitlines()
+          for name in paths:
+              data = pathlib.Path(name).read_bytes()
+              print("ARC_SERVICES_GOFORMAT|" + name + "|" + base64.b64encode(data).decode(), flush=True)
+          PY
+          go test -race ./services/...
+          go vet ./services/...
+          go build ./services/...

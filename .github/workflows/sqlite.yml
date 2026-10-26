@@ -26,6 +26,8 @@ jobs:
           files=$(gofmt -l sdk services cmd)
           if [ -n "$files" ]; then
             printf 'Unformatted Go files:\n%s\n' "$files"
+            gofmt -w sdk services cmd
+            git diff -- sdk services cmd
             exit 1
           fi
       - name: Run SQLite unit and concurrency tests

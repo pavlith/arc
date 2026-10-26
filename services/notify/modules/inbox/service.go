@@ -9,6 +9,7 @@ import (
  "fmt"
  "github.com/pavlith/arc/pkgs/events"
  "github.com/pavlith/arc/pkgs/security"
+ "github.com/pavlith/arc/services/notify/modules/delivery"
  tasksv1 "github.com/pavlith/arc/services/task/api/v1"
 )
 const Durable = "notifications-task-created-v1"
@@ -45,7 +46,7 @@ func (s *Service) Effect(ctx context.Context, tx *sql.Tx, ev events.Envelope) er
 		if e != nil {
 			return e
 		}
-		_, e = tx.ExecContext(ctx, `INSERT INTO notifications.delivery_intents(notification_id,recipient_user_id,channel,dedup_key) VALUES($1,$2,'fake',$3)`, id, user, DedupKey(id, user, "fake"))
+		_, e = tx.ExecContext(ctx, `INSERT INTO notifications.delivery_intents(notification_id,recipient_user_id,channel,dedup_key) VALUES($1,$2,'fake',$3)`, id, user, delivery.DedupKey(id, user, "fake"))
 		if e != nil {
 			return e
 		}

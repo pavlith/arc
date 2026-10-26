@@ -710,11 +710,11 @@ func TestM006(t *testing.T) {
 		// Rows are already durable and the adapter is independently restartable.
 		stopNotify()
 		fake := &delivery.FakeProvider{Fail: true}
-		notify := &notifications.Service{DB: ndb}
+		notify := &delivery.Service{DB: ndb}
 		_, e = migrator.Exec(`UPDATE notifications.delivery_intents SET delivered_at=NULL`)
 		must(e)
-		_, _ = (&delivery.Service{DB:ndb}).Deliver(ctx, fake)
-		_, e = (&delivery.Service{DB:ndb}).Deliver(ctx, fake)
+		_, _ = notify.Deliver(ctx, fake)
+		_, e = notify.Deliver(ctx, fake)
 		must(e)
 		if len(fake.Calls) < 2 {
 			t.Fatal("adapter was not retried")

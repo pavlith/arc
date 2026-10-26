@@ -10,8 +10,8 @@ import (
 	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/database"
 	"github.com/pavlith/arc/sdk/events"
-	"github.com/pavlith/arc/services/notify/modules/delivery"
 	notifymigrations "github.com/pavlith/arc/services/notify/migrations"
+	"github.com/pavlith/arc/services/notify/modules/delivery"
 	taskv1 "github.com/pavlith/arc/services/task/api/v1"
 )
 

@@ -69,10 +69,30 @@ for operation in ('PING', 'INFO', 'STATS'):
         config = config.replace(subject, subject + f', "$SRV.{operation}.arc-access{suffix}"')
 path.write_text(config)
 PYTHON
+if [[ ${ARC_TEST_FABRIC:-0} == 1 ]]; then
+  # Test-only credentials: exact RPC majors and Fabric control/probe permissions.
+  python3 - "$scratch/secrets/nats-server.conf" <<'PYTHON_FABRIC'
+import pathlib, sys
+p=pathlib.Path(sys.argv[1])
+s=p.read_text().replace('"rpc.access.v1.>"', '"rpc.access.v1.>", "rpc.books.v1.>", "rpc.books.v2.>", "ctl.arc.fabric.>"')
+# The domain-owner must request Access/Fabric and receive request replies.
+s=s.replace('publish: { allow: ["_INBOX.>"] }', 'publish: { allow: ["_INBOX.>", "rpc.access.v1.>", "ctl.arc.fabric.register", "ctl.arc.fabric.ready", "ctl.arc.fabric.check", "ctl.arc.fabric.probe.>", "$SRV.INFO.books.>"] }')
+s=s.replace('subscribe: { allow: [\n', 'subscribe: { allow: [\n          "_INBOX.>",')
+s=s.replace('"$JS.API.>", "evt.>"','"$JS.API.>", "evt.>", "dlq.>", "$JS.ACK.>"')
+for operation in ('PING','INFO','STATS'):
+    for suffix in ('','.>'):
+        subject=f'"$SRV.{operation}.arc-access{suffix}"'
+        s=s.replace(subject, subject+f', "$SRV.{operation}.books{suffix}"')
+p.write_text(s)
+PYTHON_FABRIC
+fi
 start_nats
 export ARC_IDENTITY_NATS_URL="tls://localhost:$port" ARC_IDENTITY_NATS_SECRETS="$scratch/secrets"
 (cd sdk && go test -count=1 -run TestM0Identity -v ./identity)
 if [[ ${ARC_TEST_ACCESS:-0} == 1 ]]; then
   (cd sdk && go test -race -count=1 -run TestM0Access -v ./access)
+fi
+if [[ ${ARC_TEST_FABRIC:-0} == 1 ]]; then
+  (cd sdk && go test -race -count=1 -run TestM0Fabric -v ./fabric)
 fi
 echo 'Requested M0 integration guardrails passed; M7 not run.'

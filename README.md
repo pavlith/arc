@@ -104,3 +104,31 @@ make m0-03-smoke
 `m0-03.yml` также выполняет быстрые Go-тесты и `go vet`. Для локального обычного
 `go test ./...` интеграция требует `ARC_ACCESS_TEST_DSN` и NATS fixtures;
 готовый harness задаёт их сам. M7 и публичный Gate API здесь не реализуются.
+
+### M0-04 SDK и Fabric
+
+`migrations/000004_fabric.up.sql` добавляет immutable approved contracts,
+scoped deployments, instance leases, route revision и transaction storage shapes.
+`fabric.Core.Approve` — закрытая установка подписанного оператором JSON artifact;
+публичного approval endpoint нет. `fabric.Core` подключается к
+`access.Core.ContractSource`, а Identity сохраняет существующий policy boundary.
+
+Domain service использует `sdk.NewApp`, `sdk.Handle` для query и
+`sdk.HandleCommand` для команды с собственной `events.Store` и SQL-транзакцией.
+`Start` требует полный набор handlers, approval, self-check и signed readiness.
+`fabric.Client.CoreKey` закрепляет ключ Core для проверки подписанных control-ответов.
+Контрольные subjects: `ctl.arc.fabric.register`, `.ready`, `.check` и
+instance-specific `.probe.<instance_id>`; NATS credentials заранее ограничиваются
+subjects утверждённого deployment. `sdk.Call` проверяет wire schemas клиента.
+`fabric.Core.Routes`/`VerifySnapshot` предоставляют подписанный RouteSnapshot для
+будущего Gate. HTTP server здесь отсутствует.
+
+```bash
+bash scripts/test-m0-04.sh
+```
+
+Нужны PostgreSQL tools и NATS server, как для M0-03. Проверка создаёт изолированную
+БД, применяет/повторяет миграции, запускает M0-01 smoke, Identity/Access regression
+и Fabric guardrails с race detector. Полная replica/reconnect/timeout/recovery
+матрица остаётся M7. Таблицы replay/outbox/inbox domain-owner размещает в своей БД;
+права на точные event/DLQ subjects выдаются при установке deployment.

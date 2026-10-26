@@ -34,3 +34,34 @@ go test -race ./services/...
 go vet ./services/...
 go build ./services/...
 ```
+
+## Domain packages: task and notify
+
+`services/task` (Fabric identity `tasks`) and `services/notify` (Fabric
+identity `notifications`) are independently composed from `pkgs/service`
+and strongly typed `pkgs/module` registrations. The singular directory names
+are Go layout choices **only**; no existing API ID, subject, durable name,
+schema name or JWT audience is renamed.
+
+Each owns `api/v1`, embedded `migrations/`, `service.go` and `modules/`:
+
+- `task/modules/tasks`: create/get/list/root grants with owner-local
+  transactions, live resource checks and typed operation bindings.
+- `task/modules/outbox`: committed publisher with stable JetStream message ID
+  and per-batch online Fabric `Check`.
+- `notify/modules/inbox`: durable consumer, exact approved
+  producer/digest/subject/durable `EventPermit`, atomic inbox/effect.
+- `notify/modules/delivery`: independently polling persisted outbound intents,
+  stable idempotency keys, and live event permit before external effects.
+- `notify/modules/health`: typed authenticated health operation.
+
+Service constructors refuse missing signing credentials, Core trust key,
+owner DB or consumer event permission. They pin the reviewed v1 artifact and
+signed Core invocation verification. Unlike the legacy combined
+`migrations/000005_tasks_notifications.up.sql`, each service now carries its
+own domain schema migration; **do not apply both migration strategies to the
+same database**.
+
+Existing `sdk/tasks`, `sdk/notifications`, `sdk/domainrun` and deployed
+binaries remain unchanged until a separate cutover with NATS/PostgreSQL
+end-to-end tests.

@@ -93,6 +93,13 @@ func TestSQLiteFabricSignedCatalogAndRouteSnapshots(t *testing.T) {
 	if audits != 1 {
 		t.Fatalf("approval generated %d audit records", audits)
 	}
+	var installedCount int64
+	must(db.Table("fabric_contracts").Where("revoked_at IS NULL").Count(&installedCount).Error)
+	if installedCount != 1 { t.Fatalf("unexpected active contracts after approval: %d", installedCount) }
+	var stored SignedInstallation
+	must(db.Raw("SELECT installation,signature FROM fabric_contracts WHERE digest=?", compiled.Digest).
+		Row().Scan(&stored.Payload, &stored.Signature))
+	if _, _, err := f.verify(stored); err != nil { t.Fatalf("saved approval failed signature/policy revalidation: %v", err) }
 	catalog, err := f.LoadAccess(ctx)
 	must(err)
 	_, err = catalog.Type(res.Type, account, compiled.Digest)

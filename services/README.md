@@ -62,7 +62,7 @@ signed Core invocation verification. Unlike the legacy combined
 own domain schema migration; **do not apply both migration strategies to the
 same database**.
 
-Standalone `cmd/arc-tasks` and `cmd/arc-notifications` each load their own
+Standalone `cmd/arc-task` and `cmd/arc-notify` each load their own
 service-specific bootstrap config, credentials, DB, NATS connections, workers,
 and SDK runtime. The common `sdk/bootstrap` owns only reusable infrastructure
 initialization; it never selects domain services or composes multiple services

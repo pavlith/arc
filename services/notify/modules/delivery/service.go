@@ -34,7 +34,7 @@ func (s *Service) Deliver(ctx context.Context, p Provider) (int, error) {
 		return 0, e
 	}
 	defer tx.Rollback()
-	rows, e := tx.QueryContext(ctx, `SELECT notification_id,recipient_user_id,dedup_key FROM notifications.delivery_intents WHERE delivered_at IS NULL ORDER BY notification_id LIMIT 100 FOR UPDATE SKIP LOCKED`)
+	rows, e := tx.QueryContext(ctx, `SELECT notification_id,recipient_user_id,dedup_key FROM notify.delivery_intents WHERE delivered_at IS NULL ORDER BY notification_id LIMIT 100 FOR UPDATE SKIP LOCKED`)
 	if e != nil {
 		return 0, e
 	}
@@ -60,7 +60,7 @@ func (s *Service) Deliver(ctx context.Context, p Provider) (int, error) {
 		if e != nil {
 			sendErr = e
 		}
-		_, qe := tx.ExecContext(ctx, `UPDATE notifications.delivery_intents SET attempts=attempts+1,delivered_at=CASE WHEN $2 THEN now() ELSE NULL END WHERE notification_id=$1`, v.id, e == nil)
+		_, qe := tx.ExecContext(ctx, `UPDATE notify.delivery_intents SET attempts=attempts+1,delivered_at=CASE WHEN $2 THEN now() ELSE NULL END WHERE notification_id=$1`, v.id, e == nil)
 		if qe != nil {
 			return 0, qe
 		}

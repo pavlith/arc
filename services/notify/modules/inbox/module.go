@@ -11,7 +11,7 @@ import (
 	"github.com/pavlith/arc/sdk/events"
 	"github.com/pavlith/arc/sdk/module"
 	"github.com/pavlith/arc/sdk/security"
-	tasksv1 "github.com/pavlith/arc/services/task/api/v1"
+	taskv1 "github.com/pavlith/arc/services/task/api/v1"
 )
 
 type Module struct {
@@ -29,7 +29,7 @@ func (m *Module) Register(r *module.Registry) error {
 	}
 	hasEvent := false
 	for _, e := range m.Contract.Manifest.Events {
-		if e.Name == tasksv1.CreatedName && e.Subject == tasksv1.CreatedSubject {
+		if e.Name == taskv1.CreatedName && e.Subject == taskv1.CreatedSubject {
 			hasEvent = true
 		}
 	}
@@ -48,7 +48,7 @@ func (m *Module) Run(ctx context.Context) error {
 		return err
 	}
 	delivery := events.Delivery{
-		Store:    events.Store{DB: m.DB, Schema: "notifications"},
+		Store:    events.Store{DB: m.DB, Schema: "notify"},
 		Contract: m.Contract, Permit: m.Permit,
 	}
 	effect := (&Service{DB: m.DB}).Effect
@@ -60,7 +60,7 @@ func (m *Module) Run(ctx context.Context) error {
 			return nil
 		case <-ticker.C:
 			work, cancel := context.WithTimeout(ctx, 5*time.Second)
-			err = delivery.Pull(work, js, tasksv1.CreatedSubject, Durable, effect)
+			err = delivery.Pull(work, js, taskv1.CreatedSubject, Durable, effect)
 			cancel()
 			if err == nil || errors.Is(err, nats.ErrTimeout) ||
 				errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {

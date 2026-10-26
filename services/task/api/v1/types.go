@@ -1,5 +1,5 @@
 // Package v1 owns the Tasks v1 DTOs, contract schemas and typed operations.
-// The Fabric service identity is still "tasks", not the Go directory name "task".
+// The Fabric service identity is still "task", not the Go directory name "task".
 package v1
 
 import "time"
@@ -31,7 +31,7 @@ type ListRequest struct {
 	Limit int `json:"limit"`
 }
 type ListResponse struct {
-	Tasks []Task `json:"tasks"`
+	Tasks []Task `json:"task"`
 }
 type CreatedEvent struct {
 	Scope

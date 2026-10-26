@@ -36,8 +36,8 @@ var passwordFiles = []string{
 	"postgres-admin-password",
 	"postgres-migrator-password",
 	"postgres-core-password",
-	"postgres-tasks-password",
-	"postgres-notifications-password",
+	"postgres-task-password",
+	"postgres-notify-password",
 }
 
 func main() {

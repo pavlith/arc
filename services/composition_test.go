@@ -18,7 +18,7 @@ import (
 	"github.com/pavlith/arc/services/notify"
 	"github.com/pavlith/arc/services/notify/modules/delivery"
 	"github.com/pavlith/arc/services/task"
-	tasksv1 "github.com/pavlith/arc/services/task/api/v1"
+	taskv1 "github.com/pavlith/arc/services/task/api/v1"
 )
 
 type closedRegistry struct{ calls int }
@@ -55,10 +55,10 @@ func TestTaskNotifyComposeNoNetworkAndExactSubscription(t *testing.T) {
 		t.Fatalf("task composition: %v", err)
 	}
 	t.Cleanup(func() { _ = tasks.Stop() })
-	if tasks.App.Connection() != nil || tasks.Tasks.ID() != "tasks" || tasks.Publisher.ID() != "outbox" {
+	if tasks.App.Connection() != nil || tasks.Tasks.ID() != "task" || tasks.Publisher.ID() != "outbox" {
 		t.Fatal("task composition unexpectedly opened a connection")
 	}
-	source, err := contract.Compile(tasksv1.Artifact())
+	source, err := contract.Compile(taskv1.Artifact())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestTaskNotifyComposeNoNetworkAndExactSubscription(t *testing.T) {
 		Identity: id, CoreTrust: pub, Registry: reg,
 		Subscription: fabric.EventSubscription{
 			Provider: "publisher-uuid", Digest: source.Digest,
-			Subject: tasksv1.CreatedSubject, Durable: "notifications-task-created-v1",
+			Subject: taskv1.CreatedSubject, Durable: "notify-task-created-v1",
 		},
 		Provider: &delivery.FakeProvider{},
 	}

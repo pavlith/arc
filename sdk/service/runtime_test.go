@@ -148,7 +148,7 @@ func TestComposeDisallowsUnverifiedPolicyOverrides(t *testing.T) {
 		t.Fatal("caller overwrote operation authorization", err)
 	}
 	cfg, _ = config(testModule{"reader", read})
-	cfg.Definition.Name = "notifications"
+	cfg.Definition.Name = "notify"
 	if _, err := service.Compose(cfg); !errors.Is(err, service.ErrInvalid) {
 		t.Fatal("service identity mismatch", err)
 	}

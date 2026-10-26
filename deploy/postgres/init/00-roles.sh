@@ -26,9 +26,9 @@ SELECT format(
 
 SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', role_name,
  btrim(pg_read_file('/run/secrets/' || secret_name), E' \t\r\n'))
-FROM (VALUES ('arc_tasks','postgres_tasks_password'),('arc_notifications','postgres_notifications_password')) AS roles(role_name,secret_name)
+FROM (VALUES ('arc_task','postgres_task_password'),('arc_notify','postgres_notify_password')) AS roles(role_name,secret_name)
 WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname=role_name) \gexec
-GRANT CONNECT ON DATABASE arc TO arc_tasks,arc_notifications;
+GRANT CONNECT ON DATABASE arc TO arc_task,arc_notify;
 GRANT CONNECT, CREATE ON DATABASE arc TO arc_migrator;
 GRANT CONNECT ON DATABASE arc TO arc_core;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;

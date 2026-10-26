@@ -40,8 +40,8 @@ services:
       - postgres_admin_password
       - postgres_migrator_password
       - postgres_core_password
-      - postgres_tasks_password
-      - postgres_notifications_password
+      - postgres_task_password
+      - postgres_notify_password
 
   migrate:
     image: postgres:18.6-alpine3.23
@@ -109,7 +109,7 @@ secrets:
     file: ./.secrets/dev/postgres-migrator-password
   postgres_core_password:
     file: ./.secrets/dev/postgres-core-password
-  postgres_tasks_password:
-    file: ./.secrets/dev/postgres-tasks-password
-  postgres_notifications_password:
-    file: ./.secrets/dev/postgres-notifications-password
+  postgres_task_password:
+    file: ./.secrets/dev/postgres-task-password
+  postgres_notify_password:
+    file: ./.secrets/dev/postgres-notify-password

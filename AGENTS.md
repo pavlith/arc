@@ -16,7 +16,7 @@
 - Issue labels are the source of truth for status, priority, milestone, area, and type.
 - Do not duplicate work tracking in GitHub Projects or Notion.
 - Keep architecture, requirements, and durable decisions in `docs/`.
-- Do not maintain a duplicate `TASKS.md` or checkbox backlog in the repository.
+- Do not maintain a duplicate `TASK.md` or checkbox backlog in the repository.
 - A large implementation may use a temporary Markdown plan, but link it from its GitHub issue and remove or archive it when the work is complete.
 
 ## Delivery

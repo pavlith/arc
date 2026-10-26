@@ -1,37 +1,37 @@
 {
   "manifest_version": 1,
   "service": {
-    "name": "tasks",
+    "name": "task",
     "build_version": "0.0.6",
     "api_major": 1
   },
   "resources": [
     {
-      "type": "tasks.workspace",
+      "type": "task.workspace",
       "actions": [
-        "tasks.read",
-        "tasks.create",
-        "tasks.share",
-        "tasks.delete",
+        "task.read",
+        "task.create",
+        "task.share",
+        "task.delete",
         "access.grants.manage"
       ],
-      "share_action": "tasks.share",
-      "create_action": "tasks.create",
-      "delete_action": "tasks.delete",
+      "share_action": "task.share",
+      "create_action": "task.create",
+      "delete_action": "task.delete",
       "allow_inheritance": false
     }
   ],
   "operations": [
     {
-      "id": "tasks.tasks.create",
-      "subject": "rpc.tasks.v1.tasks.create",
+      "id": "task.task.create",
+      "subject": "rpc.task.v1.task.create",
       "kind": "command",
       "request_schema": "schemas/create.json",
       "response_schema": "schemas/task.json",
       "auth": {
         "mode": "resource",
-        "resource_type": "tasks.workspace",
-        "action": "tasks.create",
+        "resource_type": "task.workspace",
+        "action": "task.create",
         "resource_from": "payload.acl_root_id",
         "workspace_from": "payload.workspace_id"
       },
@@ -40,7 +40,7 @@
       "http": {
         "expose": true,
         "method": "POST",
-        "path": "/api/v1/tasks/workspaces/{workspace_id}/roots/{acl_root_id}/tasks",
+        "path": "/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/tasks",
         "success_status": 201,
         "bindings": [
           {
@@ -59,15 +59,15 @@
       }
     },
     {
-      "id": "tasks.tasks.get",
-      "subject": "rpc.tasks.v1.tasks.get",
+      "id": "task.tasks.get",
+      "subject": "rpc.task.v1.tasks.get",
       "kind": "query",
       "request_schema": "schemas/get.json",
       "response_schema": "schemas/task.json",
       "auth": {
         "mode": "resource",
-        "resource_type": "tasks.workspace",
-        "action": "tasks.read",
+        "resource_type": "task.workspace",
+        "action": "task.read",
         "resource_from": "payload.acl_root_id",
         "workspace_from": "payload.workspace_id"
       },
@@ -76,7 +76,7 @@
       "http": {
         "expose": true,
         "method": "GET",
-        "path": "/api/v1/tasks/workspaces/{workspace_id}/roots/{acl_root_id}/tasks/{task_id}",
+        "path": "/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/tasks/{task_id}",
         "success_status": 200,
         "bindings": [
           {
@@ -101,15 +101,15 @@
       }
     },
     {
-      "id": "tasks.tasks.list",
-      "subject": "rpc.tasks.v1.tasks.list",
+      "id": "task.tasks.list",
+      "subject": "rpc.task.v1.tasks.list",
       "kind": "query",
       "request_schema": "schemas/list.json",
       "response_schema": "schemas/tasks.json",
       "auth": {
         "mode": "resource",
-        "resource_type": "tasks.workspace",
-        "action": "tasks.read",
+        "resource_type": "task.workspace",
+        "action": "task.read",
         "resource_from": "payload.acl_root_id",
         "workspace_from": "payload.workspace_id"
       },
@@ -118,7 +118,7 @@
       "http": {
         "expose": true,
         "method": "GET",
-        "path": "/api/v1/tasks/workspaces/{workspace_id}/roots/{acl_root_id}/tasks",
+        "path": "/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/tasks",
         "success_status": 200,
         "bindings": [
           {
@@ -143,14 +143,14 @@
       }
     },
     {
-      "id": "tasks.roots.grants",
-      "subject": "rpc.tasks.v1.roots.grants",
+      "id": "task.roots.grants",
+      "subject": "rpc.task.v1.roots.grants",
       "kind": "command",
       "request_schema": "schemas/grant.json",
       "response_schema": "schemas/granted.json",
       "auth": {
         "mode": "resource",
-        "resource_type": "tasks.workspace",
+        "resource_type": "task.workspace",
         "action": "access.grants.manage",
         "resource_from": "payload.acl_root_id",
         "workspace_from": "payload.workspace_id"
@@ -164,8 +164,8 @@
   ],
   "events": [
     {
-      "name": "tasks.task.created",
-      "subject": "evt.tasks.task.created.v1",
+      "name": "task.task.created",
+      "subject": "evt.task.task.created.v1",
       "schema": "schemas/event.json"
     }
   ]

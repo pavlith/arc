@@ -11,8 +11,8 @@
     },
     "action": {
       "enum": [
-        "tasks.read",
-        "tasks.create"
+        "task.read",
+        "task.create"
       ]
     },
     "principal_kind": {

@@ -10,7 +10,7 @@ services:
     read_only: true
     cap_drop: ["ALL"]
     volumes:
-      - ./.secrets/m0-06/tasks:/run/arc:ro
+      - ./.secrets/m0-06/task:/run/arc:ro
     depends_on:
       postgres: {condition: service_healthy}
       nats: {condition: service_started}
@@ -23,7 +23,7 @@ services:
     read_only: true
     cap_drop: ["ALL"]
     volumes:
-      - ./.secrets/m0-06/notifications:/run/arc:ro
+      - ./.secrets/m0-06/notify:/run/arc:ro
     depends_on:
       postgres: {condition: service_healthy}
       nats: {condition: service_started}

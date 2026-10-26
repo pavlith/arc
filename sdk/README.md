@@ -25,7 +25,7 @@ A process can host multiple service identities, but **each approved service** mu
 // In your service's service.go (illustrative, with real dependencies supplied):
 cfg := service.Config{
     Definition: service.Definition{
-        Name: "tasks", APIMajor: 1, Kind: service.Domain,
+        Name: "task", APIMajor: 1, Kind: service.Domain,
         Modules: []module.Module{tasks.New(deps)},
     },
     Runtime: pkgs.AppConfig{

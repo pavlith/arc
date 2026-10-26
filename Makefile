@@ -25,7 +25,7 @@ m0-06-smoke:
 	bash scripts/test-m0-06.sh
 
 m0-06-build:
-	$(GO) build ./cmd/arc-tasks ./cmd/arc-notifications
+	$(GO) build ./cmd/arc-task ./cmd/arc-notify
 
 m0-06-up:
-	docker compose -f compose.yaml -f compose.m0-06.yaml --profile m0-06 up --build tasks notifications
+	docker compose -f compose.yaml -f compose.m0-06.yaml --profile m0-06 up --build task notify

@@ -10,21 +10,21 @@ import (
 	"github.com/pavlith/arc/sdk/events"
 	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/notify/modules/delivery"
-	tasksv1 "github.com/pavlith/arc/services/task/api/v1"
+	taskv1 "github.com/pavlith/arc/services/task/api/v1"
 )
 
-const Durable = "notifications-task-created-v1"
+const Durable = "notify-task-created-v1"
 
 type Service struct{ DB *sql.DB }
 
 // Effect uses operator-managed active addressing, never a recipient from the event.
 // No private task data is fetched or copied into the notification.
 func (s *Service) Effect(ctx context.Context, tx *sql.Tx, ev events.Envelope) error {
-	var q tasksv1.CreatedEvent
+	var q taskv1.CreatedEvent
 	if json.Unmarshal(ev.Payload, &q) != nil || q.TaskID != ev.AggregateID {
 		return security.ErrDenied
 	}
-	rows, e := tx.QueryContext(ctx, `SELECT recipient_user_id FROM notifications.subscriptions WHERE workspace_id=$1 AND acl_root_id=$2 AND active`, q.WorkspaceID, q.RootID)
+	rows, e := tx.QueryContext(ctx, `SELECT recipient_user_id FROM notify.subscriptions WHERE workspace_id=$1 AND acl_root_id=$2 AND active`, q.WorkspaceID, q.RootID)
 	if e != nil {
 		return e
 	}
@@ -44,11 +44,11 @@ func (s *Service) Effect(ctx context.Context, tx *sql.Tx, ev events.Envelope) er
 	}
 	for _, user := range recipients {
 		id := newID()
-		_, e = tx.ExecContext(ctx, `INSERT INTO notifications.notifications(id,recipient_user_id,event_id,kind) VALUES($1,$2,$3,'task.created')`, id, user, ev.ID)
+		_, e = tx.ExecContext(ctx, `INSERT INTO notify.notifications(id,recipient_user_id,event_id,kind) VALUES($1,$2,$3,'task.created')`, id, user, ev.ID)
 		if e != nil {
 			return e
 		}
-		_, e = tx.ExecContext(ctx, `INSERT INTO notifications.delivery_intents(notification_id,recipient_user_id,channel,dedup_key) VALUES($1,$2,'fake',$3)`, id, user, delivery.DedupKey(id, user, "fake"))
+		_, e = tx.ExecContext(ctx, `INSERT INTO notify.delivery_intents(notification_id,recipient_user_id,channel,dedup_key) VALUES($1,$2,'fake',$3)`, id, user, delivery.DedupKey(id, user, "fake"))
 		if e != nil {
 			return e
 		}

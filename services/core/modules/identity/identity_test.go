@@ -47,16 +47,16 @@ func (p *testPolicy) Authorize(_ context.Context, a Authorization) error {
 			}
 		}
 	}
-	if a.Operation == "tasks.read" && a.Audience == "tasks/v1" && a.Caller == p.gate && a.Actor == "user:"+p.owner {
+	if a.Operation == "task.read" && a.Audience == "task/v1" && a.Caller == p.gate && a.Actor == "user:"+p.owner {
 		return nil
 	}
 	if a.Operation == "calendar.read" && a.Audience == "calendar/v1" && a.Caller == p.worker && a.Actor == "user:"+p.owner {
-		if a.Incoming != nil && (a.Incoming.Operation != "tasks.read" || a.Incoming.Subject != a.Actor) {
+		if a.Incoming != nil && (a.Incoming.Operation != "task.read" || a.Incoming.Subject != a.Actor) {
 			return ErrDenied
 		}
 		return nil
 	}
-	if a.DelegationID != "" && a.Caller == p.worker && a.Operation == "tasks.read" && a.Audience == "tasks/v1" {
+	if a.DelegationID != "" && a.Caller == p.worker && a.Operation == "task.read" && a.Audience == "task/v1" {
 		if a.Actor == "service:"+p.worker {
 			return nil
 		}
@@ -144,7 +144,7 @@ func TestM0Identity(t *testing.T) {
 	must(e)
 	gate, e := c.RegisterService(ctx, auth, "gate", "test-gate")
 	must(e)
-	worker, e := c.RegisterService(ctx, auth, "tasks", "test-tasks")
+	worker, e := c.RegisterService(ctx, auth, "task", "test-tasks")
 	must(e)
 	policy.gate = gate
 	policy.worker = worker
@@ -160,7 +160,7 @@ func TestM0Identity(t *testing.T) {
 		must(e)
 		return token
 	}
-	target := Target{Audience: "tasks/v1", Operation: "tasks.read"}
+	target := Target{Audience: "task/v1", Operation: "task.read"}
 	exchange := func() (TokenResult, error) {
 		return c.ExchangeUser(ctx, UserExchange{Assertion: assertion(gate, "gate-1", gateKey), Session: auth, Target: target})
 	}
@@ -178,12 +178,12 @@ func TestM0Identity(t *testing.T) {
 		if !bytes.Equal(pub, c.PrivateKey.Public().(ed25519.PublicKey)) {
 			t.Fatal("JWKS mismatch")
 		}
-		raw := []byte(`{"request_id":"guardrail","operation":"tasks.read","payload":{"a":1}}`)
-		p, e := security.SignProof(gateKey, "rpc.tasks.v1.read", raw, cl.JTI, security.Proof{Kid: "gate-1", Timestamp: now.Format(time.RFC3339Nano), Nonce: "persistent-nonce-0001"})
+		raw := []byte(`{"request_id":"guardrail","operation":"task.read","payload":{"a":1}}`)
+		p, e := security.SignProof(gateKey, "rpc.task.v1.read", raw, cl.JTI, security.Proof{Kid: "gate-1", Timestamp: now.Format(time.RFC3339Nano), Nonce: "persistent-nonce-0001"})
 		must(e)
-		must(c.Verifier().Proof(ctx, "rpc.tasks.v1.read", raw, cl, p))
+		must(c.Verifier().Proof(ctx, "rpc.task.v1.read", raw, cl, p))
 		fresh := &Core{DB: db, Policy: policy, Now: c.Now}
-		if e = fresh.Verifier().Proof(ctx, "rpc.tasks.v1.read", raw, cl, p); e == nil {
+		if e = fresh.Verifier().Proof(ctx, "rpc.task.v1.read", raw, cl, p); e == nil {
 			t.Fatal("nonce replay survived new Core instance")
 		}
 		a := assertion(gate, "gate-1", gateKey)
@@ -194,7 +194,7 @@ func TestM0Identity(t *testing.T) {
 		}
 	})
 	t.Run("audience_bound_propagation", func(t *testing.T) {
-		next, e := c.ExchangeService(ctx, ServiceExchange{Assertion: assertion(worker, "worker-1", workerKey), IncomingToken: original.Token, IncomingOperation: "tasks.read", Target: Target{Audience: "calendar/v1", Operation: "calendar.read"}})
+		next, e := c.ExchangeService(ctx, ServiceExchange{Assertion: assertion(worker, "worker-1", workerKey), IncomingToken: original.Token, IncomingOperation: "task.read", Target: Target{Audience: "calendar/v1", Operation: "calendar.read"}})
 		must(e)
 		cl, e := c.Verifier().Invocation(ctx, next.Token, "calendar/v1", "calendar.read", worker)
 		must(e)
@@ -204,7 +204,7 @@ func TestM0Identity(t *testing.T) {
 		if _, e = c.Verifier().Invocation(ctx, original.Token, "calendar/v1", "calendar.read", worker); e == nil {
 			t.Fatal("reused upstream token")
 		}
-		if _, e = c.ExchangeService(ctx, ServiceExchange{Assertion: assertion(worker, "worker-1", workerKey), IncomingToken: original.Token, IncomingOperation: "tasks.read", Target: Target{Audience: "calendar/v1", Operation: "calendar.delete"}}); e == nil {
+		if _, e = c.ExchangeService(ctx, ServiceExchange{Assertion: assertion(worker, "worker-1", workerKey), IncomingToken: original.Token, IncomingOperation: "task.read", Target: Target{Audience: "calendar/v1", Operation: "calendar.delete"}}); e == nil {
 			t.Fatal("expanded downstream authority")
 		}
 		if _, e = c.ExchangeUser(ctx, UserExchange{Assertion: assertion(worker, "worker-1", workerKey), Session: auth, Target: target}); e == nil {
@@ -239,13 +239,13 @@ func TestM0Identity(t *testing.T) {
 		_, e = c.Introspect(ctx, memberLogin.Secret)
 		must(e)
 		must(c.SetMembership(ctx, auth, workspace, member, "owner", false))
-		workspaceToken, e := c.ExchangeUser(ctx, UserExchange{Assertion: assertion(gate, "gate-1", gateKey), Session: auth, Target: Target{Audience: "tasks/v1", Operation: "tasks.read", WorkspaceID: workspace}})
+		workspaceToken, e := c.ExchangeUser(ctx, UserExchange{Assertion: assertion(gate, "gate-1", gateKey), Session: auth, Target: Target{Audience: "task/v1", Operation: "task.read", WorkspaceID: workspace}})
 		must(e)
 		must(c.LeaveWorkspace(ctx, auth, workspace))
-		if _, e = c.Verifier().Invocation(ctx, workspaceToken.Token, "tasks/v1", "tasks.read", gate); e == nil {
+		if _, e = c.Verifier().Invocation(ctx, workspaceToken.Token, "task/v1", "task.read", gate); e == nil {
 			t.Fatal("membership revoke did not invalidate workspace token")
 		}
-		_, e = c.Verifier().Invocation(ctx, original.Token, "tasks/v1", "tasks.read", gate)
+		_, e = c.Verifier().Invocation(ctx, original.Token, "task/v1", "task.read", gate)
 		must(e)
 
 	})
@@ -273,13 +273,13 @@ func TestM0Identity(t *testing.T) {
 		must(e)
 		delegated, e := c.ExchangeService(ctx, ServiceExchange{Assertion: assertion(worker, "worker-1", workerKey), DelegationID: d.ID, Target: target})
 		must(e)
-		cl, e := c.Verifier().Invocation(ctx, delegated.Token, "tasks/v1", "tasks.read", worker)
+		cl, e := c.Verifier().Invocation(ctx, delegated.Token, "task/v1", "task.read", worker)
 		must(e)
 		if cl.OnBehalfOf != owner || cl.Subject != "service:"+worker {
 			t.Fatal("delegation provenance")
 		}
 		must(c.RevokeDelegation(ctx, auth, d.ID))
-		if _, e = c.Verifier().Invocation(ctx, delegated.Token, "tasks/v1", "tasks.read", worker); e == nil {
+		if _, e = c.Verifier().Invocation(ctx, delegated.Token, "task/v1", "task.read", worker); e == nil {
 			t.Fatal("revoked delegation accepted")
 		}
 		exp, e := c.CreateDelegation(ctx, auth, Delegation{GranteeKind: "service", GranteeID: worker, Resources: d.Resources, Actions: d.Actions})
@@ -319,7 +319,7 @@ func TestM0Identity(t *testing.T) {
 		}
 		exchanged, e := TestCall[UserExchange, TokenResult](deadline, tc, "identity.v1.invocations.exchange_user", UserExchange{Session: auth, Target: target})
 		must(e)
-		_, e = c.Verifier().Invocation(ctx, exchanged.Token, "tasks/v1", "tasks.read", gate)
+		_, e = c.Verifier().Invocation(ctx, exchanged.Token, "task/v1", "task.read", gate)
 		must(e)
 		if _, e = rpc.Call[IntrospectRequest, Session](deadline, client, "identity.v1.sessions.introspect", "rpc.identity.v1.sessions.introspect", IntrospectRequest{login.Secret}); rpc.ErrorCode(e) != rpc.CodeUnauthenticated {
 			t.Fatalf("unsigned NATS request accepted: %v", e)
@@ -361,7 +361,7 @@ func TestM0Identity(t *testing.T) {
 		if _, e = c.Introspect(ctx, login.Secret); e == nil {
 			t.Fatal("session survived logout")
 		}
-		if _, e = c.Verifier().Invocation(ctx, original.Token, "tasks/v1", "tasks.read", gate); e == nil {
+		if _, e = c.Verifier().Invocation(ctx, original.Token, "task/v1", "task.read", gate); e == nil {
 			t.Fatal("invocation survived logout")
 		}
 		if _, e = c.Verifier().Access(ctx, login.AccessToken); e == nil {
@@ -413,7 +413,7 @@ func TestM0Identity(t *testing.T) {
 		tok, e := exchange()
 		must(e)
 		must(c.RevokeKey(ctx, auth, "gate-1", false))
-		if _, e = c.Verifier().Invocation(ctx, tok.Token, "tasks/v1", "tasks.read", gate); e == nil {
+		if _, e = c.Verifier().Invocation(ctx, tok.Token, "task/v1", "task.read", gate); e == nil {
 			t.Fatal("revoked credential accepted")
 		}
 		must(c.DisableService(ctx, auth, worker))

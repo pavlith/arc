@@ -18,7 +18,7 @@ flowchart TB
     Clients[Web / mobile / DAV clients / external API] --> Gate[Gate: HTTP, WS, DAV ingress]
     Gate <--> NATS[NATS Core + JetStream]
     Core[Arc Core\nIdentity | Access | Fabric | Runtime] <--> NATS
-    Apps[Tasks | Calendar | Contacts | Files | Pages\nAgents | Workflows | Connectors] <--> NATS
+    Apps[Task | Calendar | Contacts | Files | Pages\nAgents | Workflows | Connectors] <--> NATS
     Core --> PG[(Arc PostgreSQL)]
     Apps --> Domain[(Domain storage / object storage)]
     Agent[Arc Infrastructure Agent] <--> NATS
@@ -52,7 +52,7 @@ flowchart TB
 |---|---|
 | `User` | Глобальный человек; личные ресурсы не принадлежат workspace; статус active/disabled; может состоять в нескольких workspaces. |
 | `Workspace` / `Membership` | Workspace-owned данные изолированы; членство имеет роль owner/admin/member/guest и статус; изменение membership транзакционно инвалидирует доступ. |
-| `Group` / `GroupMember` | ACL principal внутри **одного** workspace; `Team` в Tasks — отдельное бизнес-понятие, не синоним группы. |
+| `Group` / `GroupMember` | ACL principal внутри **одного** workspace; `Team` в Task — отдельное бизнес-понятие, не синоним группы. |
 | `ServiceAccount` | Логическая техническая identity, привязана к утверждённому service definition/deployment; отключение блокирует выдачу и новые проверки. Не имеет неявных пользовательских ACL. |
 | `ServiceCredential` | Ключ/credential экземпляра или deployment, закреплённый за ServiceAccount: `kid`, public key, статус, период ротации; приватный ключ хранится в secret mount, **не** в БД. |
 | `AgentIdentity` | Отдельный principal; владелец и область исполнения явно указаны. Права на tools не означают прав на содержимое ресурсов. |
@@ -82,7 +82,7 @@ flowchart TB
 
 Нормативные начальные лимиты M0: внешний access JWT **≤10 мин**, invocation JWT **≤60 сек**, сервисный client assertion **≤30 сек** с одноразовым `jti`. Срок делегации обязателен, по умолчанию **24 ч** для разовых действий; максимальная длительность задаётся политикой workspace. Эти значения — проектные defaults, подлежат нагрузочному/UX тестированию, а не гарантии протокола.
 
-**Token exchange:** Gate удостоверяет cookie/API-сессию и вызывает разрешённую Core-операцию `identity.v1.invocations.exchange_user`; Core выдаёт invocation token **только** для разрешённой target operation/audience; `op` обязательно совпадает с операцией из RPC envelope и утверждённого контракта, иначе `UNAUTHENTICATED`. Внутренний сервис получает новый token через `identity.v1.invocations.exchange_service` после проверки подписанного *client assertion* закреплённым ServiceCredential (`iss/sub=service-account-id`, `aud=identity.exchange_service`, `exp≤30c`, `jti` с запретом повторного применения). Для propagation сервис предъявляет также выданный ему входящий invocation JWT и запрашиваемый downstream audience; Core проверяет исходное происхождение actor и допускает лишь сужение scope; каждый downstream `op` независимо разрешён caller и действующим пользовательским/делегированным контекстом. При цепочке `tasks → calendar` старый audience-bound JWT **не пересылается**: Tasks получает новый token с actor provenance от предыдущего вызова, сохраняя или сужая права; повышение полномочий запрещено. Вызовы автономного ServiceAccount не принимаются за человеческую сессию.
+**Token exchange:** Gate удостоверяет cookie/API-сессию и вызывает разрешённую Core-операцию `identity.v1.invocations.exchange_user`; Core выдаёт invocation token **только** для разрешённой target operation/audience; `op` обязательно совпадает с операцией из RPC envelope и утверждённого контракта, иначе `UNAUTHENTICATED`. Внутренний сервис получает новый token через `identity.v1.invocations.exchange_service` после проверки подписанного *client assertion* закреплённым ServiceCredential (`iss/sub=service-account-id`, `aud=identity.exchange_service`, `exp≤30c`, `jti` с запретом повторного применения). Для propagation сервис предъявляет также выданный ему входящий invocation JWT и запрашиваемый downstream audience; Core проверяет исходное происхождение actor и допускает лишь сужение scope; каждый downstream `op` независимо разрешён caller и действующим пользовательским/делегированным контекстом. При цепочке `tasks → calendar` старый audience-bound JWT **не пересылается**: Task получает новый token с actor provenance от предыдущего вызова, сохраняя или сужая права; повышение полномочий запрещено. Вызовы автономного ServiceAccount не принимаются за человеческую сессию.
 
 **Защита от подмены caller:** стандартный NATS Micro handler не предоставляет криптографически удостоверенный `publisher identity` для отдельного сообщения; поэтому нельзя считать `X-Service-Name` или другие headers достоверными. SDK отправителя подписывает *request proof* своим ServiceCredential над `subject + request_id + SHA-256(envelope без proof) + token.jti + timestamp + nonce`. Сериализация `envelope без proof` канонизируется по JSON Canonicalization Scheme (RFC 8785); подпись Ed25519 покрывает байты по версии `proof_v1`, а не неформально склеенные строки. Формат и тест-векторы фиксируются в Go SDK и проверяются в contract tests. Wire `proof_v1`: RFC 8785 JSON-массив строк `["proof_v1", subject, request_id, hex_lower(SHA-256(JCS(envelope без поля proof))), token.jti, timestamp, nonce]`, UTF-8; signature — base64url без padding. Timestamp — RFC3339Nano, окно −30/+5 с; nonce 16–128 символов. Получатель M0 сохраняет nonce для всех защищённых RPC, включая read, до конца TTL токена +30 с; повторное использование отклоняется. Получатель сверяет `cnf.kid`, подпись, subject, тело, допустимое временное окно и статус ключа; для изменяющих/чувствительных операций хранит одноразовый proof nonce и idempotency key. Подпись защищает от подмены запроса; повторы идентичных read-запросов в коротком окне без серверной дедупликации остаются возможными и не должны приводить к side effects. Никакой ключ подписи нельзя принимать непосредственно из неподтверждённого клиентского поля.
 
@@ -171,7 +171,7 @@ Subjects формируются Service Fabric из объявленных оп�
 {"allowed":true,"policy_revision":19}
 ```
 
-`Check` не возвращает полный набор grants пользователю. Нельзя использовать `list_accessible_roots` вместо проверки **доменных** фильтров: Calendar/Files/Tasks обязаны ограничивать свои запросы по workspace и подтверждённым ACL roots. Для листингов M0 разрешается `check_many`; N+1 вызов на каждый объект запрещён проектным контрактом. При отсутствии прав domain service может скрыть существование объекта HTTP `404` вместо `403` в соответствии с установленной endpoint policy.
+`Check` не возвращает полный набор grants пользователю. Нельзя использовать `list_accessible_roots` вместо проверки **доменных** фильтров: Calendar/Files/Task обязаны ограничивать свои запросы по workspace и подтверждённым ACL roots. Для листингов M0 разрешается `check_many`; N+1 вызов на каждый объект запрещён проектным контрактом. При отсутствии прав domain service может скрыть существование объекта HTTP `404` вместо `403` в соответствии с установленной endpoint policy.
 
 ### 4.4. Жизненный цикл ACL root между разными БД
 
@@ -385,10 +385,10 @@ Agent единственный владеет Docker socket/эквивалент
 
 Общие `resource_links` позволяют связывать task ↔ calendar event ↔ contact ↔ page ↔ file. Разрешение прочитать одну ссылку **не даёт** право прочитать связанный объект. Глобальный поиск индексирует разрешённые метаданные с обязательной перепроверкой ACL при выдаче результатов.
 
-M0-06 реализует отдельные `arc-tasks` и `arc-notifications` поверх `sdk.App` и
+M0-06 реализует отдельные `arc-task` и `arc-notify` поверх `sdk.App` и
 `sdk/events`, с owner-local PostgreSQL schemas/roles и отдельными NATS credentials.
-Tasks `create/get/list` используют workspace ACL root; list ограничен 100 задачами
-текущего пользователя. Task→root/workspace проверяется по Tasks DB до онлайн
+Task `create/get/list` используют workspace ACL root; list ограничен 100 задачами
+текущего пользователя. Task→root/workspace проверяется по Task DB до онлайн
 Access.Check и до command replay. Root создаётся через Reserve, committed domain
 binding и signed provider receipt, проверяемый Access по текущему Identity key,
 затем Activate. Ручных SQL grants для бизнес-разрешений нет.
@@ -400,16 +400,16 @@ Gate exchange; workspace остаётся пользовательским вы�
 привязан к hash полного envelope, subject, claims и короткому expiry; доменный SDK
 проверяет pinned Core public key. Core DB credentials сервисам не передаются.
 
-Для начального ACL provisioning `tasks.roots.grants` — внутренняя approved operation
+Для начального ACL provisioning `task.roots.grants` — внутренняя approved operation
 без HTTP. Только resource operation с `access.grants.manage` может иметь явно
 одобренные downstream actions своего resource type; это не расширяет права actor:
 Access повторно проверяет online membership и фактическую grant authority.
 Bootstrap Fabric по-прежнему не принимает business policy.
 
-Notifications installation содержит operator-signed `subscriptions` с точными
+Notify installation содержит operator-signed `subscriptions` с точными
 provider/digest/event subject/durable. Signed `ctl.arc.fabric.event_permit` требует
 ready consumer и действующие approvals обоих сервисов перед обработкой. Адресаты
-берутся из активной operator-managed addressing в Notifications DB, а не event.
+берутся из активной operator-managed addressing в Notify DB, а не event.
 Inbox + notification + outbound delivery intent атомарны; ACK после commit.
 Persisted dedup key = SHA-256(notification,recipient,channel) используется при каждом
 retry fake provider. Внешний эффект не имеет exactly-once гарантии.
@@ -500,7 +500,7 @@ docs/{ARCHITECTURE,REQUIREMENTS}.md
 | M0-09 | **M0 baseline v0.8** | Runtime = desired state в Core, отдельный Arc Infrastructure Agent; M0 schema/mock contract; M6 single-node Docker executor, pull-current-revision, идемпотентный reconcile, bootstrap вне управления |
 | M0-10 | **M0 baseline v0.8** | Invocation `op` bound к утверждённой операции; ACL-admin self-grant аудируется; подписанный RouteSnapshot; exactly-once только в локальной транзакции inbox+effect; настоящий Arc Infrastructure Agent не требуется до M6 |
 | T-01 | **Решено v0.8** | M0–M6 — Build Phase со статусом `Integrated`; полная тестовая автоматизация и hardening вынесены в M7; production требует `Verified` |
-| O-01 | **Открыто (M1)** | Точная стратегия извлечения Tasks/Projects и устранения legacy GitHub из Kuayle |
+| O-01 | **Открыто (M1)** | Точная стратегия извлечения Task/Projects и устранения legacy GitHub из Kuayle |
 | O-02 | **Открыто (M2)** | Cross-workspace sharing, CalDAV scheduling, фактическая матрица совместимых клиентов |
 | O-03 | **Открыто (M3)** | WebDAV locking/ranges, версии, публичные upload links, периодическая проверка прав streaming |
 | O-04 | **Открыто (M4–M5)** | Лимиты Starlark, агентные approval classes, внешние секреты и sandbox для plugins |

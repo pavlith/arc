@@ -1,5 +1,5 @@
 FROM golang:1.27.3-alpine3.23 AS build
-ARG SERVICE=tasks
+ARG SERVICE=task
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

@@ -49,7 +49,7 @@ func signApproval(t *testing.T, k ed25519.PrivateKey, a access.Approval) access.
 }
 func gateArtifact() contract.Artifact {
 	a := testcontract.Artifact(1)
-	a.Manifest = bytes.ReplaceAll(a.Manifest, []byte("books"), []byte("tasks"))
+	a.Manifest = bytes.ReplaceAll(a.Manifest, []byte("books"), []byte("task"))
 	var m contract.Manifest
 	_ = json.Unmarshal(a.Manifest, &m)
 	for i := range m.Operations {
@@ -62,9 +62,9 @@ func gateArtifact() contract.Artifact {
 		}
 	}
 	accept := m.Operations[1]
-	accept.ID = "tasks.accept"
-	accept.Subject = "rpc.tasks.v1.accept"
-	accept.HTTP.Path = "/api/v1/tasks/accept/{id}"
+	accept.ID = "task.accept"
+	accept.Subject = "rpc.task.v1.accept"
+	accept.HTTP.Path = "/api/v1/task/accept/{id}"
 	accept.HTTP.SuccessStatus = 202
 	m.Operations = append(m.Operations, accept)
 	a.Manifest, _ = json.Marshal(m)
@@ -109,14 +109,14 @@ func TestM0Gate(t *testing.T) {
 	login, e := id.Login(ctx, "gate-owner@example.test", "gate fixture password")
 	must(e)
 	session := identity.UserSession{Secret: login.Secret, CSRF: login.CSRF}
-	baseline := access.Approval{AdminUsers: []string{owner}, Deployments: []access.Deployment{{Definition: "gate", Instance: "m005-gate"}, {Definition: "tasks", Instance: "m005-tasks"}}}
+	baseline := access.Approval{AdminUsers: []string{owner}, Deployments: []access.Deployment{{Definition: "gate", Instance: "m005-gate"}, {Definition: "task", Instance: "m005-task"}}}
 	static, e := access.NewContracts(operator.Public().(ed25519.PublicKey), []access.Approved{signApproval(t, operator, baseline)})
 	must(e)
 	acl := &access.Core{DB: db, Identity: id, Contracts: static}
 	id.Policy = acl
 	gateID, e := id.RegisterService(ctx, session, "gate", "m005-gate")
 	must(e)
-	provider, e := id.RegisterService(ctx, session, "tasks", "m005-tasks")
+	provider, e := id.RegisterService(ctx, session, "task", "m005-task")
 	must(e)
 	must(id.AddServiceKey(ctx, session, gateID, "m005-gate-key", gateKey.Public().(ed25519.PublicKey), "mount:gate-test", time.Now().Add(time.Hour)))
 	must(id.AddServiceKey(ctx, session, provider, "m005-provider-key", providerKey.Public().(ed25519.PublicKey), "mount:tasks-test", time.Now().Add(time.Hour)))
@@ -155,13 +155,13 @@ func TestM0Gate(t *testing.T) {
 	downstream := map[string][]string{}
 	for _, o := range compiled.Manifest.Operations {
 		subjects = append(subjects, o.Subject)
-		policy.Rules = append(policy.Rules, access.Rule{Caller: gateID, Audience: "tasks/v1", Operation: o.ID, ActorKinds: []string{"user"}, Actions: []string{o.Auth.Action}})
-		source := "tasks/v1:" + o.ID
+		policy.Rules = append(policy.Rules, access.Rule{Caller: gateID, Audience: "task/v1", Operation: o.ID, ActorKinds: []string{"user"}, Actions: []string{o.Auth.Action}})
+		source := "task/v1:" + o.ID
 		from = append(from, source)
 		downstream[source] = []string{o.Auth.Action}
 	}
-	policy.Rules = append(policy.Rules, access.Rule{Caller: provider, Audience: "access/v1", Operation: "access.v1.check", ActorKinds: []string{"user"}, Actions: []string{"tasks.read", "tasks.create"}, DownstreamFrom: from, DownstreamActions: downstream})
-	install := fabric.Installation{Publisher: "gate-fixture", Account: provider, Deployment: "m005-tasks", Artifact: a, Subjects: subjects, Policy: signApproval(t, operator, policy)}
+	policy.Rules = append(policy.Rules, access.Rule{Caller: provider, Audience: "access/v1", Operation: "access.v1.check", ActorKinds: []string{"user"}, Actions: []string{"task.read", "task.create"}, DownstreamFrom: from, DownstreamActions: downstream})
+	install := fabric.Installation{Publisher: "gate-fixture", Account: provider, Deployment: "m005-task", Artifact: a, Subjects: subjects, Policy: signApproval(t, operator, policy)}
 	raw, sig := signValue(t, operator, install)
 	_, e = f.Approve(ctx, fabric.SignedInstallation{Payload: raw, Signature: sig})
 	must(e)
@@ -180,7 +180,7 @@ func TestM0Gate(t *testing.T) {
 	var lastRequestID atomic.Value
 	var lastTrace atomic.Value
 	var businessCalls atomic.Int64
-	app, e := sdk.NewApp(sdk.AppConfig{Connection: cfg("m005-tasks", "nats-echo-service.seed"), Artifact: a, Instance: "m005-tasks-instance", Registry: registry, SelfCheck: func(context.Context) error { return nil }, Authorize: rpc.InvocationAuthorizer(id.Verifier(), "tasks/v1"), Resource: func(ctx context.Context, requested, action string) error {
+	app, e := sdk.NewApp(sdk.AppConfig{Connection: cfg("m005-task", "nats-echo-service.seed"), Artifact: a, Instance: "m005-tasks-instance", Registry: registry, SelfCheck: func(context.Context) error { return nil }, Authorize: rpc.InvocationAuthorizer(id.Verifier(), "task/v1"), Resource: func(ctx context.Context, requested, action string) error {
 		if requested != root {
 			return security.ErrDenied
 		}
@@ -225,7 +225,7 @@ func TestM0Gate(t *testing.T) {
 	}})
 	must(e)
 	defer app.Stop()
-	must(sdk.Handle(app, "tasks.read", func(ctx context.Context, q taskRequest) (taskResponse, error) {
+	must(sdk.Handle(app, "task.read", func(ctx context.Context, q taskRequest) (taskResponse, error) {
 		executions.Add(1)
 		cl, _ := rpc.VerifiedClaims(ctx)
 		lastActor.Store(cl.Subject)
@@ -250,7 +250,7 @@ func TestM0Gate(t *testing.T) {
 		return taskResponse{Value: q.Value}, nil
 	}))
 	store := events.Store{DB: db, Schema: "gate_fixture"}
-	for _, op := range []string{"tasks.create", "tasks.accept"} {
+	for _, op := range []string{"task.create", "task.accept"} {
 		must(sdk.HandleCommand(app, op, store, func(ctx context.Context, tx *sql.Tx, q taskRequest) (taskResponse, error) {
 			executions.Add(1)
 			_, e := tx.ExecContext(ctx, `INSERT INTO gate_fixture.items(value) VALUES($1)`, q.Value)
@@ -289,11 +289,11 @@ func TestM0Gate(t *testing.T) {
 		return b
 	}
 	// Initial cold start is closed; valid signed snapshot opens only known paths.
-	expect(do("GET", "/api/v1/tasks/read/"+root+"?value=cold", "", nil), 503)
+	expect(do("GET", "/api/v1/task/read/"+root+"?value=cold", "", nil), 503)
 	must(g.Reconcile(ctx))
 	before := executions.Load()
-	expect(do("GET", "/api/v1/tasks/read/"+root+"?value=noauth", "", nil), 401)
-	expect(do("GET", "/api/v1/tasks/unapproved", "", nil), 404)
+	expect(do("GET", "/api/v1/task/read/"+root+"?value=noauth", "", nil), 401)
+	expect(do("GET", "/api/v1/task/unapproved", "", nil), 404)
 	if executions.Load() != before {
 		t.Fatal("unauthorized HTTP reached handler")
 	}
@@ -317,7 +317,7 @@ func TestM0Gate(t *testing.T) {
 	}
 	expect(do("GET", "/api/v1/arc/auth/session", "", nil), 200)
 	trace := "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
-	expect(do("GET", "/api/v1/tasks/read/"+root+"?value=ok", "", map[string]string{"X-User-ID": "spoofed", "X-Actor": "service:rogue", "X-Service": "rogue", "X-Request-ID": "gate-request-1", "Traceparent": trace}), 200)
+	expect(do("GET", "/api/v1/task/read/"+root+"?value=ok", "", map[string]string{"X-User-ID": "spoofed", "X-Actor": "service:rogue", "X-Service": "rogue", "X-Request-ID": "gate-request-1", "Traceparent": trace}), 200)
 	if lastActor.Load() != "user:"+owner || lastRequestID.Load() != "gate-request-1" || lastTrace.Load() != trace {
 		t.Fatal("HTTP identity or request id not bound", lastActor.Load(), lastRequestID.Load())
 	}
@@ -328,7 +328,7 @@ func TestM0Gate(t *testing.T) {
 		badGate, e := New(Config{Backend: corrupted, PublicOrigin: "https://arc.example"})
 		must(e)
 		must(badGate.Reconcile(ctx))
-		req := httptest.NewRequest("GET", "https://arc.example/api/v1/tasks/read/"+root+"?value=invalid-invocation", nil)
+		req := httptest.NewRequest("GET", "https://arc.example/api/v1/task/read/"+root+"?value=invalid-invocation", nil)
 		for _, cookie := range cookies {
 			req.AddCookie(cookie)
 		}
@@ -343,13 +343,13 @@ func TestM0Gate(t *testing.T) {
 	must(e)
 	jarBefore := httpClient.Jar
 	httpClient.Jar = nil
-	expect(do("GET", "/api/v1/tasks/read/"+root+"?value=expired-bearer", "", map[string]string{"Authorization": "Bearer " + expiredJWT}), 401)
+	expect(do("GET", "/api/v1/task/read/"+root+"?value=expired-bearer", "", map[string]string{"Authorization": "Bearer " + expiredJWT}), 401)
 	httpClient.Jar = jarBefore
 	expiredSession, e := id.Login(ctx, "gate-owner@example.test", "gate fixture password")
 	must(e)
 	_, e = db.ExecContext(ctx, `UPDATE identity.sessions SET expires_at=now()-interval '1 second' WHERE id=$1`, expiredSession.Session.ID)
 	must(e)
-	expiredRequest := httptest.NewRequest("GET", "https://arc.example/api/v1/tasks/read/"+root+"?value=expired-cookie", nil)
+	expiredRequest := httptest.NewRequest("GET", "https://arc.example/api/v1/task/read/"+root+"?value=expired-cookie", nil)
 	expiredRequest.AddCookie(&http.Cookie{Name: "__Host-arc_session", Value: expiredSession.Secret})
 	expiredRequest.AddCookie(&http.Cookie{Name: csrfCookie, Value: expiredSession.CSRF})
 	expiredResult := httptest.NewRecorder()
@@ -358,40 +358,40 @@ func TestM0Gate(t *testing.T) {
 		t.Fatal("expired cookie session accepted", expiredResult.Code)
 	}
 	before = executions.Load()
-	expect(do("POST", "/api/v1/tasks/create/"+root, `{"value":"no-csrf"}`, map[string]string{"Origin": "https://arc.example", "Idempotency-Key": "no-csrf"}), 403)
-	expect(do("POST", "/api/v1/tasks/create/"+root, `{"value":"bad-origin"}`, map[string]string{"Origin": "https://evil.example", "X-CSRF-Token": loginBody.CSRF, "Idempotency-Key": "bad-origin"}), 403)
+	expect(do("POST", "/api/v1/task/create/"+root, `{"value":"no-csrf"}`, map[string]string{"Origin": "https://arc.example", "Idempotency-Key": "no-csrf"}), 403)
+	expect(do("POST", "/api/v1/task/create/"+root, `{"value":"bad-origin"}`, map[string]string{"Origin": "https://evil.example", "X-CSRF-Token": loginBody.CSRF, "Idempotency-Key": "bad-origin"}), 403)
 	mutation := map[string]string{"Origin": "https://arc.example", "X-CSRF-Token": loginBody.CSRF, "Idempotency-Key": "stable-http-command"}
-	expect(do("POST", "/api/v1/tasks/create/"+root, `{"value":"created"}`, mutation), 201)
-	expect(do("POST", "/api/v1/tasks/create/"+root, `{"value":"created"}`, mutation), 201)
-	expect(do("POST", "/api/v1/tasks/create/"+root, `{"value":"changed"}`, mutation), 409)
+	expect(do("POST", "/api/v1/task/create/"+root, `{"value":"created"}`, mutation), 201)
+	expect(do("POST", "/api/v1/task/create/"+root, `{"value":"created"}`, mutation), 201)
+	expect(do("POST", "/api/v1/task/create/"+root, `{"value":"changed"}`, mutation), 409)
 	var count int
 	must(db.QueryRowContext(ctx, `SELECT count(*) FROM gate_fixture.items WHERE value='created'`).Scan(&count))
 	if count != 1 {
 		t.Fatal("duplicate HTTP mutation", count)
 	}
 	mutation["Idempotency-Key"] = "accepted-http-command"
-	expect(do("POST", "/api/v1/tasks/accept/"+root, `{"value":"accepted"}`, mutation), 202)
+	expect(do("POST", "/api/v1/task/accept/"+root, `{"value":"accepted"}`, mutation), 202)
 	badroot := "d0000000-0000-4000-8000-000000000099"
-	expect(do("GET", "/api/v1/tasks/read/"+badroot+"?value=spoof", "", nil), 403)
-	expect(do("POST", "/api/v1/tasks/create/"+root, `{"value":"x","actor":"user:spoof"}`, mutation), 400)
-	expect(do("GET", "/api/v1/tasks/read/"+root+"?value=ok&subject=rpc.evil", "", nil), 400)
-	expect(do("POST", "/api/v1/tasks/create/"+root, `{"value":1}`, mutation), 400)
-	expect(do("POST", "/api/v1/tasks/create/"+root, `{"value":"`+strings.Repeat("x", 210<<10)+`"}`, mutation), 413)
+	expect(do("GET", "/api/v1/task/read/"+badroot+"?value=spoof", "", nil), 403)
+	expect(do("POST", "/api/v1/task/create/"+root, `{"value":"x","actor":"user:spoof"}`, mutation), 400)
+	expect(do("GET", "/api/v1/task/read/"+root+"?value=ok&subject=rpc.evil", "", nil), 400)
+	expect(do("POST", "/api/v1/task/create/"+root, `{"value":1}`, mutation), 400)
+	expect(do("POST", "/api/v1/task/create/"+root, `{"value":"`+strings.Repeat("x", 210<<10)+`"}`, mutation), 413)
 	for value, status := range map[string]int{"denied": 403, "missing": 404, "conflict": 409, "limited": 429, "internal": 500} {
-		b := expect(do("GET", "/api/v1/tasks/read/"+root+"?value="+value, "", nil), status)
+		b := expect(do("GET", "/api/v1/task/read/"+root+"?value="+value, "", nil), status)
 		if bytes.Contains(b, []byte("secret")) || bytes.Contains(b, []byte("postgres")) {
 			t.Fatal("internal error leaked")
 		}
 	}
-	expect(do("GET", "/api/v1/tasks/read/"+root+"?value=slow", "", map[string]string{"X-Request-Deadline": time.Now().Add(100 * time.Millisecond).UTC().Format(time.RFC3339Nano)}), 504)
-	expect(do("GET", "/api/v1/tasks/read/"+root+"?value=expired", "", map[string]string{"X-Request-Deadline": time.Now().Add(-time.Second).UTC().Format(time.RFC3339Nano)}), 504)
-	expect(do("OPTIONS", "/api/v1/tasks/read/"+root, "", map[string]string{"Origin": "https://arc.example", "Access-Control-Request-Method": "GET", "Access-Control-Request-Headers": "X-User-ID"}), 403)
-	expect(do("OPTIONS", "/api/v1/tasks/read/"+root, "", map[string]string{"Origin": "https://arc.example", "Access-Control-Request-Method": "GET", "Access-Control-Request-Headers": "Authorization"}), 204)
+	expect(do("GET", "/api/v1/task/read/"+root+"?value=slow", "", map[string]string{"X-Request-Deadline": time.Now().Add(100 * time.Millisecond).UTC().Format(time.RFC3339Nano)}), 504)
+	expect(do("GET", "/api/v1/task/read/"+root+"?value=expired", "", map[string]string{"X-Request-Deadline": time.Now().Add(-time.Second).UTC().Format(time.RFC3339Nano)}), 504)
+	expect(do("OPTIONS", "/api/v1/task/read/"+root, "", map[string]string{"Origin": "https://arc.example", "Access-Control-Request-Method": "GET", "Access-Control-Request-Headers": "X-User-ID"}), 403)
+	expect(do("OPTIONS", "/api/v1/task/read/"+root, "", map[string]string{"Origin": "https://arc.example", "Access-Control-Request-Method": "GET", "Access-Control-Request-Headers": "Authorization"}), 204)
 	// Access JWT goes only to Core; a new invocation reaches the owner service.
 	savedJar := httpClient.Jar
 	httpClient.Jar = nil
-	expect(do("GET", "/api/v1/tasks/read/"+root+"?value=bearer", "", map[string]string{"Authorization": "Bearer " + loginBody.AccessToken}), 200)
-	expect(do("GET", "/api/v1/tasks/read/"+root+"?value=bad", "", map[string]string{"Authorization": "Bearer invalid"}), 401)
+	expect(do("GET", "/api/v1/task/read/"+root+"?value=bearer", "", map[string]string{"Authorization": "Bearer " + loginBody.AccessToken}), 200)
+	expect(do("GET", "/api/v1/task/read/"+root+"?value=bad", "", map[string]string{"Authorization": "Bearer invalid"}), 401)
 	httpClient.Jar = savedJar
 	oldRefresh := ""
 	for _, c := range cookies {
@@ -445,7 +445,7 @@ func TestM0Gate(t *testing.T) {
 	if replayResult.Code != 401 {
 		t.Fatal("browser refresh replay accepted", replayResult.Code)
 	}
-	expect(do("GET", "/api/v1/tasks/read/"+root+"?value=refresh-revoked", "", map[string]string{"Authorization": "Bearer " + loginBody.AccessToken}), 401)
+	expect(do("GET", "/api/v1/task/read/"+root+"?value=refresh-revoked", "", map[string]string{"Authorization": "Bearer " + loginBody.AccessToken}), 401)
 	httpClient.Jar = oldJar
 	// A fresh login permits an independently tested CSRF-protected logout.
 	res = do("POST", "/api/v1/arc/auth/login", `{"email":"gate-owner@example.test","password":"gate fixture password"}`, map[string]string{"Origin": "https://arc.example"})
@@ -453,7 +453,7 @@ func TestM0Gate(t *testing.T) {
 	must(json.Unmarshal(fresh, &loginBody))
 	expect(do("POST", "/api/v1/arc/auth/logout", `{}`, map[string]string{"Origin": "https://arc.example", "X-CSRF-Token": loginBody.CSRF}), 204)
 	httpClient.Jar = nil
-	expect(do("GET", "/api/v1/tasks/read/"+root+"?value=revoked", "", map[string]string{"Authorization": "Bearer " + loginBody.AccessToken}), 401)
+	expect(do("GET", "/api/v1/task/read/"+root+"?value=revoked", "", map[string]string{"Authorization": "Bearer " + loginBody.AccessToken}), 401)
 	// Existing Identity refresh replay protection remains authoritative.
 	if _, e = id.Refresh(ctx, oldRefresh); !errors.Is(e, identity.ErrUnauthenticated) {
 		t.Fatal("refresh reuse accepted", e)
@@ -463,11 +463,11 @@ func TestM0Gate(t *testing.T) {
 	res = do("POST", "/api/v1/arc/auth/login", `{"email":"gate-owner@example.test","password":"gate fixture password"}`, map[string]string{"Origin": "https://arc.example"})
 	expect(res, 200)
 	must(app.Stop())
-	expect(do("GET", "/api/v1/tasks/read/"+root+"?value=no-responder", "", nil), 503)
+	expect(do("GET", "/api/v1/task/read/"+root+"?value=no-responder", "", nil), 503)
 	before = executions.Load()
 	callsBeforeOutage := businessCalls.Load()
 	must(coreSvc.Stop())
-	expect(do("GET", "/api/v1/tasks/read/"+root+"?value=core-down", "", nil), 503)
+	expect(do("GET", "/api/v1/task/read/"+root+"?value=core-down", "", nil), 503)
 	if executions.Load() != before || businessCalls.Load() != callsBeforeOutage {
 		t.Fatal("Core outage executed protected RPC")
 	}
@@ -510,7 +510,7 @@ func (b corruptBackend) Exchange(ctx context.Context, q identity.UserExchange) (
 	case "audience":
 		cl.Audience = "other/v1"
 	case "operation":
-		cl.Operation = "tasks.accept"
+		cl.Operation = "task.accept"
 	case "caller":
 		cl.Caller = "00000000-0000-4000-8000-000000000099"
 	}

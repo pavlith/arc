@@ -1,7 +1,7 @@
 {
   "nats": {
     "URL": "tls://nats:4222",
-    "Name": "notifications",
+    "Name": "notify",
     "NKeySeedFile": "/run/arc/nats.seed",
     "TLSCAFile": "/run/arc/ca.crt"
   },
@@ -10,11 +10,11 @@
   "kid": "notifications-key-v1",
   "key_file": "/run/arc/service.seed",
   "core_key_file": "/run/arc/core-public.json",
-  "instance": "m006-notifications",
+  "instance": "m006-notify",
   "subscription": {
     "provider": "<tasks service account uuid>",
     "digest": "<approved Tasks contract digest>",
-    "subject": "evt.tasks.task.created.v1",
-    "durable": "notifications-task-created-v1"
+    "subject": "evt.task.task.created.v1",
+    "durable": "notify-task-created-v1"
   }
 }

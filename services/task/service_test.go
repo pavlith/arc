@@ -6,26 +6,26 @@ import (
 
 	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/services/task"
-	tasksv1 "github.com/pavlith/arc/services/task/api/v1"
+	taskv1 "github.com/pavlith/arc/services/task/api/v1"
 )
 
 func TestTaskApprovedArtifactAndTypedBindings(t *testing.T) {
-	c, err := contract.Compile(tasksv1.Artifact())
+	c, err := contract.Compile(taskv1.Artifact())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Manifest.Service.Name != "tasks" || c.Manifest.Service.APIMajor != 1 {
+	if c.Manifest.Service.Name != "task" || c.Manifest.Service.APIMajor != 1 {
 		t.Fatal("unexpected Tasks Fabric identity", c.Manifest.Service)
 	}
 	if len(c.Manifest.Operations) != 4 || len(c.Manifest.Events) != 1 {
 		t.Fatal("changed M0-06 operation/event boundary")
 	}
-	for _, op := range []string{tasksv1.Create.ID, tasksv1.Get.ID, tasksv1.List.ID, tasksv1.Admin.ID} {
+	for _, op := range []string{taskv1.Create.ID, taskv1.Get.ID, taskv1.List.ID, taskv1.Admin.ID} {
 		if _, err := c.Operation(op); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if c.Manifest.Events[0].Subject != tasksv1.CreatedSubject {
+	if c.Manifest.Events[0].Subject != taskv1.CreatedSubject {
 		t.Fatal("event subject changed")
 	}
 }
@@ -35,7 +35,7 @@ func TestTaskNewFailsClosedWithoutCredentials(t *testing.T) {
 	}
 }
 func TestTaskMigrationsOwnedLocally(t *testing.T) {
-	b, err := task.Migrations.ReadFile("migrations/000001_tasks.up.sql")
+	b, err := task.Migrations.ReadFile("migrations/000001_task.up.sql")
 	if err != nil || len(b) == 0 {
 		t.Fatal("missing service-local migration", err)
 	}

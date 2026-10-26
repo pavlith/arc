@@ -3,12 +3,12 @@ package v1
 import "github.com/pavlith/arc/sdk/module"
 
 const (
-	CreateID       = "tasks.tasks.create"
-	GetID          = "tasks.tasks.get"
-	ListID         = "tasks.tasks.list"
-	AdminID        = "tasks.roots.grants"
-	CreatedSubject = "evt.tasks.task.created.v1"
-	CreatedName    = "tasks.task.created"
+	CreateID       = "task.task.create"
+	GetID          = "task.tasks.get"
+	ListID         = "task.tasks.list"
+	AdminID        = "task.roots.grants"
+	CreatedSubject = "evt.task.task.created.v1"
+	CreatedName    = "task.task.created"
 )
 
 var (

@@ -13,7 +13,7 @@ import (
 
 func TestRuntimeRefusesUnapprovedDesiredState(t *testing.T) {
 	m := &runtime.Module{DB: &sql.DB{}}
-	if _, err := m.Put(context.Background(), runtime.Desired{ID: "instance", ServiceName: "tasks",
+	if _, err := m.Put(context.Background(), runtime.Desired{ID: "instance", ServiceName: "task",
 		Replicas: 1, Spec: json.RawMessage(`{"image":"tasks:v1"}`)}, 0); !errors.Is(err, security.ErrUnavailable) {
 		t.Fatalf("missing online auth allowed desired state: %v", err)
 	}
@@ -21,7 +21,7 @@ func TestRuntimeRefusesUnapprovedDesiredState(t *testing.T) {
 		t.Fatalf("missing online auth allowed read: %v", err)
 	}
 	m.Authorize = func(context.Context, string, string) error { return security.ErrDenied }
-	if _, err := m.Put(context.Background(), runtime.Desired{ID: "instance", ServiceName: "tasks",
+	if _, err := m.Put(context.Background(), runtime.Desired{ID: "instance", ServiceName: "task",
 		Replicas: 1, Spec: json.RawMessage(`{"image":"tasks:v1"}`)}, 0); !errors.Is(err, security.ErrDenied) {
 		t.Fatalf("denied operator could set desired state: %v", err)
 	}
@@ -39,10 +39,10 @@ func TestRuntimeRejectsInvalidDeploymentBeforeDatabase(t *testing.T) {
 		return nil
 	}}
 	for _, want := range []runtime.Desired{
-		{ServiceName: "tasks", Replicas: 1, Spec: json.RawMessage("{}")},
+		{ServiceName: "task", Replicas: 1, Spec: json.RawMessage("{}")},
 		{ID: "d", Replicas: 1, Spec: json.RawMessage("{}")},
-		{ID: "d", ServiceName: "tasks", Replicas: -1, Spec: json.RawMessage("{}")},
-		{ID: "d", ServiceName: "tasks", Replicas: 1, Spec: json.RawMessage("{")},
+		{ID: "d", ServiceName: "task", Replicas: -1, Spec: json.RawMessage("{}")},
+		{ID: "d", ServiceName: "task", Replicas: 1, Spec: json.RawMessage("{")},
 	} {
 		if _, err := m.Put(context.Background(), want, 0); !errors.Is(err, runtime.ErrInvalid) {
 			t.Fatalf("invalid desired state passed: %+v, %v", want, err)

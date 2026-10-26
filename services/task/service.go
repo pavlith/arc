@@ -1,4 +1,4 @@
-// Package task composes the approved "tasks" Fabric service from typed modules.
+// Package task composes the approved "task" Fabric service from typed modules.
 // The Go package name intentionally does not change its public API identity.
 package task
 
@@ -14,7 +14,7 @@ import (
 	"github.com/pavlith/arc/sdk/module"
 	"github.com/pavlith/arc/sdk/service"
 	"github.com/pavlith/arc/services/core/modules/identity"
-	tasksv1 "github.com/pavlith/arc/services/task/api/v1"
+	taskv1 "github.com/pavlith/arc/services/task/api/v1"
 	"github.com/pavlith/arc/services/task/modules/outbox"
 	"github.com/pavlith/arc/services/task/modules/tasks"
 )
@@ -47,7 +47,7 @@ func New(cfg Config) (*Service, error) {
 		return nil, ErrInvalid
 	}
 
-	artifact := tasksv1.Artifact()
+	artifact := taskv1.Artifact()
 	compiled, err := contract.Compile(artifact)
 	if err != nil {
 		return nil, err
@@ -59,7 +59,7 @@ func New(cfg Config) (*Service, error) {
 		}
 	}
 	cfg.Runtime.Artifact = artifact
-	cfg.Runtime.Authorize = identity.RemoteAuthorizer(cfg.Identity, cfg.CoreTrust, "tasks/v1")
+	cfg.Runtime.Authorize = identity.RemoteAuthorizer(cfg.Identity, cfg.CoreTrust, "task/v1")
 	cfg.Runtime.SelfCheck = cfg.DB.PingContext
 
 	s := &Service{}
@@ -68,7 +68,7 @@ func New(cfg Config) (*Service, error) {
 		Check: tasks.OnlineCheck(cfg.Identity),
 	}
 	registration := sdk.Registration{
-		Service: "tasks", Instance: cfg.Runtime.Instance,
+		Service: "task", Instance: cfg.Runtime.Instance,
 		Build: compiled.Manifest.Service.BuildVersion, Digest: compiled.Digest,
 	}
 	publisher := &outbox.Module{
@@ -82,7 +82,7 @@ func New(cfg Config) (*Service, error) {
 		},
 	}
 	app, err := service.Compose(service.Config{
-		Definition: service.Definition{Name: "tasks", APIMajor: 1,
+		Definition: service.Definition{Name: "task", APIMajor: 1,
 			Kind: service.Domain, Modules: []module.Module{tasksModule, publisher}},
 		Runtime: cfg.Runtime,
 	})

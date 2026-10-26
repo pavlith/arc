@@ -15,7 +15,7 @@ func TestNoVerifiedInvocationNoACL(t *testing.T) {
 		t.Fatal("ACL called with unverified actor")
 		return nil
 	}}
-	if err := svc.Authorize(context.Background(), "root", "tasks.read"); !errors.Is(err, security.ErrUnauthenticated) {
+	if err := svc.Authorize(context.Background(), "root", "task.read"); !errors.Is(err, security.ErrUnauthenticated) {
 		t.Fatal("unverified invocation accepted", err)
 	}
 }

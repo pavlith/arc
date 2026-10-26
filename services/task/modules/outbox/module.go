@@ -26,7 +26,7 @@ type Module struct {
 func (*Module) ID() string { return "outbox" }
 func (m *Module) Register(r *module.Registry) error {
 	if m == nil || m.DB == nil || m.Contract == nil || m.Registry == nil ||
-		m.Registration.Digest != m.Contract.Digest || m.Registration.Service != "tasks" ||
+		m.Registration.Digest != m.Contract.Digest || m.Registration.Service != "task" ||
 		m.Connection == nil {
 		return module.ErrInvalid
 	}
@@ -42,7 +42,7 @@ func (m *Module) Run(ctx context.Context) error {
 		return err
 	}
 	delivery := events.Delivery{
-		Store: events.Store{DB: m.DB, Schema: "tasks"}, Contract: m.Contract,
+		Store: events.Store{DB: m.DB, Schema: "task"}, Contract: m.Contract,
 		Permit: func(ctx context.Context) error { return m.Registry.Check(ctx, m.Registration) },
 	}
 	ticker := time.NewTicker(100 * time.Millisecond)

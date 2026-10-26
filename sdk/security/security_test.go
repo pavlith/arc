@@ -43,7 +43,7 @@ func fixture() (Verifier, *boundary, ed25519.PrivateKey, ed25519.PrivateKey, Cla
 	core := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{1}, 32))
 	caller := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{2}, 32))
 	b := &boundary{signing: Key{Kid: "core-key", Public: core.Public().(ed25519.PublicKey), NotBefore: now.Add(-time.Hour), ExpiresAt: now.Add(time.Hour)}, caller: Key{Kid: "caller-key", Public: caller.Public().(ed25519.PublicKey), NotBefore: now.Add(-time.Hour), ExpiresAt: now.Add(time.Hour)}, seen: map[string]bool{}}
-	c := Claims{Issuer: "arc-core", Audience: "tasks/v1", Subject: "user:user-id", Caller: "svc", Operation: "tasks.create", IssuedAt: now.Unix(), NotBefore: now.Unix(), ExpiresAt: now.Unix() + 60, JTI: "token-id", Confirmation: Confirmation{"caller-key"}, SessionID: "session"}
+	c := Claims{Issuer: "arc-core", Audience: "task/v1", Subject: "user:user-id", Caller: "svc", Operation: "task.create", IssuedAt: now.Unix(), NotBefore: now.Unix(), ExpiresAt: now.Unix() + 60, JTI: "token-id", Confirmation: Confirmation{"caller-key"}, SessionID: "session"}
 	return Verifier{Keys: b, State: b, Nonces: b, Now: func() time.Time { return now }}, b, core, caller, c
 }
 func TestInvocationGuardrails(t *testing.T) {
@@ -56,7 +56,7 @@ func TestInvocationGuardrails(t *testing.T) {
 	if _, e = v.Invocation(ctx, token, c.Audience, c.Operation, c.Caller); e != nil {
 		t.Fatal(e)
 	}
-	for _, test := range []struct{ name, aud, op, caller string }{{"audience", "calendar/v1", c.Operation, c.Caller}, {"operation", c.Audience, "tasks.delete", c.Caller}, {"caller", c.Audience, c.Operation, "other"}} {
+	for _, test := range []struct{ name, aud, op, caller string }{{"audience", "calendar/v1", c.Operation, c.Caller}, {"operation", c.Audience, "task.delete", c.Caller}, {"caller", c.Audience, c.Operation, "other"}} {
 		t.Run(test.name, func(t *testing.T) {
 			if _, e = v.Invocation(ctx, token, test.aud, test.op, test.caller); e == nil {
 				t.Fatal("accepted mismatch")
@@ -116,36 +116,36 @@ func TestJCSAndProofVectors(t *testing.T) {
 	}
 	v, _, _, key, c := fixture()
 	ctx := context.Background()
-	raw := []byte(`{"request_id":"request-1","operation":"tasks.create","payload":{"b":2,"a":1}}`)
-	p, e := SignProof(key, "rpc.tasks.v1.create", raw, c.JTI, Proof{Kid: c.Confirmation.Kid, Timestamp: v.Time().Format(time.RFC3339Nano), Nonce: "0123456789abcdef"})
+	raw := []byte(`{"request_id":"request-1","operation":"task.create","payload":{"b":2,"a":1}}`)
+	p, e := SignProof(key, "rpc.task.v1.create", raw, c.JTI, Proof{Kid: c.Confirmation.Kid, Timestamp: v.Time().Format(time.RFC3339Nano), Nonce: "0123456789abcdef"})
 	if e != nil {
 		t.Fatal(e)
 	}
-	msg, e := ProofMessage("rpc.tasks.v1.create", raw, c.JTI, p)
+	msg, e := ProofMessage("rpc.task.v1.create", raw, c.JTI, p)
 	if e != nil {
 		t.Fatal(e)
 	}
 	// Stable vector prevents changing the proof serialization accidentally.
-	const expectedMessage = `["proof_v1","rpc.tasks.v1.create","request-1","669bf18f57cf02c3d0f06f225216f0230043bdb86c01d62b527c382cd0edd028","token-id","2027-01-15T08:00:00Z","0123456789abcdef"]`
+	const expectedMessage = `["proof_v1","rpc.task.v1.create","request-1","142b71c332d69dfa594ee86b7347db1ed9ab79c82954b380a1c02075e77fb486","token-id","2027-01-15T08:00:00Z","0123456789abcdef"]`
 	if string(msg) != expectedMessage {
 		t.Fatalf("proof vector mismatch: %s", msg)
 	}
-	changed := []byte(`{"request_id":"request-1","operation":"tasks.create","payload":{"b":3,"a":1}}`)
-	if e = v.Proof(ctx, "rpc.tasks.v1.create", changed, c, p); e == nil {
+	changed := []byte(`{"request_id":"request-1","operation":"task.create","payload":{"b":3,"a":1}}`)
+	if e = v.Proof(ctx, "rpc.task.v1.create", changed, c, p); e == nil {
 		t.Fatal("accepted altered payload")
 	}
-	if e = v.Proof(ctx, "rpc.tasks.v1.other", raw, c, p); e == nil {
+	if e = v.Proof(ctx, "rpc.task.v1.other", raw, c, p); e == nil {
 		t.Fatal("accepted altered subject")
 	}
-	reordered := []byte(`{"payload":{"a":1,"b":2},"operation":"tasks.create","request_id":"request-1"}`)
-	if e = v.Proof(ctx, "rpc.tasks.v1.create", reordered, c, p); e != nil {
+	reordered := []byte(`{"payload":{"a":1,"b":2},"operation":"task.create","request_id":"request-1"}`)
+	if e = v.Proof(ctx, "rpc.task.v1.create", reordered, c, p); e != nil {
 		t.Fatal(e)
 	}
-	if e = v.Proof(ctx, "rpc.tasks.v1.create", raw, c, p); e == nil {
+	if e = v.Proof(ctx, "rpc.task.v1.create", raw, c, p); e == nil {
 		t.Fatal("accepted replay")
 	}
 	v.Nonces = nil
-	if e = v.Proof(ctx, "rpc.tasks.v1.create", raw, c, p); !errors.Is(e, ErrUnavailable) {
+	if e = v.Proof(ctx, "rpc.task.v1.create", raw, c, p); !errors.Is(e, ErrUnavailable) {
 		t.Fatal("not fail closed")
 	}
 }

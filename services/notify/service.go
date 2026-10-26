@@ -1,4 +1,4 @@
-// Package notify composes the "notifications" Fabric service with independent
+// Package notify composes the "notify" Fabric service with independent
 // inbox, delivery and authenticated health modules.
 package notify
 
@@ -19,7 +19,7 @@ import (
 	"github.com/pavlith/arc/services/notify/modules/delivery"
 	"github.com/pavlith/arc/services/notify/modules/health"
 	"github.com/pavlith/arc/services/notify/modules/inbox"
-	tasksv1 "github.com/pavlith/arc/services/task/api/v1"
+	taskv1 "github.com/pavlith/arc/services/task/api/v1"
 )
 
 var ErrInvalid = errors.New("notify: invalid service dependencies")
@@ -69,24 +69,24 @@ func New(cfg Config) (*Service, error) {
 			return nil, ErrInvalid
 		}
 	}
-	source, err := contract.Compile(tasksv1.Artifact())
+	source, err := contract.Compile(taskv1.Artifact())
 	if err != nil {
 		return nil, err
 	}
 	if cfg.Subscription.Provider == "" ||
 		cfg.Subscription.Digest != source.Digest ||
-		cfg.Subscription.Subject != tasksv1.CreatedSubject ||
+		cfg.Subscription.Subject != taskv1.CreatedSubject ||
 		cfg.Subscription.Durable != inbox.Durable {
 		return nil, ErrInvalid
 	}
 
 	cfg.Runtime.Artifact = artifact
 	cfg.Runtime.Registry = cfg.Registry
-	cfg.Runtime.Authorize = identity.RemoteAuthorizer(cfg.Identity, cfg.CoreTrust, "notifications/v1")
+	cfg.Runtime.Authorize = identity.RemoteAuthorizer(cfg.Identity, cfg.CoreTrust, "notify/v1")
 	cfg.Runtime.SelfCheck = cfg.DB.PingContext
 
 	registration := sdk.Registration{
-		Service: "notifications", Instance: cfg.Runtime.Instance,
+		Service: "notify", Instance: cfg.Runtime.Instance,
 		Build: own.Manifest.Service.BuildVersion, Digest: own.Digest,
 	}
 	permit := func(ctx context.Context) error {
@@ -105,7 +105,7 @@ func New(cfg Config) (*Service, error) {
 	sender := &delivery.Module{DB: cfg.DB, Provider: cfg.Provider, Permit: permit}
 	app, err := service.Compose(service.Config{
 		Definition: service.Definition{
-			Name: "notifications", APIMajor: 1, Kind: service.Domain,
+			Name: "notify", APIMajor: 1, Kind: service.Domain,
 			Modules: []module.Module{
 				&health.Module{ServiceID: cfg.Identity.ServiceID}, receiver, sender,
 			},

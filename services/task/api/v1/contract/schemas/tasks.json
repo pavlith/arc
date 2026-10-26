@@ -1,7 +1,7 @@
 {
   "type": "object",
   "properties": {
-    "tasks": {
+    "task": {
       "type": "array",
       "items": {
         "type": "object",
@@ -57,7 +57,7 @@
     }
   },
   "required": [
-    "tasks"
+    "task"
   ],
   "additionalProperties": false
 }

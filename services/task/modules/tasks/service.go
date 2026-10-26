@@ -15,7 +15,7 @@ import (
 	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/core/modules/access"
 	"github.com/pavlith/arc/services/core/modules/identity"
-	tasksv1 "github.com/pavlith/arc/services/task/api/v1"
+	taskv1 "github.com/pavlith/arc/services/task/api/v1"
 	"strings"
 	"time"
 )
@@ -42,7 +42,7 @@ func unavailable(e error) error {
 	}
 	return rpc.SecurityError(security.ErrUnavailable)
 }
-func (s *Service) ID() string { return "tasks" }
+func (s *Service) ID() string { return "task" }
 
 // Register binds every approved Tasks v1 operation; protected resource checks
 // happen before command replay, including on idempotent retries.
@@ -51,17 +51,17 @@ func (s *Service) Register(r *module.Registry) error {
 		return security.ErrUnavailable
 	}
 	policy := module.Policy{Resource: s.Authorize}
-	store := events.Store{DB: s.DB, Schema: "tasks"}
-	if err := module.BindCommand(r, tasksv1.Create, policy, store, s.create); err != nil {
+	store := events.Store{DB: s.DB, Schema: "task"}
+	if err := module.BindCommand(r, taskv1.Create, policy, store, s.create); err != nil {
 		return err
 	}
-	if err := module.BindCommand(r, tasksv1.Admin, policy, store, s.grants); err != nil {
+	if err := module.BindCommand(r, taskv1.Admin, policy, store, s.grants); err != nil {
 		return err
 	}
-	if err := module.BindQuery(r, tasksv1.Get, policy, s.get); err != nil {
+	if err := module.BindQuery(r, taskv1.Get, policy, s.get); err != nil {
 		return err
 	}
-	return module.BindQuery(r, tasksv1.List, policy, s.list)
+	return module.BindQuery(r, taskv1.List, policy, s.list)
 }
 
 // Authorize verifies the actual task/root/workspace relation before Access.Check.
@@ -80,10 +80,10 @@ func (s *Service) Authorize(ctx context.Context, root, action string) error {
 		return security.ErrDenied
 	}
 	var exists bool
-	query := `SELECT EXISTS(SELECT 1 FROM tasks.roots WHERE acl_root_id=$1 AND workspace_id=$2 AND state='active')`
+	query := `SELECT EXISTS(SELECT 1 FROM task.roots WHERE acl_root_id=$1 AND workspace_id=$2 AND state='active')`
 	args := []any{root, q.WorkspaceID}
 	if cl.Operation == Get {
-		query = `SELECT EXISTS(SELECT 1 FROM tasks.tasks t JOIN tasks.roots r USING(acl_root_id,workspace_id) WHERE t.acl_root_id=$1 AND t.workspace_id=$2 AND t.id=$3 AND r.state='active')`
+		query = `SELECT EXISTS(SELECT 1 FROM task.tasks t JOIN task.roots r USING(acl_root_id,workspace_id) WHERE t.acl_root_id=$1 AND t.workspace_id=$2 AND t.id=$3 AND r.state='active')`
 		args = append(args, q.TaskID)
 	}
 	if e := s.DB.QueryRowContext(ctx, query, args...).Scan(&exists); e != nil {
@@ -102,16 +102,16 @@ func (s *Service) create(ctx context.Context, tx *sql.Tx, q CreateRequest) (Task
 	}
 	now := time.Now().UTC()
 	v := Task{ID: NewID(), WorkspaceID: q.WorkspaceID, RootID: q.RootID, Title: q.Title, Status: "open", CreatedBy: strings.TrimPrefix(cl.Subject, "user:"), CreatedAt: now, UpdatedAt: now}
-	_, e := tx.ExecContext(ctx, `INSERT INTO tasks.tasks(id,workspace_id,acl_root_id,title,status,created_by,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, v.ID, v.WorkspaceID, v.RootID, v.Title, v.Status, v.CreatedBy, v.CreatedAt, v.UpdatedAt)
+	_, e := tx.ExecContext(ctx, `INSERT INTO task.tasks(id,workspace_id,acl_root_id,title,status,created_by,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, v.ID, v.WorkspaceID, v.RootID, v.Title, v.Status, v.CreatedBy, v.CreatedAt, v.UpdatedAt)
 	if e != nil {
 		return Task{}, unavailable(e)
 	}
 	payload, _ := json.Marshal(CreatedEvent{Scope: q.Scope, TaskID: v.ID})
-	e = (events.Store{DB: s.DB, Schema: "tasks"}).Enqueue(ctx, tx, s.Contract, Created, events.Envelope{ID: NewID(), Type: "tasks.task.created", Version: 1, AggregateID: v.ID, OccurredAt: now, Traceparent: meta.Traceparent, Payload: payload})
+	e = (events.Store{DB: s.DB, Schema: "task"}).Enqueue(ctx, tx, s.Contract, Created, events.Envelope{ID: NewID(), Type: "task.task.created", Version: 1, AggregateID: v.ID, OccurredAt: now, Traceparent: meta.Traceparent, Payload: payload})
 	if e != nil {
 		return Task{}, unavailable(e)
 	}
-	_, e = tx.ExecContext(ctx, `INSERT INTO tasks.audit(task_id,actor,operation,request_id,traceparent) VALUES($1,$2,$3,$4,$5)`, v.ID, v.CreatedBy, Create, meta.RequestID, meta.Traceparent)
+	_, e = tx.ExecContext(ctx, `INSERT INTO task.audit(task_id,actor,operation,request_id,traceparent) VALUES($1,$2,$3,$4,$5)`, v.ID, v.CreatedBy, Create, meta.RequestID, meta.Traceparent)
 	return v, unavailable(e)
 }
 
@@ -123,7 +123,7 @@ func scan(row interface{ Scan(...any) error }) (Task, error) {
 	return v, e
 }
 func (s *Service) get(ctx context.Context, q GetRequest) (Task, error) {
-	v, e := scan(s.DB.QueryRowContext(ctx, `SELECT `+columns+` FROM tasks.tasks WHERE id=$1 AND workspace_id=$2 AND acl_root_id=$3`, q.TaskID, q.WorkspaceID, q.RootID))
+	v, e := scan(s.DB.QueryRowContext(ctx, `SELECT `+columns+` FROM task.tasks WHERE id=$1 AND workspace_id=$2 AND acl_root_id=$3`, q.TaskID, q.WorkspaceID, q.RootID))
 	if e == sql.ErrNoRows {
 		return Task{}, &rpc.Error{Code: rpc.CodeNotFound, Message: "task not found"}
 	}
@@ -131,7 +131,7 @@ func (s *Service) get(ctx context.Context, q GetRequest) (Task, error) {
 }
 func (s *Service) list(ctx context.Context, q ListRequest) (ListResponse, error) {
 	cl, _ := rpc.VerifiedClaims(ctx)
-	rows, e := s.DB.QueryContext(ctx, `SELECT `+columns+` FROM tasks.tasks WHERE workspace_id=$1 AND acl_root_id=$2 AND created_by=$3 ORDER BY created_at,id LIMIT $4`, q.WorkspaceID, q.RootID, strings.TrimPrefix(cl.Subject, "user:"), q.Limit)
+	rows, e := s.DB.QueryContext(ctx, `SELECT `+columns+` FROM task.tasks WHERE workspace_id=$1 AND acl_root_id=$2 AND created_by=$3 ORDER BY created_at,id LIMIT $4`, q.WorkspaceID, q.RootID, strings.TrimPrefix(cl.Subject, "user:"), q.Limit)
 	if e != nil {
 		return ListResponse{}, unavailable(e)
 	}
@@ -150,12 +150,12 @@ func (s *Service) list(ctx context.Context, q ListRequest) (ListResponse, error)
 // PrepareRoot commits the domain binding before issuing its activation receipt.
 // Caller must first reserve the root through the approved Access lifecycle.
 func (s *Service) PrepareRoot(ctx context.Context, q Scope, key ed25519.PrivateKey, kid, provider string) (string, error) {
-	_, e := s.DB.ExecContext(ctx, `INSERT INTO tasks.roots(acl_root_id,workspace_id,state) VALUES($1,$2,'prepared') ON CONFLICT(acl_root_id) DO NOTHING`, q.RootID, q.WorkspaceID)
+	_, e := s.DB.ExecContext(ctx, `INSERT INTO task.roots(acl_root_id,workspace_id,state) VALUES($1,$2,'prepared') ON CONFLICT(acl_root_id) DO NOTHING`, q.RootID, q.WorkspaceID)
 	if e != nil {
 		return "", e
 	}
 	var workspace string
-	if e = s.DB.QueryRowContext(ctx, `SELECT workspace_id FROM tasks.roots WHERE acl_root_id=$1`, q.RootID).Scan(&workspace); e != nil {
+	if e = s.DB.QueryRowContext(ctx, `SELECT workspace_id FROM task.roots WHERE acl_root_id=$1`, q.RootID).Scan(&workspace); e != nil {
 		return "", e
 	}
 	if workspace != q.WorkspaceID {
@@ -164,7 +164,7 @@ func (s *Service) PrepareRoot(ctx context.Context, q Scope, key ed25519.PrivateK
 	return access.SignDomainReceipt(key, access.DomainReceipt{Provider: provider, Root: q.RootID, Operation: "activate", Kid: kid, ExpiresAt: time.Now().Add(time.Minute)})
 }
 func (s *Service) ActivateRoot(ctx context.Context, q Scope) error {
-	r, e := s.DB.ExecContext(ctx, `UPDATE tasks.roots SET state='active' WHERE acl_root_id=$1 AND workspace_id=$2`, q.RootID, q.WorkspaceID)
+	r, e := s.DB.ExecContext(ctx, `UPDATE task.roots SET state='active' WHERE acl_root_id=$1 AND workspace_id=$2`, q.RootID, q.WorkspaceID)
 	if e != nil {
 		return e
 	}
@@ -176,9 +176,9 @@ func (s *Service) ActivateRoot(ctx context.Context, q Scope) error {
 }
 
 // GrantCommand is an internal provisioning operation; HTTP exposure is disabled.
-func (s *Service) grants(ctx context.Context, tx *sql.Tx, q GrantCommand) (tasksv1.GrantResult, error) {
+func (s *Service) grants(ctx context.Context, tx *sql.Tx, q GrantCommand) (taskv1.GrantResult, error) {
 	result, err := s.grantsAccess(ctx, tx, q)
-	return tasksv1.GrantResult{
+	return taskv1.GrantResult{
 		ResourceID: result.ResourceID, GrantID: result.GrantID,
 		State: result.State, Revision: result.Revision,
 	}, err
@@ -190,7 +190,7 @@ func (s *Service) grantsAccess(ctx context.Context, tx *sql.Tx, q GrantCommand) 
 	}
 	client := s.Identity
 	meta, _ := rpc.Metadata(ctx)
-	client.IdempotencyKey = "tasks.grants:" + meta.IdempotencyKey
+	client.IdempotencyKey = "task.grants:" + meta.IdempotencyKey
 	ctx, e := InvocationContext(ctx, client, identity.Target{Audience: "access/v1", Operation: "access.v1." + op})
 	if e != nil {
 		return access.MutationResult{}, e

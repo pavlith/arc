@@ -14,7 +14,7 @@ func TestNotifyApprovedArtifact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if compiled.Manifest.Service.Name != "notifications" ||
+	if compiled.Manifest.Service.Name != "notify" ||
 		compiled.Manifest.Service.APIMajor != 1 || len(compiled.Manifest.Operations) != 1 {
 		t.Fatal("Notifications contract diverged from M0-06")
 	}
@@ -28,7 +28,7 @@ func TestNotifyNewFailsClosed(t *testing.T) {
 	}
 }
 func TestNotifyMigrationsOwnedLocally(t *testing.T) {
-	b, err := notify.Migrations.ReadFile("migrations/000001_notifications.up.sql")
+	b, err := notify.Migrations.ReadFile("migrations/000001_notify.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

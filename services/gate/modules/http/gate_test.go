@@ -122,7 +122,7 @@ func TestSnapshotValidationAndAtomicReplace(t *testing.T) {
 			defer wg.Done()
 			for range 300 {
 				table := routes.current.Load()
-				en, _, ok := table.match("GET", "/api/v1/tasks/read/resource-id")
+				en, _, ok := table.match("GET", "/api/v1/task/read/resource-id")
 				if !ok || en.route.Digest != en.compiled.Digest || en.op.Subject != en.route.Subject {
 					bad.Store(true)
 				}
@@ -147,12 +147,12 @@ func TestSnapshotValidationAndAtomicReplace(t *testing.T) {
 	}
 }
 func TestReservedAndCollidingHTTPPaths(t *testing.T) {
-	for _, p := range []string{"/healthz", "/health/ready", "/dav/files", "/api/v1/arc/auth/login", "/api/v1/tasks/*", "/api/v1/tasks/{x}/../arc", "/api/v1/tasks/%2f"} {
+	for _, p := range []string{"/healthz", "/health/ready", "/dav/files", "/api/v1/arc/auth/login", "/api/v1/task/*", "/api/v1/task/{x}/../arc", "/api/v1/task/%2f"} {
 		if contract.ValidateHTTP(contract.HTTP{Expose: true, Path: p}) == nil {
 			t.Fatal("reserved/unsafe HTTP path", p)
 		}
 	}
-	if !contract.RoutesOverlap(contract.HTTP{Method: "GET", Path: "/api/v1/tasks/{id}"}, contract.HTTP{Method: "GET", Path: "/api/v1/tasks/static"}) {
+	if !contract.RoutesOverlap(contract.HTTP{Method: "GET", Path: "/api/v1/task/{id}"}, contract.HTTP{Method: "GET", Path: "/api/v1/task/static"}) {
 		t.Fatal("static/parameter collision missed")
 	}
 }
@@ -173,7 +173,7 @@ func TestSafeErrorsProxyAndRateLimits(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	r := httptest.NewRequest("GET", "https://arc.example/api/v1/tasks/read/r", nil)
+	r := httptest.NewRequest("GET", "https://arc.example/api/v1/task/read/r", nil)
 	r.RemoteAddr = "192.0.2.4:1234"
 	r.Header.Set("X-Forwarded-For", "203.0.113.2")
 	client, secure, e := g.peer(r)

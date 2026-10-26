@@ -1,4 +1,4 @@
-name: M0-06 Tasks outbox Notifications vertical guardrails
+name: M0-06 Task outbox Notify vertical guardrails
 
 on:
   push:
@@ -48,7 +48,7 @@ jobs:
           go-version: "1.27.3"
           cache-dependency-path: go.sum
       - run: bash scripts/verify-changed.sh --all
-      - run: go build ./cmd/arc-tasks ./cmd/arc-notifications ./cmd/arc-gate
+      - run: go build ./cmd/arc-task ./cmd/arc-notify ./cmd/arc-gate
       - run: go vet ./...
       - name: Install isolated integration tools
         run: |

@@ -52,7 +52,13 @@ type Core struct {
 }
 
 func (c *Core) ready() error {
-	if c == nil || c.DB == nil || c.Identity == nil || c.Identity.DB != c.DB || len(c.ApprovalKey) != 32 {
+	if c == nil {
+		return security.ErrUnavailable
+	}
+	if c.GormDB != nil {
+		return c.readyGORM()
+	}
+	if c.DB == nil || c.Identity == nil || c.Identity.DB != c.DB || len(c.ApprovalKey) != 32 {
 		return security.ErrUnavailable
 	}
 	return nil

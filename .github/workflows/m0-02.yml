@@ -46,8 +46,5 @@ jobs:
       - run: bash scripts/verify-changed.sh --all
       - name: Install isolated integration tools
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y postgresql postgresql-client
-          echo "$(pg_config --bindir)" >> "$GITHUB_PATH"
           go install github.com/nats-io/nats-server/v2@v2.15.1
       - run: bash scripts/test-m0-02.sh

@@ -1,0 +1,12 @@
+FROM golang:1.27.3-alpine3.23 AS build
+RUN apk add --no-cache gcc musl-dev
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=1 go build -trimpath -o /out/migrate ./cmd/arc-sqlite-migrate
+FROM alpine:3.23
+RUN addgroup -S arc && adduser -S -G arc arc && mkdir -p /var/lib/arc/core /var/lib/arc/task /var/lib/arc/notify && chown -R arc:arc /var/lib/arc
+COPY --from=build /out/migrate /usr/local/bin/arc-sqlite-migrate
+USER arc
+ENTRYPOINT ["/usr/local/bin/arc-sqlite-migrate"]

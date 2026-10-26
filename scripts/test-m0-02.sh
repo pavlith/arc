@@ -2,33 +2,18 @@
 # Isolated M0 guardrails; no production database or service is used.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
-for tool in go psql initdb pg_ctl nats-server; do
+for tool in go nats-server; do
   command -v "$tool" >/dev/null || { echo "$tool is required" >&2; exit 1; }
 done
 scratch=$(mktemp -d /tmp/arc-m0-02.XXXXXX)
 nats_pid=
 cleanup() {
   if [[ -n $nats_pid ]]; then kill "$nats_pid" 2>/dev/null || true; wait "$nats_pid" 2>/dev/null || true; fi
-  pg_ctl -D "$scratch/db" -m immediate stop >/dev/null 2>&1 || true
   rm -rf "$scratch"
 }
 trap cleanup EXIT
-initdb -D "$scratch/db" -A trust -U postgres --no-locale -E UTF8 >"$scratch/init.log"
-pg_ctl -D "$scratch/db" -l "$scratch/postgres.log" -o "-k $scratch -h ''" -w start >/dev/null
-export PGHOST="$scratch" PGUSER=postgres PGDATABASE=postgres
-psql -X -v ON_ERROR_STOP=1 -c 'CREATE ROLE arc_migrator LOGIN;' -c 'CREATE ROLE arc_core LOGIN;' -c 'CREATE ROLE arc_task LOGIN;' -c 'CREATE ROLE arc_notify LOGIN;' -c 'CREATE DATABASE arc OWNER arc_migrator;' >/dev/null
-export PGUSER=arc_migrator PGDATABASE=arc PGPASSWORD_FILE="$scratch/password" MIGRATIONS_DIR="$PWD/services"
-touch "$PGPASSWORD_FILE"
-sh scripts/migrate.sh
-sh scripts/migrate.sh
-if [[ ${ARC_TEST_GATE:-0} == 1 ]]; then
-  PGUSER=postgres PGDATABASE=postgres psql -X -v ON_ERROR_STOP=1 -c 'CREATE DATABASE arc_gate OWNER arc_migrator TEMPLATE arc;' >/dev/null
-fi
-if [[ ${ARC_TEST_TASK:-0} == 1 ]]; then
- PGUSER=postgres PGDATABASE=postgres psql -X -v ON_ERROR_STOP=1 -c 'CREATE DATABASE arc_task_proof OWNER arc_migrator TEMPLATE arc;' >/dev/null
-fi
-export ARC_IDENTITY_TEST_DSN="host=$scratch user=arc_core dbname=arc sslmode=disable"
-export ARC_ACCESS_TEST_DSN="$ARC_IDENTITY_TEST_DSN"
+# SQL guardrails create migrated, private owner files through internal/testdb.
+go test -count=1 ./sdk/database ./services/core/migrations ./cmd/arc-sqlite-migrate
 # Use the existing M0-01 TLS/NKey bootstrap and smoke client unchanged.
 (go run ./cmd/arc-dev-bootstrap -out "$scratch/secrets" -runtime-dir "$scratch/secrets" -store-dir "$scratch/jetstream")
 # Bind an ephemeral port; the generated config has port 4222, replaced below.
@@ -120,11 +105,11 @@ if [[ ${ARC_TEST_FABRIC:-0} == 1 ]]; then
   (go test -race -count=1 -run TestM0Fabric -v ./services/core/modules/fabric)
 fi
 if [[ ${ARC_TEST_GATE:-0} == 1 ]]; then
-  (ARC_ACCESS_TEST_DSN="host=$scratch user=arc_core dbname=arc_gate sslmode=disable" go test -race -count=1 -run TestM0Gate -v ./services/gate/modules/http)
+  (go test -race -count=1 -run TestM0Gate -v ./services/gate/modules/http)
 fi
 fi
 if [[ ${ARC_TEST_TASK:-0} == 1 ]]; then
  (go build -race -o "$scratch/arc-task" ./cmd/arc-task && go build -race -o "$scratch/arc-notify" ./cmd/arc-notify)
- (ARC_TASK_TEST_DSN="host=$scratch user=arc_core dbname=arc_task_proof sslmode=disable" ARC_DOMAIN_BIN_DIR="$scratch" go test -race -count=1 -timeout=3m -run TestM006 -v ./services/task)
+ (ARC_DOMAIN_BIN_DIR="$scratch" go test -race -count=1 -timeout=3m -run TestM006 -v ./services/task)
 fi
 echo 'Requested M0 integration guardrails passed; M7 not run.'

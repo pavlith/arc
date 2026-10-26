@@ -17,9 +17,13 @@ trap cleanup EXIT
 
 for pass in 1 2; do
   cleanup
-  docker compose --project-name "$project" up --detach --wait postgres nats
-  docker compose --project-name "$project" --profile tools run --rm migrate
-  docker compose --project-name "$project" --profile tools run --rm migrate
+  docker compose --project-name "$project" up --detach --wait nats
+  for owner in core task notify; do
+    docker compose --project-name "$project" --profile tools run --rm "migrate-$owner"
+  done
+  for owner in core task notify; do
+    docker compose --project-name "$project" --profile tools run --rm "migrate-$owner"
+  done
   docker compose --project-name "$project" --profile tools run --rm rpc-smoke
   echo "M0-01 clean startup pass $pass succeeded"
 done

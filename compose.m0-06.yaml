@@ -1,29 +1,30 @@
-# Existing operator-provisioned Core/Gate and approved contracts are prerequisites.
-# The isolated smoke provisions these automatically; these profiles run domains.
+# Core/Gate and approved contracts must be provisioned by the operator.
 services:
-  tasks:
+  task:
     profiles: ["m0-06"]
     build:
       context: .
       dockerfile: deploy/docker/Dockerfile.domain
-      args: {SERVICE: tasks}
+      args: {SERVICE: task}
     read_only: true
     cap_drop: ["ALL"]
     volumes:
       - ./.secrets/m0-06/task:/run/arc:ro
+      - task-data:/var/lib/arc/task
     depends_on:
-      postgres: {condition: service_healthy}
+      migrate-task: {condition: service_completed_successfully}
       nats: {condition: service_started}
-  notifications:
+  notify:
     profiles: ["m0-06"]
     build:
       context: .
       dockerfile: deploy/docker/Dockerfile.domain
-      args: {SERVICE: notifications}
+      args: {SERVICE: notify}
     read_only: true
     cap_drop: ["ALL"]
     volumes:
       - ./.secrets/m0-06/notify:/run/arc:ro
+      - notify-data:/var/lib/arc/notify
     depends_on:
-      postgres: {condition: service_healthy}
+      migrate-notify: {condition: service_completed_successfully}
       nats: {condition: service_started}

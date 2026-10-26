@@ -14,8 +14,6 @@ literal = [
     ("arc-notifications", "arc-notify"), ("arc-tasks", "arc-task"),
     ("m006-notifications", "m006-notify"), ("m006-tasks", "m006-task"),
     ("nats-notifications", "nats-notify"), ("nats-tasks", "nats-task"),
-    ("postgres_notifications", "postgres_notify"), ("postgres_tasks", "postgres_task"),
-    ("postgres-notifications", "postgres-notify"), ("postgres-tasks", "postgres-task"),
     ("arc_notifications", "arc_notify"), ("arc_tasks", "arc_task"),
     ("ARC_TEST_TASKS", "ARC_TEST_TASK"), ("ARC_TASKS", "ARC_TASK"),
     ("NOTIFICATIONS", "NOTIFY"), ("TASKS_DLQ", "TASK_DLQ"),

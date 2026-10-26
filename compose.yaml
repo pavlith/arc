@@ -18,50 +18,41 @@ services:
       - nats_server_key
       - nats_ca_cert
 
-  postgres:
-    image: postgres:18.6-alpine3.23
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: arc
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_admin_password
-      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
-    ports:
-      - "127.0.0.1:5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d arc"]
-      interval: 2s
-      timeout: 3s
-      retries: 30
-    volumes:
-      - postgres-data:/var/lib/postgresql
-      - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro
-    secrets:
-      - postgres_admin_password
-      - postgres_migrator_password
-      - postgres_core_password
-      - postgres_task_password
-      - postgres_notify_password
-
-  migrate:
-    image: postgres:18.6-alpine3.23
+  migrate-core:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.migrate
     profiles: ["tools"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      PGHOST: postgres
-      PGPORT: "5432"
-      PGDATABASE: arc
-      PGUSER: arc_migrator
-    entrypoint: ["/bin/sh", "/scripts/migrate.sh"]
+    command: ["-service", "core", "-db", "/var/lib/arc/core/core.sqlite"]
+    network_mode: none
     read_only: true
     cap_drop: ["ALL"]
     volumes:
-      - ./services:/services:ro
-      - ./scripts/migrate.sh:/scripts/migrate.sh:ro
-    secrets:
-      - postgres_migrator_password
+      - core-data:/var/lib/arc/core
+
+  migrate-task:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.migrate
+    profiles: ["tools", "m0-06"]
+    command: ["-service", "task", "-db", "/var/lib/arc/task/task.sqlite"]
+    network_mode: none
+    read_only: true
+    cap_drop: ["ALL"]
+    volumes:
+      - task-data:/var/lib/arc/task
+
+  migrate-notify:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.migrate
+    profiles: ["tools", "m0-06"]
+    command: ["-service", "notify", "-db", "/var/lib/arc/notify/notify.sqlite"]
+    network_mode: none
+    read_only: true
+    cap_drop: ["ALL"]
+    volumes:
+      - notify-data:/var/lib/arc/notify
 
   rpc-smoke:
     build:
@@ -86,7 +77,9 @@ services:
 
 volumes:
   nats-data:
-  postgres-data:
+  core-data:
+  task-data:
+  notify-data:
 
 secrets:
   nats_server_config:
@@ -103,13 +96,3 @@ secrets:
     file: ./.secrets/dev/nats-smoke-client.seed
   nats_jetstream_admin_seed:
     file: ./.secrets/dev/nats-jetstream-admin.seed
-  postgres_admin_password:
-    file: ./.secrets/dev/postgres-admin-password
-  postgres_migrator_password:
-    file: ./.secrets/dev/postgres-migrator-password
-  postgres_core_password:
-    file: ./.secrets/dev/postgres-core-password
-  postgres_task_password:
-    file: ./.secrets/dev/postgres-task-password
-  postgres_notify_password:
-    file: ./.secrets/dev/postgres-notify-password

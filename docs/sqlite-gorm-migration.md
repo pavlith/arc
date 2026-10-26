@@ -42,8 +42,12 @@ Status: implementation plan; PostgreSQL remains active until the service cutover
 - Implemented: Core Runtime GORM desired-state compare-and-swap with multi-connection concurrency tests.
 - Implemented: Core Identity GORM signing-key metadata, JWKS, service-credential revocation, nonce replay protection, session and delegation live-state checks.
 - Implemented: Core Fabric GORM signed approval, rollback-safe revocation, ACL catalog loading, signed route snapshots, and instance lease/ready persistence.
+- Implemented: Core Access GORM/SQLite live caller/session/delegation checks, consistent read snapshots, root traversal and listing, ACL inheritance, resource type registration, lifecycle mutations, grants and revocation.
+- Implemented: transactional GORM Access command replay, conflict detection, policy revision CAS and append-only audit, with concurrent two-connection tests.
+- Verified: SQLite / GORM GitHub Actions test suite at commit `e4d1bc9` (`go test -count=1 ./...` and formatting).
+
 - Verified: SQLite unit test suite in GitHub Actions at commit `bd2d582`; source formatting fixes are included.
-- **Not yet implemented:** Core Identity account/session mutation and token exchange repositories; Core Access resource/grant/check mutation paths; full Core service composition using GORM; PostgreSQL removal; live multi-service M0-06 SQLite proof.
+- **Not yet implemented:** Core Identity account/session mutation and token exchange repositories; full Core service composition using GORM; PostgreSQL removal; live multi-service M0-06 SQLite proof.
 - **Deployment caution:** `arc-sqlite-migrate` builds the new database schemas, but does NOT switch the Core binary to SQLite. Core still requires PostgreSQL until the remaining modules and bootstrap have been ported.
 
 ```bash

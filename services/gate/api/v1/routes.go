@@ -3,10 +3,10 @@
 package v1
 
 const (
-    Login = "/api/v1/arc/auth/login"
-    Refresh = "/api/v1/arc/auth/refresh"
-    Logout = "/api/v1/arc/auth/logout"
-    Session = "/api/v1/arc/auth/session"
-    Health = "/healthz"
-    Ready = "/readyz"
+	Login   = "/api/v1/arc/auth/login"
+	Refresh = "/api/v1/arc/auth/refresh"
+	Logout  = "/api/v1/arc/auth/logout"
+	Session = "/api/v1/arc/auth/session"
+	Health  = "/healthz"
+	Ready   = "/readyz"
 )

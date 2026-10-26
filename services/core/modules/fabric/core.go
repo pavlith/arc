@@ -11,10 +11,10 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/pavlith/arc/services/core/modules/access"
 	"github.com/pavlith/arc/pkgs/contract"
-	"github.com/pavlith/arc/services/core/modules/identity"
 	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/services/core/modules/access"
+	"github.com/pavlith/arc/services/core/modules/identity"
 )
 
 type EventSubscription struct {

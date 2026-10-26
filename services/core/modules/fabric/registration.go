@@ -29,7 +29,7 @@ type controlRequest struct {
 	RequestID    string             `json:"request_id"`
 	Assertion    string             `json:"assertion"`
 	Proof        security.Proof     `json:"proof"`
-	Registration pkgs.Registration   `json:"registration"`
+	Registration pkgs.Registration  `json:"registration"`
 }
 type controlResponse struct {
 	Subject   string     `json:"subject"`
@@ -39,10 +39,10 @@ type controlResponse struct {
 	Error     *rpc.Error `json:"error,omitempty"`
 }
 type probe struct {
-	Challenge    string           `json:"challenge"`
+	Challenge    string            `json:"challenge"`
 	Registration pkgs.Registration `json:"registration"`
-	MicroID      string           `json:"micro_id,omitempty"`
-	Signature    []byte           `json:"signature,omitempty"`
+	MicroID      string            `json:"micro_id,omitempty"`
+	Signature    []byte            `json:"signature,omitempty"`
 }
 
 func randomID() string {

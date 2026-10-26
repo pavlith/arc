@@ -19,9 +19,9 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/pavlith/arc/pkgs"
-	"github.com/pavlith/arc/services/core/modules/identity"
 	"github.com/pavlith/arc/pkgs/rpc"
 	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/services/core/modules/identity"
 )
 
 func TestFailClosedAndDomainOwnerBinding(t *testing.T) {

@@ -3,9 +3,9 @@
 package v1
 
 import (
-    "github.com/pavlith/arc/services/core/modules/access"
-    "github.com/pavlith/arc/services/core/modules/fabric"
-    "github.com/pavlith/arc/services/core/modules/identity"
+	"github.com/pavlith/arc/services/core/modules/access"
+	"github.com/pavlith/arc/services/core/modules/fabric"
+	"github.com/pavlith/arc/services/core/modules/identity"
 )
 
 type LoginRequest = identity.LoginRequest
@@ -22,10 +22,10 @@ type SignedSnapshot = fabric.SignedSnapshot
 type RouteBundle = fabric.RouteBundle
 
 const (
-    RoutesSubject = fabric.RoutesSubject
-    RoutesChangedSubject = fabric.RoutesChangedSubject
-    RegisterSubject = fabric.RegisterSubject
-    ReadySubject = fabric.ReadySubject
-    EventPermitSubject = fabric.EventPermitSubject
-    CheckSubject = fabric.CheckSubject
+	RoutesSubject        = fabric.RoutesSubject
+	RoutesChangedSubject = fabric.RoutesChangedSubject
+	RegisterSubject      = fabric.RegisterSubject
+	ReadySubject         = fabric.ReadySubject
+	EventPermitSubject   = fabric.EventPermitSubject
+	CheckSubject         = fabric.CheckSubject
 )

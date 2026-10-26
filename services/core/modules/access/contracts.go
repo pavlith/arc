@@ -8,8 +8,8 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/pavlith/arc/services/core/modules/identity"
 	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/services/core/modules/identity"
 )
 
 // Approved is a Core-pinned, offline-signed M0 approval. It is not a registration

@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pavlith/arc/services/core/modules/identity"
 	"github.com/pavlith/arc/pkgs/rpc"
 	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/services/core/modules/identity"
 )
 
 var ErrDenied = security.ErrDenied

@@ -15,10 +15,10 @@ import (
 	"time"
 
 	"github.com/pavlith/arc/pkgs/contract"
-	"github.com/pavlith/arc/services/core/modules/fabric"
-	"github.com/pavlith/arc/services/core/modules/identity"
 	"github.com/pavlith/arc/pkgs/rpc"
 	"github.com/pavlith/arc/pkgs/security"
+	"github.com/pavlith/arc/services/core/modules/fabric"
+	"github.com/pavlith/arc/services/core/modules/identity"
 )
 
 // closedBackend is an unavailable boundary, never a permissive auth substitute.

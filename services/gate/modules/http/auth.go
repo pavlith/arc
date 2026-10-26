@@ -3,8 +3,8 @@ package gate
 import (
 	"encoding/json"
 	"github.com/pavlith/arc/pkgs/contract"
-	"github.com/pavlith/arc/services/core/modules/identity"
 	"github.com/pavlith/arc/pkgs/rpc"
+	"github.com/pavlith/arc/services/core/modules/identity"
 	"net/http"
 	"time"
 )

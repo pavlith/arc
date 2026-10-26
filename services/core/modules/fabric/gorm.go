@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"database/sql"
+ "encoding/json"
 	"errors"
 	"sort"
 	"time"
@@ -16,6 +17,18 @@ import (
 
 // readyGORM enforces a single Core owner database for Fabric and Identity.
 // These references must not be independently configured to different SQLite files.
+// scanSignedInstallation accepts SQL TEXT or BLOB installation payloads.
+// Go's json.RawMessage does not implement sql.Scanner for SQLite TEXT values.
+func scanSignedInstallation(row interface{ Scan(...any) error }) (SignedInstallation, error) {
+	var signed SignedInstallation
+	var encoded []byte
+	if err := row.Scan(&encoded, &signed.Signature); err != nil {
+		return SignedInstallation{}, err
+	}
+	signed.Payload = json.RawMessage(encoded)
+	return signed, nil
+}
+
 func (c *Core) readyGORM() error {
 	if c == nil || c.GormDB == nil || c.Identity == nil ||
 		c.Identity.GormDB != c.GormDB || len(c.ApprovalKey) != ed25519.PublicKeySize {
@@ -28,15 +41,14 @@ func (c *Core) activeGORM(ctx context.Context, account, digest string) (*contrac
 	if err := c.readyGORM(); err != nil {
 		return nil, err
 	}
-	var signed SignedInstallation
-	err := c.GormDB.WithContext(ctx).Raw(
+	signed, err := scanSignedInstallation(c.GormDB.WithContext(ctx).Raw(
 		`SELECT c.installation,c.signature FROM fabric_contracts c
 		JOIN fabric_deployments d ON d.digest=c.digest
 		JOIN identity_service_accounts a ON a.id=d.service_account_id
 		WHERE c.digest=? AND d.service_account_id=?
 		AND c.revoked_at IS NULL AND a.disabled_at IS NULL`,
 		digest, account,
-	).Row().Scan(&signed.Payload, &signed.Signature)
+	).Row())
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, security.ErrDenied
 	}
@@ -78,8 +90,8 @@ func (c *Core) loadAccessGORM(ctx context.Context) (*access.Contracts, error) {
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var signed SignedInstallation
-		if err := rows.Scan(&signed.Payload, &signed.Signature); err != nil {
+		signed, err := scanSignedInstallation(rows)
+		if err != nil {
 			return nil, security.ErrUnavailable
 		}
 		installation, _, err := c.verify(signed)
@@ -120,8 +132,8 @@ func (c *Core) routesGORM(ctx context.Context) (SignedSnapshot, error) {
 		}
 		defer rows.Close()
 		for rows.Next() {
-			var signed SignedInstallation
-			if err := rows.Scan(&signed.Payload, &signed.Signature); err != nil {
+			signed, err := scanSignedInstallation(rows)
+			if err != nil {
 				return err
 			}
 			installed, compiled, err := c.verify(signed)

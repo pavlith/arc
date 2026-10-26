@@ -49,3 +49,16 @@ func TestRejectUnknownMigrationOwner(t *testing.T) {
 		t.Fatal("relative path accepted")
 	}
 }
+
+func TestRejectCrossServiceDatabaseReuse(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "core.sqlite")
+	if err := run(context.Background(), "core", path); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(context.Background(), "task", path); err == nil {
+		t.Fatal("task migrator accepted a Core-owned database")
+	}
+	if err := run(context.Background(), "notify", path); err == nil {
+		t.Fatal("notify migrator accepted a Core-owned database")
+	}
+}

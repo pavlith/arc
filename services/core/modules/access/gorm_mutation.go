@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"strings"
 
 	"github.com/pavlith/arc/sdk/database"
 	"github.com/pavlith/arc/sdk/rpc"

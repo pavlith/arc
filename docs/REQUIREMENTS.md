@@ -76,6 +76,8 @@ M0-04 использует подписанные локальным опера�
 
 **Сценарии верификации Gate:** `POST /api/v1/tasks` → approved RPC; `401/403/409/503/504` корректны; route snapshots не откатываются; restart/cold-start/poll reconciliation работают; злоумышленник не может опубликовать `/api/v1/arc/*` либо подменить `/api/v1/tasks/{id}` статическим конфликтом; отказ Core блокирует новые защищённые вызовы. M0 guardrail покрывает approved route, invalid snapshot signature, reserved/conflicting route и fail-closed; полная error/restart/reconciliation matrix выполняется в M7.
 
+Реализация M0-05: Gate работает отдельным процессом без БД; snapshot и active JWKS поступают через signed-service RPC `ctl.arc.fabric.routes` в root-signed request-bound bundle. Snapshot имеет canonical content digest, `kid`, domain-separated signature, contract artifacts и explicit HTTP bindings; rollback/conflicting revision, system paths и collisions запрещены. `__Host-` browser cookies + Origin/CSRF и `aud=gate` Bearer используют online Identity; внутренний `sessions.validate` не дублирует session state. HTTP → RPC сохраняет request/trace/deadline/idempotency, требует schema и target-scoped invocation, а owner-service выполняет ACL. Auth endpoints и limits доступны сейчас; DAV/WS, пользовательский UI и полный recovery остаются последующим этапам/M7.
+
 ### 2.5 Tasks / Projects / Notifications (`P1`, часть используется уже при `P0`)
 
 - **T-01:** задачи с ID, названием, rich-text, статусом, приоритетом, сроком, несколькими исполнителями, label, files, comments, history.

@@ -32,8 +32,11 @@ type Core struct {
 	Identity    *identity.Core
 	ApprovalKey ed25519.PublicKey
 	// Bootstrap contains only locally pinned Identity/control policy, never business types.
-	Bootstrap   []access.Approved
-	SnapshotKey ed25519.PrivateKey
+	Bootstrap     []access.Approved
+	SnapshotKey   ed25519.PrivateKey
+	SnapshotKid   string
+	RouteTrustKey ed25519.PrivateKey
+	RoutesChanged func()
 }
 
 func (c *Core) ready() error {
@@ -292,6 +295,9 @@ func (c *Core) Approve(ctx context.Context, s SignedInstallation) (string, error
 	if e = t.Commit(); e != nil {
 		return "", security.ErrUnavailable
 	}
+	if c.RoutesChanged != nil {
+		c.RoutesChanged()
+	}
 	return m.Digest, nil
 }
 func (c *Core) LoadAccess(ctx context.Context) (*access.Contracts, error) {
@@ -304,7 +310,7 @@ func (c *Core) LoadAccess(ctx context.Context) (*access.Contracts, error) {
 			return nil, security.ErrDenied
 		}
 		for _, rule := range bootstrap.Rules {
-			if rule.Audience != "identity/v1" {
+			if rule.Audience != "identity/v1" && !(rule.Audience == "fabric/v1" && rule.Operation == "fabric.v1.routes") {
 				return nil, security.ErrDenied
 			}
 		}
@@ -376,7 +382,13 @@ func (c *Core) Revoke(ctx context.Context, raw []byte, sig []byte) error {
 	if _, e = t.ExecContext(ctx, `UPDATE fabric.route_state SET revision=revision+1 WHERE singleton`); e != nil {
 		return security.ErrUnavailable
 	}
-	return t.Commit()
+	if e = t.Commit(); e != nil {
+		return e
+	}
+	if c.RoutesChanged != nil {
+		c.RoutesChanged()
+	}
+	return nil
 }
 func (c *Core) active(ctx context.Context, account, digest string) (*contract.Compiled, error) {
 	if e := c.ready(); e != nil {

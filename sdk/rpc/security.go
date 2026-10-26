@@ -70,6 +70,9 @@ func InvocationAuthorizer(v security.Verifier, audience string) func(context.Con
 // AssertionAuthorizer is for the closed Identity bootstrap API; policy must
 // independently authorize the verified service for the exact endpoint.
 func AssertionAuthorizer(v security.Verifier, allow func(context.Context, string, string) error) func(context.Context, string, []byte) (context.Context, error) {
+	return AssertionAuthorizerFor(v, "identity.exchange_service", allow)
+}
+func AssertionAuthorizerFor(v security.Verifier, audience string, allow func(context.Context, string, string) error) func(context.Context, string, []byte) (context.Context, error) {
 	return func(ctx context.Context, subject string, raw []byte) (context.Context, error) {
 		var env requestEnvelope
 		if decodeStrict(raw, &env) != nil || env.Proof == nil {
@@ -78,7 +81,7 @@ func AssertionAuthorizer(v security.Verifier, allow func(context.Context, string
 		if allow == nil {
 			return nil, SecurityError(security.ErrUnavailable)
 		}
-		c, err := v.Assertion(ctx, env.Auth)
+		c, err := v.AssertionFor(ctx, env.Auth, audience)
 		if err != nil {
 			return nil, SecurityError(err)
 		}
@@ -103,6 +106,8 @@ func DecodeEnvelope(raw []byte) (string, string, *security.Proof, error) {
 
 type metadataKey struct{}
 type RequestMetadata struct {
+	RequestID      string
+	Traceparent    string
 	IdempotencyKey string
 	Payload        json.RawMessage
 }

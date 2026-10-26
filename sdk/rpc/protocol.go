@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -76,6 +77,9 @@ func decodeStrict(data []byte, target any) error {
 }
 
 func ValidateSubject(subject string) error {
+	if subject == "ctl.arc.fabric.routes" {
+		return nil
+	}
 	if len(subject) == 0 || len(subject) > 255 || strings.ContainsAny(subject, "*> \t\r\n") {
 		return errors.New("rpc: invalid subject")
 	}
@@ -122,4 +126,14 @@ func validOperation(operation string) bool {
 		}
 	}
 	return true
+}
+
+type outgoingKey struct{}
+type Outgoing struct {
+	RequestID   string
+	Traceparent string
+}
+
+func WithOutgoing(ctx context.Context, m Outgoing) context.Context {
+	return context.WithValue(ctx, outgoingKey{}, m)
 }

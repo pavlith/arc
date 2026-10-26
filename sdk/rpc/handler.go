@@ -109,7 +109,7 @@ func handleRequest[Req, Res any](request micro.Request, operation Operation, han
 		}
 		ctx = authorized
 	}
-	ctx = context.WithValue(ctx, metadataKey{}, RequestMetadata{IdempotencyKey: envelope.IdempotencyKey, Payload: envelope.Payload})
+	ctx = context.WithValue(ctx, metadataKey{}, RequestMetadata{RequestID: envelope.RequestID, Traceparent: envelope.Traceparent, IdempotencyKey: envelope.IdempotencyKey, Payload: envelope.Payload})
 	if operation.ValidateRequest != nil && operation.ValidateRequest(envelope.Payload) != nil {
 		respondError(request, requestID, &Error{Code: CodeValidation, Message: "request schema mismatch"})
 		return

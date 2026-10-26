@@ -1,0 +1,18 @@
+{
+  "listen": ":8443",
+  "public_origin": "https://arc.example.test",
+  "allowed_origins": [],
+  "trusted_proxies": [],
+  "nats": {
+    "URL": "tls://localhost:4222",
+    "Name": "arc-gate",
+    "NKeySeedFile": "/run/secrets/nats_gate_seed",
+    "TLSCAFile": "/run/secrets/nats_ca_cert"
+  },
+  "service_id": "00000000-0000-4000-8000-000000000001",
+  "kid": "gate-instance-1",
+  "key_file": "/run/secrets/gate_ed25519_seed",
+  "core_trust_key_file": "/run/secrets/core_route_trust_public.json",
+  "tls_cert_file": "/run/secrets/gate_tls_cert",
+  "tls_key_file": "/run/secrets/gate_tls_key"
+}

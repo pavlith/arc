@@ -52,12 +52,18 @@ func CallValidated[Req, Res any](ctx context.Context, client *Client, operation,
 	if validateRequest != nil && validateRequest(payload) != nil {
 		return zero, &Error{Code: CodeValidation, Message: "request schema mismatch"}
 	}
+	if m, ok := ctx.Value(outgoingKey{}).(Outgoing); ok && m.RequestID != "" {
+		requestID = m.RequestID
+	}
 	envelope := requestEnvelope{
 		RequestID:     requestID,
 		Operation:     operation,
 		SchemaVersion: SchemaVersion,
 		DeadlineAt:    deadline.UTC(),
 		Payload:       payload,
+	}
+	if m, ok := ctx.Value(outgoingKey{}).(Outgoing); ok {
+		envelope.Traceparent = m.Traceparent
 	}
 	if credentials, ok := ctx.Value(credentialsKey{}).(Credentials); ok {
 		if credentials.Proof == nil || credentials.Token == "" {

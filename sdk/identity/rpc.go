@@ -17,10 +17,12 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 type RefreshRequest struct {
-	Token string `json:"token"`
+	Session UserSession `json:"session,omitempty"`
+	Token   string      `json:"token"`
 }
 type SessionRequest struct {
-	Session UserSession `json:"session"`
+	AccessToken string      `json:"access_token,omitempty"`
+	Session     UserSession `json:"session"`
 }
 type RecoverRequest struct {
 	Email    string `json:"email"`
@@ -66,7 +68,7 @@ func bind[Req, Res any](service *sdk.Service, c *Core, name string, h func(conte
 	id := "identity.v1." + name
 	mutation := name == "delegations.create" || name == "delegations.revoke"
 	return rpc.Handle(service, rpc.Operation{ID: id, Endpoint: strings.ReplaceAll(name, ".", "_"), Subject: "rpc." + id, QueueGroup: "q.identity.v1", Timeout: 10 * time.Second, Protected: true, Mutation: mutation, Authorize: rpc.AssertionAuthorizer(c.Verifier(), func(ctx context.Context, caller, op string) error {
-		if e := c.rate(ctx, "rpc:"+caller+":"+op); e != nil {
+		if e := c.rateLimit(ctx, "rpc:"+caller+":"+op, 600); e != nil {
 			return wireError(e)
 		}
 		return c.allow(ctx, Authorization{Caller: caller, Audience: "identity/v1", Operation: op})
@@ -93,15 +95,25 @@ func (c *Core) BindInternal(s *sdk.Service) error {
 	}
 	registrations := []func() error{
 		func() error {
+			return bind(s, c, "sessions.validate", func(ctx context.Context, r Authentication) (Session, error) { return c.Authenticate(ctx, r) })
+		},
+		func() error {
 			return bind(s, c, "sessions.login", func(ctx context.Context, r LoginRequest) (LoginResult, error) {
 				return c.Login(ctx, r.Email, r.Password)
 			})
 		},
 		func() error {
-			return bind(s, c, "sessions.refresh", func(ctx context.Context, r RefreshRequest) (LoginResult, error) { return c.Refresh(ctx, r.Token) })
+			return bind(s, c, "sessions.refresh", func(ctx context.Context, r RefreshRequest) (LoginResult, error) {
+				return c.RefreshBrowser(ctx, r.Session, r.Token)
+			})
 		},
 		func() error {
-			return bind(s, c, "sessions.logout", func(ctx context.Context, r SessionRequest) (Empty, error) { return Empty{}, c.Logout(ctx, r.Session) })
+			return bind(s, c, "sessions.logout", func(ctx context.Context, r SessionRequest) (Empty, error) {
+				if r.AccessToken != "" {
+					return Empty{}, c.LogoutAccess(ctx, r.AccessToken)
+				}
+				return Empty{}, c.Logout(ctx, r.Session)
+			})
 		},
 		func() error {
 			return bind(s, c, "sessions.revoke", func(ctx context.Context, r RevokeSessionRequest) (Empty, error) {
@@ -164,7 +176,7 @@ func (c *Core) BindInternal(s *sdk.Service) error {
 
 // TestClient holds only a service instance key, never Core's signing key.
 // It is suitable for the internal CLI/harness before Gate is implemented.
-type TestClient struct {
+type Client struct {
 	RPC            *rpc.Client
 	ServiceID, Kid string
 	IdempotencyKey string
@@ -172,34 +184,48 @@ type TestClient struct {
 	Now            func() time.Time
 }
 
-func TestCall[Req, Res any](ctx context.Context, client TestClient, operation string, request Req) (Res, error) {
+type TestClient = Client
+
+func TestCall[Req, Res any](ctx context.Context, client Client, operation string, request Req) (Res, error) {
+	return Call[Req, Res](ctx, client, operation, request)
+}
+func Call[Req, Res any](ctx context.Context, client Client, operation string, request Req) (Res, error) {
 	var zero Res
+	credentials, e := client.Credentials("identity.exchange_service")
+	if e != nil {
+		return zero, e
+	}
+	ctx = rpc.WithCredentials(ctx, credentials)
+	return rpc.Call[Req, Res](ctx, client.RPC, operation, "rpc."+operation, request)
+}
+
+// Credentials signs one audience-bound service assertion and per-request proof.
+func (client Client) Credentials(audience string) (rpc.Credentials, error) {
 	now := time.Now()
 	if client.Now != nil {
 		now = client.Now()
 	}
 	j, e := uuid()
 	if e != nil {
-		return zero, e
+		return rpc.Credentials{}, e
 	}
-	claims := security.Claims{Issuer: client.ServiceID, Subject: client.ServiceID, Audience: "identity.exchange_service", JTI: j, IssuedAt: now.Unix(), NotBefore: now.Unix(), ExpiresAt: now.Unix() + 30, Confirmation: security.Confirmation{Kid: client.Kid}}
+	claims := security.Claims{Issuer: client.ServiceID, Subject: client.ServiceID, Audience: audience, JTI: j, IssuedAt: now.Unix(), NotBefore: now.Unix(), ExpiresAt: now.Unix() + 30, Confirmation: security.Confirmation{Kid: client.Kid}}
 	token, e := security.Sign(client.PrivateKey, client.Kid, claims)
 	if e != nil {
-		return zero, e
+		return rpc.Credentials{}, e
 	}
 	idempotency := client.IdempotencyKey
 	if idempotency == "" {
 		idempotency, e = uuid()
 		if e != nil {
-			return zero, e
+			return rpc.Credentials{}, e
 		}
 	}
-	ctx = rpc.WithCredentials(ctx, rpc.Credentials{Token: token, IdempotencyKey: idempotency, Proof: func(subject string, raw []byte) (security.Proof, error) {
+	return rpc.Credentials{Token: token, IdempotencyKey: idempotency, Proof: func(subject string, raw []byte) (security.Proof, error) {
 		nonce, e := secret()
 		if e != nil {
 			return security.Proof{}, e
 		}
 		return security.SignProof(client.PrivateKey, subject, raw, j, security.Proof{Kid: client.Kid, Timestamp: now.UTC().Format(time.RFC3339Nano), Nonce: nonce})
-	}})
-	return rpc.Call[Req, Res](ctx, client.RPC, operation, "rpc."+operation, request)
+	}}, nil
 }

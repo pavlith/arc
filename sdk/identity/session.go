@@ -76,7 +76,8 @@ func CheckBrowserMutation(origin, expected, csrf, expectedCSRF string) error {
 	}
 	return nil
 }
-func (c *Core) rate(ctx context.Context, bucket string) error {
+func (c *Core) rate(ctx context.Context, bucket string) error { return c.rateLimit(ctx, bucket, 10) }
+func (c *Core) rateLimit(ctx context.Context, bucket string, limit int) error {
 	if e := c.ready(); e != nil {
 		return e
 	}
@@ -85,7 +86,7 @@ func (c *Core) rate(ctx context.Context, bucket string) error {
 	if e != nil {
 		return ErrUnavailable
 	}
-	if attempts > 10 {
+	if attempts > limit {
 		return ErrRateLimited
 	}
 	return nil

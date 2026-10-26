@@ -45,11 +45,18 @@ type Auth struct {
 type Exposure struct {
 	Expose bool `json:"expose"`
 }
+type Binding struct {
+	Source string `json:"source"`
+	Name   string `json:"name"`
+	Field  string `json:"field"`
+	Type   string `json:"type"`
+}
 type HTTP struct {
-	Expose        bool   `json:"expose"`
-	Method        string `json:"method,omitempty"`
-	Path          string `json:"path,omitempty"`
-	SuccessStatus int    `json:"success_status,omitempty"`
+	Bindings      []Binding `json:"bindings,omitempty"`
+	Expose        bool      `json:"expose"`
+	Method        string    `json:"method,omitempty"`
+	Path          string    `json:"path,omitempty"`
+	SuccessStatus int       `json:"success_status,omitempty"`
 }
 type Operation struct {
 	ID             string   `json:"id"`
@@ -179,6 +186,9 @@ func Compile(a Artifact) (*Compiled, error) {
 		used[o.RequestSchema] = true
 		used[o.ResponseSchema] = true
 		if o.HTTP.Expose {
+			if ValidateHTTP(o.HTTP) != nil {
+				return nil, ErrInvalid
+			}
 			if !has([]string{"GET", "POST", "PUT", "PATCH", "DELETE"}, o.HTTP.Method) || !strings.HasPrefix(o.HTTP.Path, fmt.Sprintf("/api/v%d/%s/", m.Service.APIMajor, m.Service.Name)) || strings.ContainsAny(o.HTTP.Path, "?#*\\") || path.Clean(o.HTTP.Path) != o.HTTP.Path || o.HTTP.SuccessStatus < 200 || o.HTTP.SuccessStatus > 299 {
 				return nil, ErrInvalid
 			}

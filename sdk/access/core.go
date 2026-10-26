@@ -25,12 +25,18 @@ var ErrValidation = errors.New("invalid access request")
 type DomainOwner interface {
 	Confirm(context.Context, string, string, string, string) error
 }
+
+// ContractSource provides a fresh, fail-closed approved catalog per request.
+type ContractSource interface {
+	LoadAccess(context.Context) (*Contracts, error)
+}
 type Core struct {
-	DB        *sql.DB
-	Identity  *identity.Core
-	Contracts *Contracts
-	Domain    DomainOwner
-	Now       func() time.Time
+	ContractSource ContractSource
+	DB             *sql.DB
+	Identity       *identity.Core
+	Contracts      *Contracts
+	Domain         DomainOwner
+	Now            func() time.Time
 }
 
 func (c *Core) now() time.Time {
@@ -40,7 +46,7 @@ func (c *Core) now() time.Time {
 	return time.Now().UTC()
 }
 func (c *Core) ready() error {
-	if c == nil || c.DB == nil || c.Identity == nil || c.Identity.DB != c.DB || c.Contracts == nil {
+	if c == nil || c.DB == nil || c.Identity == nil || c.Identity.DB != c.DB || (c.Contracts == nil && c.ContractSource == nil) {
 		return ErrUnavailable
 	}
 	return nil
@@ -330,4 +336,18 @@ func actorUser(cl security.Claims) string {
 		return strings.TrimPrefix(cl.Subject, "user:")
 	}
 	return ""
+}
+
+func (c *Core) resolveContracts(ctx context.Context) (*Core, error) {
+	if e := c.ready(); e != nil {
+		return nil, e
+	}
+	contracts, e := c.ContractSource.LoadAccess(ctx)
+	if e != nil || contracts == nil {
+		return nil, ErrUnavailable
+	}
+	next := *c
+	next.Contracts = contracts
+	next.ContractSource = nil
+	return &next, nil
 }

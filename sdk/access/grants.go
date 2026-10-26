@@ -136,6 +136,13 @@ func (c *Core) grantExpiry(ctx context.Context, t *sql.Tx, cl security.Claims, r
 	return nil
 }
 func (c *Core) AddGrant(ctx context.Context, q GrantRequest) (MutationResult, error) {
+	if c != nil && c.ContractSource != nil {
+		next, e := c.resolveContracts(ctx)
+		if e != nil {
+			return MutationResult{}, e
+		}
+		return next.AddGrant(ctx, q)
+	}
 	return c.mutation(ctx, "grants.add", q, func(t *sql.Tx, cl security.Claims, rev int64) (MutationResult, error) {
 		if !validUUID(q.ResourceID) || !namespaced(q.Action) || q.ExpiresAt != nil && !q.ExpiresAt.After(c.now()) {
 			return MutationResult{}, ErrValidation
@@ -173,6 +180,13 @@ func (c *Core) AddGrant(ctx context.Context, q GrantRequest) (MutationResult, er
 	})
 }
 func (c *Core) RevokeGrant(ctx context.Context, q RevokeRequest) (MutationResult, error) {
+	if c != nil && c.ContractSource != nil {
+		next, e := c.resolveContracts(ctx)
+		if e != nil {
+			return MutationResult{}, e
+		}
+		return next.RevokeGrant(ctx, q)
+	}
 	return c.mutation(ctx, "grants.revoke", q, func(t *sql.Tx, cl security.Claims, rev int64) (MutationResult, error) {
 		if !validUUID(q.GrantID) {
 			return MutationResult{}, ErrValidation

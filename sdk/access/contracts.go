@@ -42,11 +42,12 @@ type Deployment struct {
 }
 
 type Approval struct {
-	Deployments []Deployment        `json:"deployments"`
-	Types       []TypeSpec          `json:"types"`
-	Rules       []Rule              `json:"rules"`
-	AgentScopes map[string][]string `json:"agent_scopes"`
-	AdminUsers  []string            `json:"admin_users"`
+	ContractDigests map[string]string   `json:"contract_digests,omitempty"`
+	Deployments     []Deployment        `json:"deployments"`
+	Types           []TypeSpec          `json:"types"`
+	Rules           []Rule              `json:"rules"`
+	AgentScopes     map[string][]string `json:"agent_scopes"`
+	AdminUsers      []string            `json:"admin_users"`
 }
 type Contracts struct {
 	types       map[string]TypeSpec
@@ -94,6 +95,15 @@ func NewContracts(key ed25519.PublicKey, approvals []Approved) (*Contracts, erro
 			}
 			c.types[t.Type] = t
 			c.digests[t.Type] = digest
+			if bound, ok := a.ContractDigests[t.Type]; ok {
+				if len(bound) != 64 {
+					return nil, security.ErrDenied
+				}
+				if _, e := hex.DecodeString(bound); e != nil {
+					return nil, security.ErrDenied
+				}
+				c.digests[t.Type] = bound
+			}
 		}
 		for _, r := range a.Rules {
 			if !validUUID(r.Caller) || r.Audience == "" || !namespaced(r.Operation) || len(r.ActorKinds) == 0 || strings.ContainsAny(r.Audience, "*>") {
@@ -229,6 +239,13 @@ func (c *Contracts) action(cl security.Claims, action string) bool {
 // Authorize implements the Identity policy boundary without calling Identity or
 // Access.Check. Resource rights for delegation are evaluated in a DB snapshot.
 func (c *Core) Authorize(ctx context.Context, a identity.Authorization) error {
+	if c != nil && c.ContractSource != nil {
+		next, e := c.resolveContracts(ctx)
+		if e != nil {
+			return e
+		}
+		return next.Authorize(ctx, a)
+	}
 	if e := c.ready(); e != nil {
 		return e
 	}

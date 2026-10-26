@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go/micro"
-	"github.com/pavlith/arc/sdk"
 )
 
 type Operation struct {
@@ -17,14 +16,20 @@ type Operation struct {
 	QueueGroup string
 	Timeout    time.Duration
 	// Authorize validates the signed envelope before invoking the domain handler.
-	Authorize func(context.Context, string, []byte) (context.Context, error)
-	Protected bool
-	Mutation  bool
+	Authorize        func(context.Context, string, []byte) (context.Context, error)
+	Protected        bool
+	Mutation         bool
+	ValidateRequest  func([]byte) error
+	ValidateResponse func([]byte) error
+}
+
+type EndpointService interface {
+	AddEndpoint(string, micro.Handler, ...micro.EndpointOpt) error
 }
 
 type Handler[Req, Res any] func(context.Context, Req) (Res, error)
 
-func Handle[Req, Res any](service *sdk.Service, operation Operation, handler Handler[Req, Res]) error {
+func Handle[Req, Res any](service EndpointService, operation Operation, handler Handler[Req, Res]) error {
 	if service == nil || handler == nil || !validOperation(operation.ID) || operation.Endpoint == "" || operation.Timeout <= 0 {
 		return errors.New("rpc: invalid handler configuration")
 	}
@@ -71,7 +76,11 @@ func handleRequest[Req, Res any](request micro.Request, operation Operation, han
 		return
 	}
 	var payload Req
-	if err := decodeStrict(envelope.Payload, &payload); err != nil {
+	decode := decodeStrict
+	if operation.ValidateRequest != nil {
+		decode = json.Unmarshal
+	}
+	if err := decode(envelope.Payload, &payload); err != nil {
 		respondError(request, requestID, &Error{Code: CodeValidation, Message: "invalid request payload"})
 		return
 	}
@@ -101,6 +110,10 @@ func handleRequest[Req, Res any](request micro.Request, operation Operation, han
 		ctx = authorized
 	}
 	ctx = context.WithValue(ctx, metadataKey{}, RequestMetadata{IdempotencyKey: envelope.IdempotencyKey, Payload: envelope.Payload})
+	if operation.ValidateRequest != nil && operation.ValidateRequest(envelope.Payload) != nil {
+		respondError(request, requestID, &Error{Code: CodeValidation, Message: "request schema mismatch"})
+		return
+	}
 	response, err := invoke(ctx, handler, payload)
 	if err != nil {
 		respondError(request, requestID, publicError(err))
@@ -109,6 +122,10 @@ func handleRequest[Req, Res any](request micro.Request, operation Operation, han
 	data, err := json.Marshal(response)
 	if err != nil {
 		respondError(request, requestID, &Error{Code: CodeInternal, Message: "internal error"})
+		return
+	}
+	if operation.ValidateResponse != nil && operation.ValidateResponse(data) != nil {
+		respondError(request, requestID, &Error{Code: CodeInternal, Message: "response schema mismatch"})
 		return
 	}
 	respond(request, responseEnvelope{RequestID: requestID, Data: data})

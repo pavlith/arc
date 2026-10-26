@@ -2,6 +2,7 @@ package identity
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/pavlith/arc/sdk/security"
@@ -22,6 +23,7 @@ type ServiceExchange struct {
 	Assertion         string `json:"assertion"`
 	IncomingToken     string `json:"incoming_token,omitempty"`
 	IncomingOperation string `json:"incoming_operation,omitempty"`
+	IncomingAPIMajor  int    `json:"incoming_api_major,omitempty"`
 	DelegationID      string `json:"delegation_id,omitempty"`
 	Target            Target `json:"target"`
 }
@@ -80,7 +82,14 @@ func (c *Core) exchangeService(ctx context.Context, r ServiceExchange, a securit
 		if e = c.DB.QueryRowContext(ctx, `SELECT service_definition FROM identity.service_accounts WHERE id::text=$1 AND disabled_at IS NULL`, a.Issuer).Scan(&definition); e != nil {
 			return TokenResult{}, keyError(e)
 		}
-		prev, e := c.Verifier().Recipient(ctx, r.IncomingToken, definition+"/v1", r.IncomingOperation)
+		major := r.IncomingAPIMajor
+		if major == 0 {
+			major = 1
+		}
+		if major < 1 || major > 1000 {
+			return TokenResult{}, ErrDenied
+		}
+		prev, e := c.Verifier().Recipient(ctx, r.IncomingToken, fmt.Sprintf("%s/v%d", definition, major), r.IncomingOperation)
 		if e != nil {
 			return TokenResult{}, e
 		}

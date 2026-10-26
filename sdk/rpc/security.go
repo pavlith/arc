@@ -10,6 +10,14 @@ import (
 
 type credentialsKey struct{}
 type claimsKey struct{}
+type invocationTokenKey struct{}
+
+// InvocationToken is available only after JWT and request proof verification.
+func InvocationToken(ctx context.Context) (string, bool) {
+	token, ok := ctx.Value(invocationTokenKey{}).(string)
+	return token, ok
+}
+
 type Credentials struct {
 	Token          string
 	IdempotencyKey string
@@ -54,6 +62,7 @@ func InvocationAuthorizer(v security.Verifier, audience string) func(context.Con
 			return nil, SecurityError(err)
 		}
 		verified := context.WithValue(ctx, claimsKey{}, c)
+		verified = context.WithValue(verified, invocationTokenKey{}, env.Auth)
 		return context.WithValue(verified, metadataKey{}, RequestMetadata{IdempotencyKey: env.IdempotencyKey, Payload: env.Payload}), nil
 	}
 }

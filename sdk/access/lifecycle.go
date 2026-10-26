@@ -8,6 +8,13 @@ import (
 )
 
 func (c *Core) RegisterType(ctx context.Context, q RegisterRequest) (MutationResult, error) {
+	if c != nil && c.ContractSource != nil {
+		next, e := c.resolveContracts(ctx)
+		if e != nil {
+			return MutationResult{}, e
+		}
+		return next.RegisterType(ctx, q)
+	}
 	return c.mutation(ctx, "resource_types.register", q, func(t *sql.Tx, cl security.Claims, rev int64) (MutationResult, error) {
 		spec, e := c.Contracts.Type(q.Type, cl.Caller, q.ContractDigest)
 		if e != nil {
@@ -29,6 +36,13 @@ func (c *Core) RegisterType(ctx context.Context, q RegisterRequest) (MutationRes
 	})
 }
 func (c *Core) Reserve(ctx context.Context, q ReserveRequest) (MutationResult, error) {
+	if c != nil && c.ContractSource != nil {
+		next, e := c.resolveContracts(ctx)
+		if e != nil {
+			return MutationResult{}, e
+		}
+		return next.Reserve(ctx, q)
+	}
 	return c.mutation(ctx, "resources.reserve", q, func(t *sql.Tx, cl security.Claims, rev int64) (MutationResult, error) {
 		if !validUUID(q.OwnerID) || q.ParentID != "" && !validUUID(q.ParentID) || q.WorkspaceID != "" && !validUUID(q.WorkspaceID) {
 			return MutationResult{}, ErrValidation
@@ -102,15 +116,43 @@ func (c *Core) Reserve(ctx context.Context, q ReserveRequest) (MutationResult, e
 	})
 }
 func (c *Core) Activate(ctx context.Context, q LifecycleRequest) (MutationResult, error) {
+	if c != nil && c.ContractSource != nil {
+		next, e := c.resolveContracts(ctx)
+		if e != nil {
+			return MutationResult{}, e
+		}
+		return next.Activate(ctx, q)
+	}
 	return c.transition(ctx, "activate", q)
 }
 func (c *Core) Abort(ctx context.Context, q LifecycleRequest) (MutationResult, error) {
+	if c != nil && c.ContractSource != nil {
+		next, e := c.resolveContracts(ctx)
+		if e != nil {
+			return MutationResult{}, e
+		}
+		return next.Abort(ctx, q)
+	}
 	return c.transition(ctx, "abort", q)
 }
 func (c *Core) BeginDelete(ctx context.Context, q LifecycleRequest) (MutationResult, error) {
+	if c != nil && c.ContractSource != nil {
+		next, e := c.resolveContracts(ctx)
+		if e != nil {
+			return MutationResult{}, e
+		}
+		return next.BeginDelete(ctx, q)
+	}
 	return c.transition(ctx, "begin_delete", q)
 }
 func (c *Core) FinalizeDelete(ctx context.Context, q LifecycleRequest) (MutationResult, error) {
+	if c != nil && c.ContractSource != nil {
+		next, e := c.resolveContracts(ctx)
+		if e != nil {
+			return MutationResult{}, e
+		}
+		return next.FinalizeDelete(ctx, q)
+	}
 	return c.transition(ctx, "finalize_delete", q)
 }
 func (c *Core) transition(ctx context.Context, op string, q LifecycleRequest) (MutationResult, error) {

@@ -155,6 +155,11 @@ func validPrincipal(s string) bool {
 	return len(p) == 2 && p[1] != "" && (p[0] == "user" || p[0] == "agent" || p[0] == "service")
 }
 func (v Verifier) Assertion(ctx context.Context, token string) (Claims, error) {
+	return v.AssertionFor(ctx, token, "identity.exchange_service")
+}
+
+// AssertionFor verifies an assertion for one exact control-plane audience.
+func (v Verifier) AssertionFor(ctx context.Context, token, audience string) (Claims, error) {
 	c, kid, body, sig, e := parse(token)
 	if e != nil {
 		return Claims{}, e
@@ -166,7 +171,7 @@ func (v Verifier) Assertion(ctx context.Context, token string) (Claims, error) {
 	if e != nil {
 		return Claims{}, e
 	}
-	if !validKey(k, v.Time()) || k.Kid != kid || !ed25519.Verify(k.Public, []byte(body), sig) || c.Issuer == "" || c.Subject != c.Issuer || c.Audience != "identity.exchange_service" || c.Confirmation.Kid != kid || !lifetime(c, v.Time(), 30) {
+	if audience == "" || !validKey(k, v.Time()) || k.Kid != kid || !ed25519.Verify(k.Public, []byte(body), sig) || c.Issuer == "" || c.Subject != c.Issuer || c.Audience != audience || c.Confirmation.Kid != kid || !lifetime(c, v.Time(), 30) {
 		return Claims{}, ErrUnauthenticated
 	}
 	if e = v.Nonces.Consume(ctx, "assertion:"+c.Issuer, c.JTI, time.Unix(c.ExpiresAt, 0)); e != nil {

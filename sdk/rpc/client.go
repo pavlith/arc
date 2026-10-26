@@ -21,6 +21,12 @@ func NewClient(connection *nats.Conn) (*Client, error) {
 }
 
 func Call[Req, Res any](ctx context.Context, client *Client, operation, subject string, request Req) (Res, error) {
+	return CallValidated[Req, Res](ctx, client, operation, subject, request, nil, nil)
+}
+
+// CallValidated validates wire payloads before decoding DTOs. Schema policy owns
+// additive fields; envelope fields always remain strict.
+func CallValidated[Req, Res any](ctx context.Context, client *Client, operation, subject string, request Req, validateRequest, validateResponse func([]byte) error) (Res, error) {
 	var zero Res
 	if ctx == nil || client == nil || client.connection == nil {
 		return zero, &Error{Code: CodeValidation, Message: "client and context are required"}
@@ -42,6 +48,9 @@ func Call[Req, Res any](ctx context.Context, client *Client, operation, subject 
 	payload, err := json.Marshal(request)
 	if err != nil {
 		return zero, &Error{Code: CodeValidation, Message: "request is not JSON encodable"}
+	}
+	if validateRequest != nil && validateRequest(payload) != nil {
+		return zero, &Error{Code: CodeValidation, Message: "request schema mismatch"}
 	}
 	envelope := requestEnvelope{
 		RequestID:     requestID,
@@ -103,7 +112,14 @@ func Call[Req, Res any](ctx context.Context, client *Client, operation, subject 
 	if len(response.Data) == 0 {
 		return zero, &Error{Code: CodeInternal, Message: "response data is missing"}
 	}
-	if err := decodeStrict(response.Data, &zero); err != nil {
+	decode := decodeStrict
+	if validateResponse != nil {
+		if validateResponse(response.Data) != nil {
+			return zero, &Error{Code: CodeInternal, Message: "response schema mismatch"}
+		}
+		decode = json.Unmarshal
+	}
+	if err := decode(response.Data, &zero); err != nil {
 		return zero, &Error{Code: CodeInternal, Message: "invalid response data"}
 	}
 	return zero, nil

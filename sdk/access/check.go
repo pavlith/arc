@@ -187,6 +187,13 @@ func (c *Core) evaluate(ctx context.Context, t *sql.Tx, cl security.Claims, q Ch
 	return allowed, e
 }
 func (c *Core) Check(ctx context.Context, q CheckRequest) (Decision, error) {
+	if c != nil && c.ContractSource != nil {
+		next, e := c.resolveContracts(ctx)
+		if e != nil {
+			return Decision{}, e
+		}
+		return next.Check(ctx, q)
+	}
 	cl, e := c.claims(ctx, "check")
 	if e != nil {
 		return Decision{}, e
@@ -204,6 +211,13 @@ func (c *Core) Check(ctx context.Context, q CheckRequest) (Decision, error) {
 	return out, e
 }
 func (c *Core) CheckMany(ctx context.Context, q CheckManyRequest) (CheckManyResult, error) {
+	if c != nil && c.ContractSource != nil {
+		next, e := c.resolveContracts(ctx)
+		if e != nil {
+			return CheckManyResult{}, e
+		}
+		return next.CheckMany(ctx, q)
+	}
 	cl, e := c.claims(ctx, "check_many")
 	if e != nil {
 		return CheckManyResult{}, e
@@ -236,6 +250,13 @@ func (c *Core) CheckMany(ctx context.Context, q CheckManyRequest) (CheckManyResu
 	return out, nil
 }
 func (c *Core) ListAccessibleRoots(ctx context.Context, q ListRequest) (ListResult, error) {
+	if c != nil && c.ContractSource != nil {
+		next, e := c.resolveContracts(ctx)
+		if e != nil {
+			return ListResult{}, e
+		}
+		return next.ListAccessibleRoots(ctx, q)
+	}
 	cl, e := c.claims(ctx, "list_accessible_roots")
 	if e != nil {
 		return ListResult{}, e

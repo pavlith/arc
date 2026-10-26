@@ -85,6 +85,7 @@ func (c *Core) CreateDelegation(ctx context.Context, auth UserSession, d Delegat
 	return d, e
 }
 func (c *Core) delegation(ctx context.Context, id string) (Delegation, error) {
+ if c != nil && c.GormDB != nil { return c.delegationGORM(ctx, id) }
 	var d Delegation
 	if e := c.ready(); e != nil {
 		return d, e
@@ -141,6 +142,7 @@ func (c *Core) RevokeDelegation(ctx context.Context, auth UserSession, id string
 	})
 }
 func (c *Core) checkDelegation(ctx context.Context, cl security.Claims) error {
+ if c != nil && c.GormDB != nil { return c.checkDelegationGORM(ctx, cl) }
 	d, e := c.delegation(ctx, cl.DelegationID)
 	if e != nil {
 		return e

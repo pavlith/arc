@@ -95,12 +95,12 @@ func (s *Service) create(ctx context.Context, tx *sql.Tx, q CreateRequest) (Task
 		return Task{}, &rpc.Error{Code: rpc.CodeValidation, Message: "title is required"}
 	}
 	now := time.Now().UTC()
-	v := Task{NewID(), q.WorkspaceID, q.RootID, q.Title, "open", strings.TrimPrefix(cl.Subject, "user:"), now, now}
+	v := Task{ID:NewID(), WorkspaceID:q.WorkspaceID, RootID:q.RootID, Title:q.Title, Status:"open", CreatedBy:strings.TrimPrefix(cl.Subject, "user:"), CreatedAt:now, UpdatedAt:now}
 	_, e := tx.ExecContext(ctx, `INSERT INTO tasks.tasks(id,workspace_id,acl_root_id,title,status,created_by,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, v.ID, v.WorkspaceID, v.RootID, v.Title, v.Status, v.CreatedBy, v.CreatedAt, v.UpdatedAt)
 	if e != nil {
 		return Task{}, unavailable(e)
 	}
-	payload, _ := json.Marshal(CreatedEvent{q.Scope, v.ID})
+	payload, _ := json.Marshal(CreatedEvent{Scope:q.Scope, TaskID:v.ID})
 	e = (events.Store{DB: s.DB, Schema: "tasks"}).Enqueue(ctx, tx, s.Contract, Created, events.Envelope{ID: NewID(), Type: "tasks.task.created", Version: 1, AggregateID: v.ID, OccurredAt: now, Traceparent: meta.Traceparent, Payload: payload})
 	if e != nil {
 		return Task{}, unavailable(e)

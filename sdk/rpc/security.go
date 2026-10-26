@@ -53,7 +53,8 @@ func InvocationAuthorizer(v security.Verifier, audience string) func(context.Con
 		if err = v.Proof(ctx, subject, raw, c, *env.Proof); err != nil {
 			return nil, SecurityError(err)
 		}
-		return context.WithValue(ctx, claimsKey{}, c), nil
+		verified := context.WithValue(ctx, claimsKey{}, c)
+		return context.WithValue(verified, metadataKey{}, RequestMetadata{IdempotencyKey: env.IdempotencyKey, Payload: env.Payload}), nil
 	}
 }
 
@@ -79,7 +80,8 @@ func AssertionAuthorizer(v security.Verifier, allow func(context.Context, string
 		if err = allow(ctx, c.Caller, env.Operation); err != nil {
 			return nil, SecurityError(err)
 		}
-		return context.WithValue(ctx, claimsKey{}, c), nil
+		verified := context.WithValue(ctx, claimsKey{}, c)
+		return context.WithValue(verified, metadataKey{}, RequestMetadata{IdempotencyKey: env.IdempotencyKey, Payload: env.Payload}), nil
 	}
 }
 

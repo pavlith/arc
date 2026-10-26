@@ -19,20 +19,22 @@ type Confirmation struct {
 	Kid string `json:"kid"`
 }
 type Claims struct {
-	Issuer       string       `json:"iss"`
-	Audience     string       `json:"aud"`
-	Subject      string       `json:"sub"`
-	Caller       string       `json:"caller,omitempty"`
-	Operation    string       `json:"op,omitempty"`
-	IssuedAt     int64        `json:"iat"`
-	NotBefore    int64        `json:"nbf"`
-	ExpiresAt    int64        `json:"exp"`
-	JTI          string       `json:"jti"`
-	Confirmation Confirmation `json:"cnf"`
-	SessionID    string       `json:"sid,omitempty"`
-	DelegationID string       `json:"delegation_id,omitempty"`
-	OnBehalfOf   string       `json:"on_behalf_of,omitempty"`
-	WorkspaceID  string       `json:"workspace_id,omitempty"`
+	SourceAudience  string       `json:"source_aud,omitempty"`
+	SourceOperation string       `json:"source_op,omitempty"`
+	Issuer          string       `json:"iss"`
+	Audience        string       `json:"aud"`
+	Subject         string       `json:"sub"`
+	Caller          string       `json:"caller,omitempty"`
+	Operation       string       `json:"op,omitempty"`
+	IssuedAt        int64        `json:"iat"`
+	NotBefore       int64        `json:"nbf"`
+	ExpiresAt       int64        `json:"exp"`
+	JTI             string       `json:"jti"`
+	Confirmation    Confirmation `json:"cnf"`
+	SessionID       string       `json:"sid,omitempty"`
+	DelegationID    string       `json:"delegation_id,omitempty"`
+	OnBehalfOf      string       `json:"on_behalf_of,omitempty"`
+	WorkspaceID     string       `json:"workspace_id,omitempty"`
 }
 type Key struct {
 	Kid                  string
@@ -133,7 +135,7 @@ func (v Verifier) Invocation(ctx context.Context, token, audience, operation, ca
 	if !validKey(k, now) || k.Kid != kid || !ed25519.Verify(k.Public, []byte(body), sig) || c.Issuer != "arc-core" || audience == "" || operation == "" || caller == "" || c.Audience != audience || c.Operation != operation || c.Caller != caller || !lifetime(c, now, 60) || c.Confirmation.Kid == "" || !validPrincipal(c.Subject) {
 		return Claims{}, ErrUnauthenticated
 	}
-	if (c.OnBehalfOf != "") != (c.DelegationID != "") {
+	if (c.SourceAudience != "") != (c.SourceOperation != "") || (c.OnBehalfOf != "") != (c.DelegationID != "") {
 		return Claims{}, ErrUnauthenticated
 	}
 	ck, e := v.Keys.CallerKey(ctx, caller, c.Confirmation.Kid)

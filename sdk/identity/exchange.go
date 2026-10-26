@@ -89,6 +89,8 @@ func (c *Core) exchangeService(ctx context.Context, r ServiceExchange, a securit
 		}
 		// Proof of possession was checked on receipt by the service SDK; the assertion
 		// authenticates that exact approved recipient during exchange.
+		cl.SourceAudience = prev.Audience
+		cl.SourceOperation = prev.Operation
 		cl.Subject = prev.Subject
 		cl.SessionID = prev.SessionID
 		cl.DelegationID = prev.DelegationID

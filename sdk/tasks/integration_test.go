@@ -513,46 +513,6 @@ func TestM006(t *testing.T) {
 			t.Fatalf("publish without current approval: %v", e)
 		}
 	})
-	t.Run("revoked-consumer-fail-closed", func(t *testing.T) {
-		beforeInbox := count(ndb, `SELECT count(*) FROM notifications.inbox`)
-		beforeEffects := count(ndb, `SELECT count(*) FROM notifications.notifications`)
-		revocation, sig := signed(operator, fabric.Revocation{Digest: nm.Digest, Revoke: true})
-		must(f.Revoke(ctx, revocation, sig))
-		// Restoration is a privileged test-fixture operation, never a runtime API.
-		defer func() {
-			if _, e := migrator.Exec(`UPDATE fabric.contracts SET revoked_at=NULL WHERE digest=$1`, nm.Digest); e != nil {
-				t.Error(e)
-			}
-		}()
-		if notifyRegistry.EventPermit(ctx, nr, subscription) == nil {
-			t.Fatal("revoked consumer still has event permit")
-		}
-		status, b := request(client, "POST", base, `{"title":"While consumer revoked"}`, token, "revoked-consumer-proof")
-		if status != 201 {
-			t.Fatalf("create while consumer revoked %d %s", status, b)
-		}
-		taskCount++
-		notificationCount++
-		var withheld tasks.Task
-		must(json.Unmarshal(b, &withheld))
-		eventually(t, func() bool {
-			var published bool
-			_ = tdb.QueryRow(`SELECT published_at IS NOT NULL FROM tasks.outbox WHERE envelope->>'aggregate_id'=$1`, withheld.ID).Scan(&published)
-			return published
-		}, nil)
-		// The already-running consumer must not commit or ACK newly published work.
-		time.Sleep(500 * time.Millisecond)
-		if count(ndb, `SELECT count(*) FROM notifications.inbox`) != beforeInbox || count(ndb, `SELECT count(*) FROM notifications.notifications`) != beforeEffects {
-			t.Fatal("revoked consumer committed a delivery effect")
-		}
-		_, e := migrator.Exec(`UPDATE fabric.contracts SET revoked_at=NULL WHERE digest=$1`, nm.Digest)
-		must(e)
-		eventually(t, func() bool { return notifyRegistry.EventPermit(ctx, nr, subscription) == nil }, nil)
-		eventually(t, func() bool {
-			return count(ndb, `SELECT count(*) FROM notifications.inbox`) == beforeInbox+1 &&
-				count(ndb, `SELECT count(*) FROM notifications.delivery_intents WHERE delivered_at IS NOT NULL`) == notificationCount
-		}, nil)
-	})
 	t.Run("security", func(t *testing.T) {
 		outsiderToken := loginHTTP("proof-outsider@example.test")
 		for _, op := range []struct{ method, path, body string }{{"POST", base, `{"title":"denied"}`}, {"GET", base + "/" + task.ID, ""}} {
@@ -704,6 +664,42 @@ func TestM006(t *testing.T) {
 		}, nil)
 		if count(ndb, `SELECT count(*) FROM notifications.notifications`) != notificationCount {
 			t.Fatal("JetStream replay duplicated notification")
+		}
+	})
+	t.Run("revoked-consumer-fail-closed", func(t *testing.T) {
+		beforeInbox := count(ndb, `SELECT count(*) FROM notifications.inbox`)
+		beforeEffects := count(ndb, `SELECT count(*) FROM notifications.notifications`)
+		revocation, sig := signed(operator, fabric.Revocation{Digest: nm.Digest, Revoke: true})
+		if e := f.Revoke(ctx, revocation, sig); e != nil {
+			t.Fatal(e)
+		}
+		// Revocation is terminal: the DB explicitly forbids reactivation of a digest.
+		// Run only after every positive consumer assertion, while its worker is alive.
+		if notifyRegistry.EventPermit(ctx, nr, subscription) == nil {
+			t.Fatal("revoked consumer still has event permit")
+		}
+		status, b := request(client, "POST", base, `{"title":"While consumer revoked"}`, token, "revoked-consumer-proof")
+		if status != 201 {
+			t.Fatalf("create while consumer revoked %d %s", status, b)
+		}
+		taskCount++
+		var withheld tasks.Task
+		if e := json.Unmarshal(b, &withheld); e != nil {
+			t.Fatal(e)
+		}
+		eventually(t, func() bool {
+			var published bool
+			_ = tdb.QueryRow(`SELECT published_at IS NOT NULL FROM tasks.outbox WHERE envelope->>'aggregate_id'=$1`, withheld.ID).Scan(&published)
+			return published
+		}, nil)
+		// The running worker must not process or ACK a newly published event.
+		time.Sleep(500 * time.Millisecond)
+		if count(ndb, `SELECT count(*) FROM notifications.inbox`) != beforeInbox || count(ndb, `SELECT count(*) FROM notifications.notifications`) != beforeEffects {
+			t.Fatal("revoked consumer committed a delivery effect")
+		}
+		info, e := js.ConsumerInfo("TASKS", notifications.Durable)
+		if e != nil || info.NumPending == 0 {
+			t.Fatalf("revoked consumer must leave message pending: info=%+v err=%v", info, e)
 		}
 	})
 	t.Run("external-stable-key", func(t *testing.T) {

@@ -350,6 +350,11 @@ func TestM0Identity(t *testing.T) {
 		if _, e = TestCall[DelegationRequest, Delegation](deadline, tc, "identity.v1.delegations.create", DelegationRequest{Delegation: Delegation{Grantor: owner, GranteeKind: "service", GranteeID: worker, Resources: []string{policy.resource}, Actions: []string{"read"}}}); rpc.ErrorCode(e) != rpc.CodeUnauthenticated {
 			t.Fatalf("RPC self-delegation: %v", e)
 		}
+		must(service.Stop())
+		if _, e = rpc.Call[IntrospectRequest, Session](deadline, client, "identity.v1.sessions.introspect", "rpc.identity.v1.sessions.introspect", IntrospectRequest{login.Secret}); rpc.ErrorCode(e) != rpc.CodeUnavailable {
+			t.Fatalf("service stop did not synchronize subscriptions: %v", e)
+		}
+
 	})
 	t.Run("session_revoke_blocks_access_and_invocation", func(t *testing.T) {
 		must(c.Logout(ctx, auth))

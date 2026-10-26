@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/micro"
@@ -72,6 +73,13 @@ func (s *Service) Stop() error {
 		stopErr = s.micro.Stop()
 	}
 	if s.connection != nil {
+		// micro.Stop queues UNSUB asynchronously. Wait for the server to process it
+		// before closing, so subsequent RPCs observe no responders immediately.
+		if !s.connection.IsClosed() {
+			if err := s.connection.FlushTimeout(5 * time.Second); err != nil {
+				stopErr = errors.Join(stopErr, err)
+			}
+		}
 		s.connection.Close()
 	}
 	return stopErr

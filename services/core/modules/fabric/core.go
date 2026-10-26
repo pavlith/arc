@@ -168,6 +168,7 @@ func (c *Core) verify(s SignedInstallation) (Installation, *contract.Compiled, e
 // Approve is an in-process installer boundary requiring a pinned operator signature.
 // It atomically installs Access resource types and the immutable service contract.
 func (c *Core) Approve(ctx context.Context, s SignedInstallation) (string, error) {
+ if c != nil && c.GormDB != nil { return c.approveGORM(ctx, s) }
 	if e := c.ready(); e != nil {
 		return "", e
 	}
@@ -363,6 +364,7 @@ type Revocation struct {
 }
 
 func (c *Core) Revoke(ctx context.Context, raw []byte, sig []byte) error {
+ if c != nil && c.GormDB != nil { return c.revokeGORM(ctx, raw, sig) }
 	if e := c.ready(); e != nil {
 		return e
 	}

@@ -39,15 +39,15 @@ func TestGormInboxConcurrentReplayConflictAndRollback(t *testing.T) {
 	payload, _ := json.Marshal(taskv1.CreatedEvent{
 		Scope: taskv1.Scope{
 			WorkspaceID: "00000000-0000-4000-8000-000000000001",
-			RootID: "00000000-0000-4000-8000-000000000002",
+			RootID:      "00000000-0000-4000-8000-000000000002",
 		},
 		TaskID: "00000000-0000-4000-8000-000000000003",
 	})
 	ev := events.Envelope{
-		ID: "00000000-0000-4000-8000-000000000004",
+		ID:   "00000000-0000-4000-8000-000000000004",
 		Type: taskv1.CreatedName, Version: 1,
 		AggregateID: "00000000-0000-4000-8000-000000000003",
-		OccurredAt: time.Now().UTC(), Payload: payload,
+		OccurredAt:  time.Now().UTC(), Payload: payload,
 	}
 	raw, _ := json.Marshal(ev)
 	store := events.GormStore{DB: db}

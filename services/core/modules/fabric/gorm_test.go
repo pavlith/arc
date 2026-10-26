@@ -3,7 +3,6 @@ package fabric
 import (
 	"context"
 	"crypto/ed25519"
-	"encoding/json"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -67,22 +66,33 @@ func TestSQLiteFabricSignedCatalogAndRouteSnapshots(t *testing.T) {
 		Artifact: a, Subjects: subjects, Policy: approved(t, operator, policy),
 	}
 	raw, signature := sign(t, operator, installation)
-	artifactJSON, err := json.Marshal(a)
+
+	digest, err := f.Approve(ctx, SignedInstallation{Payload: raw, Signature: signature})
 	must(err)
-	subjectsJSON, err := json.Marshal(subjects)
+	if digest != compiled.Digest {
+		t.Fatalf("approved digest mismatch: %s", digest)
+	}
+	repeated, err := f.Approve(ctx, SignedInstallation{Payload: raw, Signature: signature})
 	must(err)
-	must(db.Exec(
-		"INSERT INTO fabric_definitions(name,publisher) VALUES('books','test-publisher')",
-	).Error)
-	must(db.Exec(
-		`INSERT INTO fabric_contracts(digest,service_name,api_major,artifact,installation,signature)
-		VALUES(?,?,?,?,?,?)`,
-		compiled.Digest, "books", 1, string(artifactJSON), string(raw), signature,
-	).Error)
-	must(db.Exec(
-		"INSERT INTO fabric_deployments(service_account_id,digest,subjects) VALUES(?,?,?)",
-		account, compiled.Digest, string(subjectsJSON),
-	).Error)
+	if repeated != digest {
+		t.Fatal("idempotent approval changed digest")
+	}
+	forged := append([]byte(nil), signature...)
+	forged[0] ^= 1
+	if _, err := f.Approve(ctx, SignedInstallation{Payload: raw, Signature: forged}); !errors.Is(err, security.ErrUnauthenticated) {
+		t.Fatalf("forged installation accepted: %v", err)
+	}
+	var policyRevision, routeRevision int64
+	must(db.Raw("SELECT revision FROM access_policy_state WHERE singleton=1").Row().Scan(&policyRevision))
+	must(db.Raw("SELECT revision FROM fabric_route_state WHERE singleton=1").Row().Scan(&routeRevision))
+	if policyRevision != 1 || routeRevision != 1 {
+		t.Fatalf("approval/retry changed revisions: policy=%d route=%d", policyRevision, routeRevision)
+	}
+	var audits int64
+	must(db.Table("access_policy_audit").Count(&audits).Error)
+	if audits != 1 {
+		t.Fatalf("approval generated %d audit records", audits)
+	}
 	catalog, err := f.LoadAccess(ctx)
 	must(err)
 	_, err = catalog.Type(res.Type, account, compiled.Digest)
@@ -94,9 +104,9 @@ func TestSQLiteFabricSignedCatalogAndRouteSnapshots(t *testing.T) {
 	}
 	signed, err := f.Routes(ctx)
 	must(err)
-	snapshot, err := VerifySnapshot(signer.Public().(ed25519.PublicKey), signed, 0)
+	snapshot, err := VerifySnapshot(signer.Public().(ed25519.PublicKey), signed, 1)
 	must(err)
-	if snapshot.Revision != 0 || len(snapshot.Routes) == 0 ||
+	if snapshot.Revision != 1 || len(snapshot.Routes) == 0 ||
 		len(snapshot.Artifacts[compiled.Digest].Manifest) == 0 {
 		t.Fatalf("unexpected snapshot: %+v", snapshot)
 	}
@@ -104,13 +114,25 @@ func TestSQLiteFabricSignedCatalogAndRouteSnapshots(t *testing.T) {
 	if _, err := f.active(ctx, account, compiled.Digest); !errors.Is(err, security.ErrDenied) {
 		t.Fatalf("disabled account was treated as active: %v", err)
 	}
-	must(db.Exec("UPDATE fabric_contracts SET revoked_at=CURRENT_TIMESTAMP WHERE digest=?", compiled.Digest).Error)
-	must(db.Exec("UPDATE fabric_route_state SET revision=revision+1 WHERE singleton=1").Error)
+
+	revokeRaw, revokeSig := sign(t, operator, Revocation{Digest: compiled.Digest, Revoke: true})
+	must(f.Revoke(ctx, revokeRaw, revokeSig))
+	must(f.Revoke(ctx, revokeRaw, revokeSig))
+	var finalPolicyRevision, finalRouteRevision int64
+	must(db.Raw("SELECT revision FROM access_policy_state WHERE singleton=1").Row().Scan(&finalPolicyRevision))
+	must(db.Raw("SELECT revision FROM fabric_route_state WHERE singleton=1").Row().Scan(&finalRouteRevision))
+	if finalPolicyRevision != 2 || finalRouteRevision != 2 {
+		t.Fatalf("revoke/retry changed revisions: policy=%d route=%d", finalPolicyRevision, finalRouteRevision)
+	}
+	must(db.Table("access_policy_audit").Count(&audits).Error)
+	if audits != 2 {
+		t.Fatalf("expected two immutable audit rows, got %d", audits)
+	}
 	newSigned, err := f.Routes(ctx)
 	must(err)
-	newSnapshot, err := VerifySnapshot(signer.Public().(ed25519.PublicKey), newSigned, 1)
+	newSnapshot, err := VerifySnapshot(signer.Public().(ed25519.PublicKey), newSigned, 2)
 	must(err)
-	if len(newSnapshot.Routes) != 0 || newSnapshot.Revision != 1 {
+	if len(newSnapshot.Routes) != 0 || newSnapshot.Revision != 2 {
 		t.Fatalf("revocation leaked into route snapshot: %+v", newSnapshot)
 	}
 	if _, err := f.LoadAccess(ctx); !errors.Is(err, security.ErrUnavailable) {

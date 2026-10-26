@@ -180,7 +180,7 @@ func TestM0Gate(t *testing.T) {
 	var lastRequestID atomic.Value
 	var lastTrace atomic.Value
 	var businessCalls atomic.Int64
-	app, e := sdk.NewApp(sdk.AppConfig{Connection: cfg("m005-task", "nats-echo-service.seed"), Artifact: a, Instance: "m005-tasks-instance", Registry: registry, SelfCheck: func(context.Context) error { return nil }, Authorize: rpc.InvocationAuthorizer(id.Verifier(), "task/v1"), Resource: func(ctx context.Context, requested, action string) error {
+	app, e := sdk.NewApp(sdk.AppConfig{Connection: cfg("m005-task", "nats-echo-service.seed"), Artifact: a, Instance: "m005-task-instance", Registry: registry, SelfCheck: func(context.Context) error { return nil }, Authorize: rpc.InvocationAuthorizer(id.Verifier(), "task/v1"), Resource: func(ctx context.Context, requested, action string) error {
 		if requested != root {
 			return security.ErrDenied
 		}

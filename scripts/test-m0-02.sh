@@ -99,10 +99,10 @@ p=pathlib.Path(sys.argv[1]);s=p.read_text()
 s=s.replace('"rpc.books.v2.>"','"rpc.books.v2.>", "rpc.task.v1.>", "ctl.arc.fabric.routes"')
 s=s.replace('"ctl.arc.fabric.check",','"ctl.arc.fabric.check", "ctl.arc.fabric.routes", "evt.arc.fabric.routes.changed",')
 s=s.replace('subscribe: { allow: ["_INBOX.>"] }','subscribe: { allow: ["_INBOX.>", "evt.arc.fabric.routes.changed"] }')
-s=s.replace('"$SRV.INFO.books.>"','"$SRV.INFO.books.>", "$SRV.INFO.tasks.>"')
+s=s.replace('"$SRV.INFO.books.>"','"$SRV.INFO.books.>", "$SRV.INFO.task.>"')
 for op in ('PING','INFO','STATS'):
     for suffix in ('','.>'):
-        x=f'"$SRV.{op}.books{suffix}"';s=s.replace(x,x+f', "$SRV.{op}.tasks{suffix}"')
+        x=f'"$SRV.{op}.books{suffix}"';s=s.replace(x,x+f', "$SRV.{op}.task{suffix}"')
 p.write_text(s)
 PYTHON_GATE
 fi

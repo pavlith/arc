@@ -14,7 +14,6 @@ import (
 	"github.com/pavlith/arc/sdk/events"
 	"github.com/pavlith/arc/sdk/rpc"
 	"github.com/pavlith/arc/sdk/security"
-	"github.com/pavlith/arc/sdk/transport"
 )
 
 type Registration struct {
@@ -171,11 +170,16 @@ func (a *App) Start(ctx context.Context) error {
 	if e = a.cfg.Registry.Register(ctx, nc, a.registration); e != nil {
 		return fail(e)
 	}
-	m, e := transport.New(nc, transport.Config{Name: a.compiled.Manifest.Service.Name, Version: a.compiled.Manifest.Service.BuildVersion, Metadata: map[string]string{"contract_digest": a.compiled.Digest, "instance_id": a.registration.Instance, "api_major": fmt.Sprint(a.compiled.Manifest.Service.APIMajor)}})
-	if e != nil {
-		return fail(e)
-	}
-	a.service = &Service{connection: nc, micro: m}
+    svc, e := newServiceOnConnection(nc, ServiceConfig{
+        Name: a.compiled.Manifest.Service.Name,
+        Version: a.compiled.Manifest.Service.BuildVersion,
+    }, map[string]string{
+        "contract_digest": a.compiled.Digest,
+        "instance_id": a.registration.Instance,
+        "api_major": fmt.Sprint(a.compiled.Manifest.Service.APIMajor),
+    })
+    if e != nil { return fail(e) }
+    a.service = svc
 	for _, o := range a.compiled.Manifest.Operations {
 		if e = a.bindings[o.ID](a.service); e != nil {
 			return fail(e)
@@ -190,7 +194,7 @@ func (a *App) Start(ctx context.Context) error {
 	if e = a.cfg.SelfCheck(ctx); e != nil {
 		return fail(e)
 	}
-	if e = a.cfg.Registry.Ready(ctx, a.registration, ReadyEvidence{MicroID: m.Info().ID}); e != nil {
+	if e = a.cfg.Registry.Ready(ctx, a.registration, ReadyEvidence{MicroID: svc.micro.Info().ID}); e != nil {
 		return fail(e)
 	}
 	a.mu.Lock()

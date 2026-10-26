@@ -66,6 +66,6 @@ func run(dir string) error {
 	marker := "  users: ["
 	config = strings.Replace(config, marker, marker+"\n"+strings.Join(blocks, ",\n")+",", 1)
 	// Core monitoring is separate from both domain identities.
-	config = strings.ReplaceAll(config, "\"$SRV.INFO.tasks.>\"", "\"$SRV.INFO.tasks.>\", \"$SRV.INFO.notifications.>\"")
+	config = strings.ReplaceAll(config, "\"$SRV.INFO.task.>\"", "\"$SRV.INFO.task.>\", \"$SRV.INFO.notify.>\"")
 	return os.WriteFile(file, []byte(config), 0600)
 }

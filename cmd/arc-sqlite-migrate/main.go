@@ -1,5 +1,5 @@
-// Command arc-sqlite-migrate applies one owner service's Gormigrate migrations.
-// Run it before deploying that service, never concurrently for the same file.
+// Command arc-sqlite-migrate applies one owner's versioned SQLite migrations.
+// Run it before deploying the service, never concurrently for the same file.
 package main
 
 import (
@@ -11,33 +11,47 @@ import (
 
 	"github.com/go-gormigrate/gormigrate/v2"
 	"github.com/pavlith/arc/sdk/database"
+	coremigrations "github.com/pavlith/arc/services/core/migrations"
 	notifymigrations "github.com/pavlith/arc/services/notify/migrations"
 	taskmigrations "github.com/pavlith/arc/services/task/migrations"
 )
 
-func main() {
-	owner := flag.String("service", "", "service owner: task or notify")
-	path := flag.String("db", "", "absolute path to service-owned SQLite file")
-	flag.Parse()
-	var migrations []*gormigrate.Migration
-	switch *owner {
+func ownerMigrations(owner string) ([]*gormigrate.Migration, error) {
+	switch owner {
+	case "core":
+		return coremigrations.SQLite(), nil
 	case "task":
-		migrations = taskmigrations.SQLite()
+		return taskmigrations.SQLite(), nil
 	case "notify":
-		migrations = notifymigrations.SQLite()
+		return notifymigrations.SQLite(), nil
 	default:
-		fmt.Fprintln(os.Stderr, "sqlite migration not supported for service; choose task or notify")
-		os.Exit(2)
+		return nil, fmt.Errorf("unsupported SQLite owner %q (core, task, notify)", owner)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	db, err := database.Open(ctx, *path)
+}
+
+func run(ctx context.Context, owner, path string) error {
+	if owner == "" || path == "" {
+		return fmt.Errorf("service and SQLite path are required")
+	}
+	migrations, err := ownerMigrations(owner)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		return err
+	}
+	db, err := database.Open(ctx, path)
+	if err != nil {
+		return err
 	}
 	defer database.Close(db)
-	if err := database.Migrate(ctx, db, migrations); err != nil {
+	return database.Migrate(ctx, db, migrations)
+}
+
+func main() {
+	owner := flag.String("service", "", "SQLite service owner: core, task or notify")
+	path := flag.String("db", "", "absolute path to the service-owned SQLite file")
+	flag.Parse()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := run(ctx, *owner, *path); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

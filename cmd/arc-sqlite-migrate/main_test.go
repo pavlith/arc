@@ -16,7 +16,7 @@ func TestOwnerMigrations(t *testing.T) {
 				t.Fatal(err)
 			}
 			if err := run(context.Background(), owner, path); err != nil {
-				t.Fatalf("second migration: %v", err)
+				t.Fatalf("repeat migration: %v", err)
 			}
 			db, err := database.Open(context.Background(), path)
 			if err != nil {
@@ -24,7 +24,7 @@ func TestOwnerMigrations(t *testing.T) {
 			}
 			defer database.Close(db)
 			if !db.Migrator().HasTable("schema_migrations") {
-				t.Fatal("migration history missing")
+				t.Fatal("missing migration history")
 			}
 			table := "tasks"
 			if owner == "notify" {
@@ -34,16 +34,16 @@ func TestOwnerMigrations(t *testing.T) {
 				table = "identity_users"
 			}
 			if !db.Migrator().HasTable(table) {
-				t.Fatalf("%s table missing", table)
+				t.Fatalf("missing owner table %q", table)
 			}
 		})
 	}
 }
 
-func TestRejectInvalidOwnerBeforeOpeningDatabase(t *testing.T) {
+func TestRejectUnknownMigrationOwner(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "unknown.sqlite")
 	if err := run(context.Background(), "unknown", path); err == nil {
-		t.Fatal("unsupported migration owner accepted")
+		t.Fatal("unsupported owner accepted")
 	}
 	if err := run(context.Background(), "task", "relative.sqlite"); err == nil {
 		t.Fatal("relative path accepted")

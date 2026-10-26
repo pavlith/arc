@@ -9,7 +9,7 @@ migrator exactly once before starting consumers or accepting requests.
 db, err := database.Open(ctx, "/var/lib/arc/task/task.sqlite")
 if err != nil { return err }
 defer database.Close(db)
-err = database.Migrate(ctx, db, task.Migrations())
+err = database.Migrate(ctx, db, taskmigrations.SQLite())
 ```
 
 Use `gorm.DB.Transaction` for domain writes + inbox/outbox. Uniqueness
@@ -21,19 +21,21 @@ This SQLite driver uses CGO. Build with `CGO_ENABLED=1` and a C compiler.
 
 ## Explicit migration command
 
-Task and Notify have registered owner-local SQLite migrations:
+Core, Task and Notify have registered owner-local SQLite migrations:
 
 ```sh
-go run ./cmd/arc-db-migrate -service task -db /var/lib/arc/task/task.sqlite
-go run ./cmd/arc-db-migrate -service notify -db /var/lib/arc/notify/notify.sqlite
+go run ./cmd/arc-sqlite-migrate -service core -db /var/lib/arc/core/core.sqlite
+go run ./cmd/arc-sqlite-migrate -service task -db /var/lib/arc/task/task.sqlite
+go run ./cmd/arc-sqlite-migrate -service notify -db /var/lib/arc/notify/notify.sqlite
 ```
 
 Create the parent directories with appropriate owner permissions first. Run the
 migrator as a separate deployment step with no other migrator active. The
-command deliberately rejects `core` until its SQLite schema has been ported.
+command rejects unknown owners before opening or creating a database.
 
 **Migration status:** SQLite repositories are being introduced incrementally.
-Core and other remaining PostgreSQL paths have not been cut over. Do not
+Core Identity, Access and Fabric repositories and other PostgreSQL paths
+have not yet been cut over. Do not
 interpret a successful migration command as proof that the corresponding
 service is fully SQLite-only; verify its runtime wiring and end-to-end tests
 before deployment.

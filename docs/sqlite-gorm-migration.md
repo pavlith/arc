@@ -39,10 +39,12 @@ Status: implementation plan; PostgreSQL remains active until the service cutover
 - Implemented: `sdk/database` GORM connection, pragmas, busy retry and ordered Gormigrate runner.
 - Implemented: Task and Notify SQLite migrations and GORM persistence models.
 - Implemented: GORM command replay + inbox/outbox transaction helpers and concurrency tests.
-- Implemented: standalone `cmd/arc-sqlite-migrate` for task and notify; CI coverage in `.github/workflows/sqlite.yml`.
-- Pending: Core schema and Core repositories, changing each service's live DB config to GORM, GORM JetStream delivery adapters, removal of PostgreSQL, full M0-06 proof.
+- Implemented: standalone `cmd/arc-sqlite-migrate` for core, task and notify; CI coverage in `.github/workflows/sqlite.yml`.
+- Implemented: Core SQLite migrations for Identity, Access, Fabric and Runtime; Core Runtime GORM repository and concurrent CAS tests.
+- Pending: Core Identity, Access and Fabric GORM repositories, changing each service's live DB config to GORM, GORM JetStream delivery adapters, removal of PostgreSQL, full M0-06 proof.
 
 ```bash
+CGO_ENABLED=1 go run ./cmd/arc-sqlite-migrate -service core -db /var/lib/arc/core/core.sqlite
 CGO_ENABLED=1 go run ./cmd/arc-sqlite-migrate -service task -db /var/lib/arc/task/task.sqlite
 CGO_ENABLED=1 go run ./cmd/arc-sqlite-migrate -service notify -db /var/lib/arc/notify/notify.sqlite
 ```

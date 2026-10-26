@@ -10,11 +10,11 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
-	"github.com/pavlith/arc/sdk/transport"
 	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/events"
 	"github.com/pavlith/arc/sdk/rpc"
 	"github.com/pavlith/arc/sdk/security"
+	"github.com/pavlith/arc/sdk/transport"
 )
 
 type Registration struct {

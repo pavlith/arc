@@ -7,7 +7,8 @@ on:
       - "sdk/**"
       - "services/**"
       - "cmd/**"
-      - "internal/**"
+      - "deploy/**"
+      - "test/**"
       - "go.mod"
       - "go.sum"
       - ".github/workflows/services.yml"
@@ -17,7 +18,8 @@ on:
       - "sdk/**"
       - "services/**"
       - "cmd/**"
-      - "internal/**"
+      - "deploy/**"
+      - "test/**"
       - "go.mod"
       - "go.sum"
       - ".github/workflows/services.yml"
@@ -37,7 +39,7 @@ jobs:
           cache-dependency-path: go.sum
       - name: Format and build root module
         run: |
-          gofmt -w $(find sdk services cmd internal -name '*.go' -type f)
+          gofmt -w $(find sdk services cmd test deploy/migrate -name '*.go' -type f)
           python3 - <<'PY'
           import base64, pathlib, subprocess
           paths = subprocess.check_output(["git", "diff", "--name-only"]).decode().splitlines()

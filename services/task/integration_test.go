@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
-	"github.com/pavlith/arc/internal/testdb"
 	"github.com/pavlith/arc/sdk"
 	"github.com/pavlith/arc/sdk/bootstrap"
 	"github.com/pavlith/arc/sdk/contract"
@@ -41,6 +40,7 @@ import (
 	taskservice "github.com/pavlith/arc/services/task"
 	taskv1 "github.com/pavlith/arc/services/task/api/v1"
 	tasks "github.com/pavlith/arc/services/task/modules/tasks"
+	"github.com/pavlith/arc/test/testdb"
 	"gorm.io/gorm"
 )
 

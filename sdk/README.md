@@ -15,18 +15,19 @@ library **within** this module; it has no `go.mod` or `go.sum`.
 | `sdk/client` | Typed contract-checked RPC calls |
 | `sdk/contract` | Immutable manifest and JSON Schema validation |
 | `sdk/events` | Transactional outbox, inbox, retry, JetStream delivery |
+| [`sdk/database`](database/README.md) | SQLite connection settings and explicit owner-local migration runner |
 | `sdk/security` | Signed JWT, PoP, JWKS, invocation verification |
 | `sdk/telemetry` | Optional safe operation observation |
 | `sdk/testcontract` | Shared test fixture, not business service code |
 
 ## Architectural boundaries
 
-Each service is a separately deployed executable under `cmd/arc-<service>`;
-its own `services/<service>/` directory owns API, migrations, modules, and
-bootstrap composition. `sdk/bootstrap` does not know concrete services.
+Domain services have executables under `cmd/arc-<service>` and own API,
+migrations, modules and composition under `services/<service>/`. Core currently
+has no executable entry point; see [#15](https://github.com/pavlith/arc/issues/15). `sdk/bootstrap` does not know concrete services.
 
-Every RPC subscription requires a **Fabric-approved contract** and runtime
-lease. `sdk/service.Compose` installs typed operations and enforces online ACL
+Domain RPC subscriptions require a **Fabric-approved contract** and runtime
+lease; private Core bootstrap and node protocols have explicit separate policy. `sdk/service.Compose` installs typed operations and enforces online ACL
 and verified identity before domain effects; it does not grant privileges.
 Core's privileged private/bootstrap transport uses `sdk.NewService`.
 
@@ -37,7 +38,14 @@ Actual NATS network, JetStream and NKey/TLS remain in `nats.go`.
 Do not directly register domain endpoints with `sdk/transport`: its job is
 routing and introspection, **not** proof, policy or schema checks.
 
-`sdk/agent.NewNodeClient` fixes one node ID on an existing RPC connection and takes an operation-bound `InvocationCredentials` factory. Use `sdk.Connect` with that node's TLS/NKey paths and `InboxPrefix: "_INBOX.runtime.<node-id>"`; the broker should allow reply subscriptions only under that prefix. The factory must obtain a service invocation from Identity and respect the supplied context; assertions alone are rejected by Runtime. Concrete `ctl.runtime.v1.node.<node-id>.*` subjects are limited to inventory, desired.get and report. The executor must independently verify signed pull responses against its Core key and local template allowlist. `make runtime-smoke` exercises the private Core protocol with real TLS/NKey, Identity, Access and a fake host driver.
+`sdk/agent.NewNodeClient` fixes one node ID on an existing RPC connection and takes
+an operation-bound `InvocationCredentials` factory. It must obtain an Identity
+invocation and respect the supplied context; assertions alone are rejected.
+The executor independently verifies signed pull responses against its Core key
+and local template allowlist. See [Agent startup](../services/agent/README.md#startup)
+for node-scoped credentials, inbox permissions and configuration, and
+[Runtime contracts](../docs/ARCHITECTURE.md#7-runtime-control-and-infrastructure-agent)
+for protocol boundaries.
 
 Go syntax:
 
@@ -55,15 +63,5 @@ Handlers use `module.BindQuery` / `module.BindCommand`, consumers must use
 an exact Fabric event permit, and mutation replay + outbox must share a domain
 transaction. Workers run only after service readiness.
 
-Verification:
-
-```bash
-go test -race ./sdk/... ./services/...
-go vet ./...
-go build ./cmd/...
-make m0-06-smoke
-```
-
-The M0 suite is the end-to-end security and interoperability acceptance
-gate for changes to the SDK transport. Deployment of the task and notify
-services remains independent.
+Use the [verification guide](../docs/DEVELOPMENT.md#verification) for focused SDK
+checks and required transport smoke. Task and Notify deploy independently.

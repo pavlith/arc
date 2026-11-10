@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/nats-io/nats.go"
-	"github.com/pavlith/arc/internal/testdb"
 	"github.com/pavlith/arc/sdk"
 	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/rpc"
@@ -19,6 +18,7 @@ import (
 	"github.com/pavlith/arc/services/notify/modules/delivery"
 	"github.com/pavlith/arc/services/task"
 	taskv1 "github.com/pavlith/arc/services/task/api/v1"
+	"github.com/pavlith/arc/test/testdb"
 )
 
 type closedRegistry struct{ calls int }

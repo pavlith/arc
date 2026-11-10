@@ -12,10 +12,10 @@ cleanup() {
   rm -rf "$scratch"
 }
 trap cleanup EXIT
-# SQL guardrails create migrated, private owner files through internal/testdb.
-go test -count=1 ./sdk/database ./services/core/migrations ./cmd/arc-sqlite-migrate
-# Use the existing M0-01 TLS/NKey bootstrap and smoke client unchanged.
-(go run ./cmd/arc-dev-bootstrap -out "$scratch/secrets" -runtime-dir "$scratch/secrets" -store-dir "$scratch/jetstream")
+# SQL guardrails create migrated, private owner files through test/testdb.
+go test -count=1 ./sdk/database ./services/core/migrations ./deploy/migrate
+# Generate isolated TLS/NKey fixtures and run the RPC/JetStream smoke client.
+(go run ./test/bootstrap -out "$scratch/secrets" -runtime-dir "$scratch/secrets" -store-dir "$scratch/jetstream")
 # Bind an ephemeral port; the generated config has port 4222, replaced below.
 port=$(python3 - <<'PY'
 import socket
@@ -43,7 +43,7 @@ PY
   return 1
 }
 start_nats
-(go run ./cmd/arc-rpc-smoke -url="tls://localhost:$port" -ca="$scratch/secrets/ca.crt" -service-seed="$scratch/secrets/nats-echo-service.seed" -client-seed="$scratch/secrets/nats-smoke-client.seed" -jetstream-seed="$scratch/secrets/nats-jetstream-admin.seed")
+(go run ./test/rpc-smoke -url="tls://localhost:$port" -ca="$scratch/secrets/ca.crt" -service-seed="$scratch/secrets/nats-echo-service.seed" -client-seed="$scratch/secrets/nats-smoke-client.seed" -jetstream-seed="$scratch/secrets/nats-jetstream-admin.seed")
 kill "$nats_pid"
 wait "$nats_pid" || true
 nats_pid=
@@ -92,7 +92,7 @@ p.write_text(s)
 PYTHON_GATE
 fi
 if [[ ${ARC_TEST_TASK:-0} == 1 ]]; then
-  (go run ./cmd/arc-m0-06-credentials -dir "$scratch/secrets")
+  (go run ./test/task-notify-credentials -dir "$scratch/secrets")
 fi
 start_nats
 export ARC_IDENTITY_NATS_URL="tls://localhost:$port" ARC_IDENTITY_NATS_SECRETS="$scratch/secrets"

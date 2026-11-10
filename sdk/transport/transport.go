@@ -7,7 +7,7 @@
 //
 // An Arc logical service owns its NATS connection and Fabric identity.
 // This transport has no authorization bypass: requests are authenticated and
-// schema-checked by sdk/rpc and sdk/app, never by the transport itself.
+// schema-checked by sdk/rpc and sdk/service, never by the transport itself.
 package transport
 
 import (

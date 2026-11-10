@@ -7,6 +7,8 @@ on:
       - 'sdk/**'
       - 'services/**'
       - 'cmd/**'
+      - 'test/**'
+      - 'deploy/**'
       - 'go.mod'
       - 'go.sum'
       - '.github/workflows/sqlite.yml'
@@ -23,11 +25,11 @@ jobs:
           cache: true
       - name: Check Go formatting
         run: |
-          files=$(gofmt -l sdk services cmd)
+          files=$(gofmt -l sdk services cmd test deploy/migrate)
           if [ -n "$files" ]; then
             printf 'Unformatted Go files:\n%s\n' "$files"
-            gofmt -w sdk services cmd
-            git diff -- sdk services cmd
+            gofmt -w sdk services cmd test deploy/migrate
+            git diff -- sdk services cmd test deploy/migrate
             exit 1
           fi
       - name: Run SQLite unit and concurrency tests

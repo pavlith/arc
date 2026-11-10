@@ -5,7 +5,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=1 go build -trimpath -ldflags="-s -w" -o /out/arc-rpc-smoke ./cmd/arc-rpc-smoke
+RUN CGO_ENABLED=1 go build -trimpath -ldflags="-s -w" -o /out/arc-rpc-smoke ./test/rpc-smoke
 
 FROM alpine:3.23
 RUN addgroup -S arc && adduser -S -G arc arc

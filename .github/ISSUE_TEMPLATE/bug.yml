@@ -1,24 +1,24 @@
-name: Дефект
-description: Ошибка в реализованном поведении Arc
+name: Bug
+description: Defect in implemented Arc behavior
 title: "[Bug]: "
 labels: ["type: bug"]
 body:
   - type: textarea
     id: observed
     attributes:
-      label: Фактическое поведение
+      label: Observed behavior
     validations:
       required: true
   - type: textarea
     id: expected
     attributes:
-      label: Ожидаемое поведение
+      label: Expected behavior
     validations:
       required: true
   - type: textarea
     id: reproduction
     attributes:
-      label: Воспроизведение
+      label: Reproduction
       placeholder: |
         1. ...
         2. ...
@@ -27,37 +27,37 @@ body:
   - type: dropdown
     id: severity
     attributes:
-      label: Критичность
+      label: Severity
       options:
-        - Blocker — блокирует этап или нарушает security guardrail
-        - High — ломает основной сценарий без обхода
-        - Medium — есть обходной путь
-        - Low — ограниченное влияние
+        - Blocker — blocks a milestone or violates a security guardrail
+        - High — breaks the main flow without a workaround
+        - Medium — workaround available
+        - Low — limited impact
     validations:
       required: true
   - type: dropdown
     id: milestone
     attributes:
-      label: Этап
+      label: Milestone
       options: [M0, M1, M2, M3, M4, M5, M6, M7]
     validations:
       required: true
   - type: dropdown
     id: priority
     attributes:
-      label: Приоритет
+      label: Priority
       options: [P0, P1, P2, P3]
     validations:
       required: true
   - type: textarea
     id: environment
     attributes:
-      label: Окружение
-      description: Commit, ОС, браузер/клиент и значимая конфигурация.
+      label: Environment
+      description: Commit, OS, browser/client and relevant configuration.
     validations:
       required: true
   - type: textarea
     id: evidence
     attributes:
-      label: Диагностика
-      description: Логи и скриншоты без секретов и персональных данных.
+      label: Evidence
+      description: Logs or screenshots without secrets or personal data.

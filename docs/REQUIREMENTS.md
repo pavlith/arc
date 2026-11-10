@@ -1,287 +1,412 @@
-# Техническое задание: Arc
+# Arc requirements
 
-> **Версия:** 0.9 · **Статус:** M0 — архитектурная ревизия, согласованные контракты и стратегия отложенной полной верификации · **Дата:** 2026-10-26
-> **Архитектура:** [ARCHITECTURE.md](ARCHITECTURE.md)  
-> **Назначение:** спецификация Arc для реализации на базе [Kuayle](https://github.com/carbogninalberto/kuayle); без обязательной GitHub-ориентированной модели.  
-> **Приоритеты:** `P0` — инфраструктурный минимум; `P1` — офисный MVP; `P2` — автоматизация/агенты; `P3` — расширенное управление инфраструктурой. Требования «позже» не входят в критерии MVP.
+> Reviewed on 2026-11-10 under [#14](https://github.com/pavlith/arc/issues/14).
+> [Architecture](ARCHITECTURE.md) defines implementation contracts.
+> Requirements describe the target; their presence does not establish delivery.
+> P0: foundation; P1: Office MVP; P2: automation/agents; P3: infrastructure management.
 
-## 1. Продукт, цели, объём
+## 1. Product, goals and scope
 
-Разработать **Arc** — русскоязычную self-hosted веб-платформу для небольших и средних команд: единые учётные записи, рабочие пространства, группы и ACL; задачи; личные и общие календари/контакты; файлы; иерархические страницы; далее — коннекторы, агенты и workflows. Внешние клиенты получают доступ к поддерживаемым ресурсам по HTTP, CalDAV, CardDAV, WebDAV. Обязательны контроль над данными, независимость от облака разработчика и расширение микросервисами без правки ядра.
+Arc is a self-hosted team collaboration platform with shared identity, workspaces,
+groups and ACL; tasks, calendars, contacts, files and hierarchical pages; then
+connectors, agents and workflows. REST, CalDAV, CardDAV, WebDAV and tools use the
+same permissions. Users retain control of data without a developer cloud or a
+mandatory GitHub dependency. Engineering materials and new UI use English.
 
-**Целевые пользователи:** владелец инсталляции, workspace-admin, сотрудник, гость, автоматизированный сервис и AI-агент с явно делегированными полномочиями.
+Actors: installation owner, workspace admin, member, guest, service and explicitly
+delegated AI agent. Initial scope excludes enterprise IAM (SAML/SCIM/LDAP), CRM,
+Notion databases, browser DOCX/XLSX editing, a Kubernetes/Portainer replacement,
+built-in mail, initial third-party DAV sync and hostile-code isolation in ordinary Docker.
 
-**Не входит в начальный scope:** enterprise IAM (SAML/SCIM/LDAP), полноценный CRM, Notion Databases, офисный редактор DOCX/XLSX в браузере, полноценный Kubernetes/Portainer, встроенная собственная почта, GitHub как обязательная зависимость, синхронизация сторонних DAV-серверов в первой поставке, недоверенный multi-tenant code execution в обычном Docker.
+### 1.1 Kuayle adaptation
 
-### 1.1 Наследование Kuayle
+Adapt applicable [Kuayle](https://github.com/carbogninalberto/kuayle) behavior:
+Go/Echo direction, Svelte 5/shadcn-svelte, workspaces, tasks/projects/views,
+notifications, realtime, Tiptap and uploads. GitHub becomes an optional connector;
+coding runtimes are specialized execution resources. Preserve existing data where
+possible and document/test irreversible changes. Upstream or lost local code
+does not count as an Arc implementation. Define the data-import and personal-task
+strategy in #10 before implementing it.
 
-Сохранить и адаптировать: Go/Echo API, Svelte 5 + shadcn-svelte UI, workspaces, roles, tasks/issues, projects, Kanban/list/views, notifications, realtime, Tiptap, uploads и применимые тесты. Github App и coding Dev Machines вывести из ядра: GitHub — необязательный connector; development runtime — частный вид agent/execution runtime. Миграция должна сохранять данные существующих рабочих пространств, насколько возможно; необратимые изменения документируются и тестируются. Не заявлять как готовую функцию то, что присутствует лишь в dev-ветке Kuayle.
+## 2. Functional requirements
 
-## 2. Функциональные требования
+### 2.1 Arc Core / Identity (P0)
 
-### 2.1 Arc Core / Identity (`P0`)
+- **I-01:** Registration/login/logout, secure sessions, refresh rotation/revocation,
+  recovery, profile and registration/invitation settings. M0 may use an admin/CLI
+  one-time recovery token without a mail connector.
+- **I-02:** Workspace creation, owner/admin/member/guest roles, invitations and
+  membership changes; one global user may join multiple workspaces.
+- **I-03:** Access groups (`Group/GroupMember`) remain separate from domain teams;
+  authorized owners/admins manage membership and permissions.
+- **I-04:** Scoped service accounts and agent identities; credential lifecycle
+  and audited delegation issuance/revocation.
+- **I-05:** Personal roots exist outside workspaces; leaving never deletes or
+  transfers them to the organization.
+- **I-06:** Distinct User, AgentIdentity, ServiceAccount and ServiceCredential.
+  Per-service broker permissions do not replace user ACL. Credentials bind to
+  approved definitions/deployments; private keys stay outside databases.
+- **I-07:** Secure/HttpOnly/SameSite browser cookies and CSRF; API access JWT
+  `aud=gate`, TTL ≤10 minutes and online session checks. Refresh reuse revokes
+  the family. Never log tokens.
+- **I-08:** Core Ed25519 invocation JWT binds
+  `iss/aud/sub/caller/op/cnf.kid/iat/nbf/exp/jti`, one approved operation, TTL ≤60s.
+  Service assertions have single-use jti and TTL ≤30s. Gate has no Core signing key.
+- **I-09:** Per-request caller proof binds key, subject, operation, request ID,
+  canonical payload hash and token jti. Verify signature, audience and live key;
+  persist replay protection and command idempotency.
+- **I-10:** Gate exchanges a live session for a target invocation; each downstream
+  hop exchanges again. Actor/on_behalf_of/caller never come from unverified input;
+  downstream rights cannot expand.
+- **I-11:** Explicit delegation records grantor, grantee, resources/actions,
+  mandatory expiry, consent method and audit. No self-issued user delegation;
+  each Check intersects live user rights and delegation online.
+- **I-12:** Session, grant, membership, service-key or delegation revoke denies
+  checks after commit despite unexpired JWT. Core outage fails closed; already
+  running operations may finish.
+- **I-13 (later):** Advanced dangerous-action approvals, SSO/MFA, broker credential
+  management and long-running delegation renewal need separate scope.
 
-- **I-01:** глобальная регистрация/вход/выход, защищённые сессии, refresh rotation/revocation, восстановление доступа, редактирование профиля; M0 допускает admin/CLI one-time recovery token без зависимости от ещё не реализованного mail connector. Настройки публичной регистрации и приглашений.
-- **I-02:** создание workspace, роли `owner/admin/member/guest`, приглашения, изменение членства; пользователь может состоять в нескольких workspace без копирования аккаунта.
-- **I-03:** группы доступа (`Group`/`GroupMember`) отдельно от прикладных `Team`; owner/admin могут выдавать членство и назначать permissions.
-- **I-04:** service accounts и agent identities с scoped permissions; жизненный цикл секретов и журнал выпуска/отзыва делегаций.
-- **I-05:** личные корневые ресурсы существуют вне workspace; уход из организации не удаляет их и не передаёт организации.
-- **I-06 (M0):** разделить `User/AgentIdentity/ServiceAccount/ServiceCredential`; per-service NATS credentials с subject permissions **не** подменяют пользовательскую ACL. Service credentials привязаны к approved definition/deployment, приватный ключ не хранится в БД.
-- **I-07 (M0):** браузерная session cookie `HttpOnly/Secure/SameSite` + CSRF; API access JWT `aud=gate`, время ≤10 мин, online session check; refresh family rotation/reuse detection и отзыв всей семьи при reuse. Секреты/refresh токены не записываются в логи.
-- **I-08 (M0):** Core подписывает invocation JWT EdDSA (Ed25519), `iss/aud/sub/caller/op/cnf.kid/iat/nbf/exp/jti`, TTL ≤60 сек; `op` привязан к единственной утверждённой операции и проверяется SDK; доверенные services используют подписанные client assertions TTL ≤30 сек с одноразовым `jti`. Gate не владеет ключом подписи Core.
-- **I-09 (M0):** SDK отправляет per-request proof, привязанный к ключу caller, target subject, `op`, request ID, payload hash и token jti; получатель отклоняет поддельную подпись, неверный `aud`/состояние ключа и изменение payload. Для side effects — persistent nonce dedupe и idempotency.
-- **I-10 (M0):** Gate обменивает активную сессию на audience-bound invocation token; межсервисная цепочка получает новый token на каждом downstream target. `actor`, `on_behalf_of`, `caller` нельзя присвоить из payload/headers; нельзя расширить исходные права.
-- **I-11 (M0):** явная Delegation с `grantor`, `grantee`, scope конкретных ресурсов/actions, обязательным `expires_at`, `consent_method` и audit. Agent/service не может выдать делегацию от чужого имени. Новый `Check` проверяет активность делегации и текущие права пользователя **онлайн**.
-- **I-12 (M0):** отзыв сессии, grant/membership, service key и delegation блокирует последующие проверки после commit, даже если JWT не истёк; в отсутствие Core защищённые вызовы fail-closed. Уже запущенная операция может завершиться.
-- **I-13 (после M0):** полноценные approval-политики для опасных агентных действий, SSO/MFA, управление NATS JWT/credentials, long-running delegation renewal — отдельные расширения.
+M0 guardrails: canonical proof/audience/operation/caller/replay vectors, refresh
+reuse, one revoke path and denied self-delegation. M7 completes multi-workspace,
+personal-root, downstream intersection and full revocation combinations.
+Product Identity/Gate UI remains #9; standalone Core startup remains #15.
 
-**Сценарии верификации Identity:** пользователь состоит в двух workspace, personal root не удаляется при выходе; повторное применение refresh token отзывает семейство; отозванная сессия не проходит Gate и последующий Access.Check. Поддельный caller/плохая подпись request proof/изменённый payload, неверный `aud`, replay client assertion, revoked service key и истёкшая делегация отвергаются. Service/agent не может выпустить себе делегацию. Подпись proof проверяется на одинаковых JSON при разном порядке ключей и отвергает изменение канонического payload. В цепочке `Gate → Task → Calendar` корректно сохраняется actor, меняются audience/caller и не расширяются действия. Отзыв membership/grant блокирует агентный вызов при ещё действующем JWT. В M0 автоматизируются test vectors подписи, `aud/op/caller`, replay и один revoke-path; полная матрица выполняется в M7.
+### 2.2 Resource ACL (P0)
 
-### 2.2 Resource ACL (`P0`)
+- **A-01:** Selective registry of ACL roots: workspace, personal, calendar,
+  address book, independent files/pages section, agent/workflow. Ordinary objects
+  may inherit a root without a registry row. Domain owners verify object/root
+  binding and keep content in their own database.
+- **A-02:** Approved contracts register namespaced types/actions. One acyclic
+  `acl_parent`, matching owner/scope, explicit `inherit_acl=false` boundary.
+  Joining a workspace never transfers personal resources.
+- **A-03:** Allow-only user/group/role/service/agent grants with expiry and audit;
+  default deny. ACL administration does not grant content access. An authorized
+  admin may explicitly self-grant with audit; share cannot exceed the sharer's
+  actions/expiry. free_busy and read are independent.
+- **A-04:** Online Check for every protected RPC/DAV/API/tool; no positive cache.
+  CheckMany handles ≤100 pairs; ListAccessibleRoots paginates. Domain owners
+  filter content and reject forged object/root/parent bindings.
+- **A-05:** Post-commit revoke visibility, policy revisions and immutable audit.
+  Core outage denies new checks; no immediate cancellation promise.
+- **A-06:** Idempotent reserve/activate/abort/begin_delete/finalize_delete.
+  Pending roots are invisible; deleting roots deny new checks. Reconciliation
+  must recover failures between Core and domain transactions.
+- **A-07:** Agent/workflow authority intersects its tools, live delegation and
+  current ACL. Broker headers do not authenticate the publisher.
+- **A-08 (M2–M3):** Personal groups/cross-workspace sharing, public links,
+  streaming revoke and extended policies require separate contracts.
 
-- **A-01:** выборочный Resource Registry: ACL roots (`workspace`, `personal`, `calendar`, адресная книга, самостоятельный files/pages раздел, agent/workflow); обычные дочерние объекты могут наследовать root без отдельной записи. Domain-owner подтверждает связь объекта с root, бизнес-данные остаются в собственной БД.
-- **A-02:** типы ресурсов и namespaced actions регистрируются только утверждённым контрактом; один `acl_parent` без циклов, совпадение owner/scope с parent, явная граница `inherit_acl=false`. Личные ресурсы не становятся workspace-owned при вступлении в организацию.
-- **A-03:** только `allow` grants пользователю, workspace-group/role, service, agent; default deny, expiry и аудит. Workspace admin может управлять ACL корпоративных ресурсов, но **не** читать содержимое без соответствующего права; при этом полномочный ACL-admin может явно выдать такой grant себе с обязательным audit. `share` не позволяет выдавать права, которых нет у инициатора. `free_busy` и `read` независимы; скрытые дочерние разделы не наследуют grants родителя при `inherit_acl=false`.
-- **A-04:** `Access.Check` на каждый защищённый RPC/DAV/API/tool без positive decision cache; `CheckMany` до 100 элементов для листингов и пагинированный `ListAccessibleRoots`. Domain-owner обязан фильтровать собственные данные и не доверять `resource_id`/`parent_id` из клиентского payload.
-- **A-05:** отзыв grants, membership и делегации вступает в силу для новых проверок после commit; недоступность Core даёт fail-closed; отдельные ревизии политики, неизменяемые audit events. Для уже начатых операций мгновенное прерывание не обещается.
-- **A-06:** `reserve/activate/abort/begin_delete/finalize_delete` идемпотентны, ресурс до `active` не виден, при удалении новые проверки запрещаются; reconciler восстанавливает ошибки между Core и доменной БД.
-- **A-07:** агент/workflow может действовать только в пересечении собственных инструментальных разрешений, действующей пользовательской делегации и текущего ACL. NATS headers не доказывают publisher identity; проверяются invocation JWT и ключевой per-request proof по §3 архитектуры.
-- **A-08 (M2–M3):** персональный group/cross-workspace sharing, публичные share links с expiry/revoke, ограничения streaming и дополнительные политики — отдельно от M0.
+M0 covers owner/no-grant, revoke, cross-root spoofing, fail-closed and repeated
+reserve/activate. Full matrix: [architecture §4.5](ARCHITECTURE.md#45-required-security-cases).
+Calendar/Files fixtures may stand in for absent endpoints.
 
-**Сценарии верификации ACL:** полная матрица §4.5 [ARCHITECTURE.md](ARCHITECTURE.md): (1) уход из workspace не удаляет личный root; (2) `free_busy` не раскрывает событие; (3) администратор ACL без права скачать файл; (4) приватный дочерний раздел; (5) чужой `event_id/file_id` при допустимом ACL root; (6) отзыв membership/delegation; (7) неверный JWT/audience/caller; (8) fail-closed; (9) повторные reserve/activate/delete и восстановление после crash; (10) пакетные проверки без N+1 RPC. M0 guardrail обязательно покрывает owner/no-grant, revoke, cross-root spoofing, fail-closed и повтор `reserve/activate`; остальная автоматизация завершается в M7. До появления реальных DAV/file endpoints допустимы фиктивные Calendar/Files ресурсы.
+### 2.3 Service Fabric / Arc SDK (P0)
 
-### 2.3 Service Fabric / Arc SDK (`P0`)
+- **F-01:** SDK is a library in the single root Go module. Arc-native NATS
+  transport uses nats.go and implements Micro v1 PING/INFO/STATS plus queue
+  endpoints; it does not wrap/fork the whole nats.go/micro package.
+- **F-02:** Separate Definition, immutable approved Contract and ephemeral
+  Instance. Manifest v1 declares API major, typed operations/subjects/schemas,
+  resource actions, auth selectors, optional exposure/events and limits.
+  Reject unknown fields and conflicting names.
+- **F-03:** Approval binds deterministic manifest/schema digest, deployment,
+  identity and subjects before business subscriptions. Readiness requires all
+  handlers and proof. Unknown/revoked digest, wrong account or schema denies.
+- **F-04:** RPC `rpc.<service>.v<major>.<operation>`, queue `q.<service>.v<major>`;
+  JetStream `evt.<service>.<entity>.<event>.v<major>`. Restrict control subjects.
+  Micro discovery/metrics alone do not prove readiness.
+- **F-05:** Versioned JSON envelope, request ID, deadline, optional idempotency/
+  trace, invocation and proof. Validate input/output schemas; defaults: query 5s,
+  command 10s, envelope/response ≤256 KiB. Stable safe errors and HTTP mapping.
+- **F-06:** Atomic command replay ≥24h by actor/operation/key. Changed hash
+  conflicts; uncertain timeout retries reuse the key. No exactly-once promise.
+- **F-07:** Domain mutation/outbox commit together; inbox/event_id deduplicates
+  internal effects atomically before ACK. Retry/backoff/DLQ and versioned events;
+  external effects may duplicate. Events grant no resource access.
+- **F-08:** Breaking APIs use a new major subject/prefix. Build SemVer differs
+  from API major. Test additive compatibility and version isolation;
+  client generation does not block M0.
+- **F-09:** Typed composition/register/call helpers enforce schemas, verified
+  identity and ACL. HTTP/tool/workflow exposure independently defaults off.
+  Direct RPC never bypasses ACL or trusts identity headers.
 
-- **F-01:** `arc-sdk` — самостоятельный Go module **над официальным `nats.go/micro` без форка**; поддерживает `Service/Endpoint`, `$SRV.PING/INFO/STATS`, queue groups, typed handlers/clients и единый lifecycle.
-- **F-02:** Service Definition, immutable утверждённый Service Contract и эфемерный Service Instance — разные сущности. Manifest v1 содержит `api_major`, операции (`query/command`), subjects, JSON schemas+digest, resources/actions, auth root extractor, HTTP exposure, optional tools/workflow, события, limits; unknown fields и конфликтующие names отклоняются.
-- **F-03:** Core утверждает digest **детерминированного** manifest + schemas, identity/deployment и NATS subjects. Сервис до approval не открывает business RPC subscriptions; после approval SDK регистрирует все обязательные handlers и подтверждает readiness. Неизвестный или отозванный digest, чужой service-account, ошибочная schema → deny.
-- **F-04:** Core NATS `rpc.<service>.v<major>.<operation>` с queue group `q.<service>.v<major>`; JetStream `evt.<service>.<entity>.<event>.v<major>`; control subjects ограничены NATS permissions. Instance discovery/metrics через NATS Micro, actual readiness — отдельная проверка.
-- **F-05:** JSON RPC envelope содержит `request_id`, version, payload, `deadline_at`, optional `idempotency_key`, trace, audience-bound invocation JWT и proof; validate input/output JSON Schema, verify caller/ACL. Query 5с, command 10с, envelope/response ≤256 KiB. Унифицированные ошибки и безопасное HTTP mapping.
-- **F-06:** Изменяющая операция требует idempotency key с server-side atomic replay ≥24ч; одно и то же `(actor, operation, key)` с отличным request hash → `CONFLICT`. На timeout клиент повторяет с тем же ключом, а не с новым; exactly-once не обещается.
-- **F-07:** Изменение доменных данных + outbox атомарны; JetStream worker dedup события через inbox `event_id`, retry/backoff/DLQ; inbox + внутренний DB side-effect фиксируются атомарно, для внешних эффектов возможны дубли; события версионированы и сами по себе не предоставляют доступ к данным ресурса.
-- **F-08:** API breaking change требует новый major subject и HTTP prefix; build SemVer не равен API major. Contract tests проверяют обратную совместимость additive changes и сосуществование версий. Автогенерация клиентов не блокирует M0.
-- **F-09:** SDK предоставляет package-level typed register/call helpers, scopes и безопасный handler pipeline. Tool/workflow и HTTP exposure — **явный opt-in**; SDK не пропускает ACL через прямой RPC и не принимает недостоверные identity headers.
+Current Fabric uses operator-signed installations, SQLite catalog, online
+ContractSource, signed control replies and instance leases. One active digest per
+service/API major; replacement requires revoke and conservative compatibility.
+M0 covers digest/action/schema/proof, major isolation, replay and duplicate event;
+full replicas/reconnect/recovery remain M7.
 
-M0-04 использует подписанные локальным оператором install artifacts, SQLite Fabric catalog в Core и онлайн `ContractSource` Access. Регистрация instance требует отдельные assertion/proof; readiness связывает signed probe с Micro INFO, всеми endpoints и queue groups. Domain commands проходят `HandleCommand` с атомарными result/effect/outbox и response validation до commit; event consumer фиксирует inbox/effect перед ACK. `incoming_api_major` расширяет downstream exchange без снятия audience/action checks. До rolling upgrade действует один активный digest на service/API major; Gate ingress реализуется в M0-05.
+### 2.4 Gate (P0)
 
-**Сценарии верификации Fabric:** два разных digest — only approved allowed; неизвестный ресурс/action/HTTP route и conflict параметризованного пути отклоняются; три реплики одной версии выполняют RPC через одну queue group; incompatible majors изолированы; invalid request/response schema отклоняются; подделка identity/proof запрещена; stop/reconnect/no responders → управляемая ошибка; при timeout после успешной записи повтор mutation с тем же ключом не создаёт дубль; публикация через outbox и повтор JetStream event не создают второго эффекта. M0 guardrail автоматизирует digest/action/schema/proof, разделение major, idempotency и duplicate event; многорепличность и полный recovery завершаются в M7.
+- **G-01:** Single public HTTPS REST/WS/DAV ingress. NATS and private service
+  adapters are not public.
+- **G-02:** Online session/auth, target invocation exchange and caller proof;
+  schema/size/rate limits, CORS/CSRF and safe errors. Ignore unverified identity headers.
+- **G-03:** Atomic signed RouteSnapshot(revision,digest,routes,kid,signature)
+  contains approved routes only. Verify Core trust, reject rollback/conflicts/
+  reserved paths; cold-start fetch and periodic reconciliation. Runtime discovery
+  cannot publish an API.
+- **G-04:** Missing responder →503, deadline →504, Core unavailable →503 without
+  effect, policy denial →403 or safe 404. Domain service checks ACL. Unknown
+  routes deny; 201/202 require contract approval.
+- **G-05:** Resource-authorized WebSockets, DAV and large-file streaming without
+  sending file bodies through NATS.
 
-### 2.4 Gate (`P0`)
+Current Gate is a separate process without a DB. It verifies a root-signed,
+request-bound routes/JWKS bundle and preserves request/trace/deadline/idempotency.
+Cookie/CSRF and Bearer authentication exist. Browser login/refresh currently
+return an access token in JSON; separate cookie-only browser and CLI token flows
+are still #9. DAV/WS and UI are planned. M0 covers approved route, bad signature,
+reserved/colliding route and Core outage; full recovery is M7.
 
-- **G-01:** единый публичный HTTPS ingress REST/WS/DAV; NATS и приватные служебные HTTP adapters не опубликованы.
-- **G-02:** external auth + online session check, audience-bound invocation exchange и caller proof; HTTP input validation/schema/size/rate limit, CORS/CSRF, unified error mapping; незаверенные `X-User-ID`/`X-Service` не используются как identity.
-- **G-03:** Gate получает из Core **атомарный RouteSnapshot(revision,digest,routes,kid,signature) с проверкой подписи Core и digest** только утверждённых routes, reject rollback/conflicts и reserved paths; загрузка при cold start, refresh по событию с reconciliation при потере уведомления; runtime-анонс не публикует новый HTTP API.
-- **G-04:** защищённый route без живого RPC responder → `503`, истечение deadline → `504`; ACL проверяется сервисом; недоступность Core означает `UNAVAILABLE`/HTTP `503` (без side-effect), отказ policy → `PERMISSION_DENIED`/HTTP `403` либо безопасный `404`. Unknown/неодобренный route не обслуживается; successful HTTP `201/202` только из approved contract.
-- **G-05:** WebSocket subscriptions с авторизацией по ресурсу; DAV routing и большой file streaming без переноса потока файлов в NATS.
+### 2.5 Task / Projects / Notify (P1; proof services in P0)
 
-**Сценарии верификации Gate:** `POST /api/v1/tasks` → approved RPC; `401/403/409/503/504` корректны; route snapshots не откатываются; restart/cold-start/poll reconciliation работают; злоумышленник не может опубликовать `/api/v1/arc/*` либо подменить `/api/v1/task/{id}` статическим конфликтом; отказ Core блокирует новые защищённые вызовы. M0 guardrail покрывает approved route, invalid snapshot signature, reserved/conflicting route и fail-closed; полная error/restart/reconciliation matrix выполняется в M7.
+- **T-01:** Task ID, title, rich text, status, priority, due dates, multiple
+  assignees, labels, files, comments and history.
+- **T-02:** Subtasks, blocked/blocks/duplicate/related links, triage, templates
+  and bulk actions.
+- **T-03:** Workspace/team projects, Kanban/list/saved views and filters;
+  cycles/sprints optional.
+- **T-04:** Subscriptions, inbox/read/archive, realtime and task/page/file/event/
+  contact links.
+- **T-05:** Tasks work without GitHub; integration is an optional connector.
 
-Реализация M0-05: Gate работает отдельным процессом без БД; snapshot и active JWKS поступают через signed-service RPC `ctl.arc.fabric.routes` в root-signed request-bound bundle. Snapshot имеет canonical content digest, `kid`, domain-separated signature, contract artifacts и explicit HTTP bindings; rollback/conflicting revision, system paths и collisions запрещены. `__Host-` browser cookies + Origin/CSRF и `aud=gate` Bearer используют online Identity; внутренний `sessions.validate` не дублирует session state. HTTP → RPC сохраняет request/trace/deadline/idempotency, требует schema и target-scoped invocation, а owner-service выполняет ACL. Auth endpoints и limits доступны сейчас; DAV/WS, пользовательский UI и полный recovery остаются последующим этапам/M7.
+Acceptance: UI/API share a model; ACL controls assignee visibility, search and
+links; task-created events drive Notify. The current M0 proof covers workspace
+create/get/list, atomic replay/outbox and Notify inbox/record/fake outbound intent.
+Root/workspace/ACL are checked online before mutation and replay. Recipients come
+from operator subscriptions, not event input; stable provider dedup keys do not
+promise external exactly-once. Product work: #9, #10, #12.
 
-### 2.5 Task / Projects / Notify (`P1`, часть используется уже при `P0`)
+### 2.6 Calendars / CalDAV (P1)
 
-- **T-01:** задачи с ID, названием, rich-text, статусом, приоритетом, сроком, несколькими исполнителями, label, files, comments, history.
-- **T-02:** подзадачи, связи (`blocked/blocks`, duplicate, related), triage, шаблоны, bulk-actions.
-- **T-03:** workspace/team projects; Kanban, list, saved views, фильтры; cycles/sprints — необязательный модуль.
-- **T-04:** уведомления, подписки, inbox, архив, realtime events; связи task ↔ page/file/event/contact.
-- **T-05:** GitHub не требуется для создания/редактирования задач; интеграция доступна только через коннектор.
+- **C-01:** Default and additional personal/workspace calendars, owners and group grants.
+- **C-02:** Timezones/all-day, recurrence/exceptions, attendee fields, attachments/
+  links and independent free_busy permission.
+- **C-03:** CalDAV discovery, iCalendar round-trip, ETag, sync-token and ACL.
+- **C-04:** Unified permitted-calendar UI, filters and read/write/free-busy.
+- **C-05 (later):** Protocol scheduling/invitations, rooms/resources and external sync.
 
-**Приёмка:** создание задачи через UI и API даёт одинаковую модель; исполнитель видит задачу по ACL; событие `evt.task.task.created.v1` запускает notification worker; после изменения роли запрещённая задача не отображается ни в поиске, ни в публичной ссылке без grant.
+Acceptance: two different clients round-trip CRUD/recurrence without duplicates;
+read-only cannot write and free_busy discloses no private event title.
 
-M0-06 ограничен workspace Task create/get/list, transactional command result/outbox,
-Notify inbox/internal record и persisted fake outbound intent. Identity/proof,
-owner/root/workspace и ACL проверяются онлайн до мутации и replay. Operator-approved
-адресация не берётся из event; inbox/effect/intent атомарны, внешний retry использует
-стабильный dedup key без обещания exactly-once. Полный Task/Kuayle, UI и реальные
-providers отложены до M1; полная crash/load/recovery матрица — M7. Исполняемый smoke
-и узкие guardrails: [M0-06](M0-06.md), `scripts/test-m0-06.sh`.
+### 2.7 Contacts / CardDAV (P1)
 
-### 2.6 Calendars / CalDAV (`P1`)
+- **K-01:** Personal/workspace address books with owners and group grants.
+- **K-02:** Name, organization, role, phones, email, addresses, notes, photo,
+  custom fields and resource links.
+- **K-03:** vCard round-trip preserves unknown properties; ETag/incremental sync.
+- **K-04 (later):** Remote sources, merge/deduplication and extended CRM.
 
-- **C-01:** календарь по умолчанию у каждого пользователя; создание нескольких личных и workspace-календарей, владельцы и grants по группам.
-- **C-02:** события, all-day/timezone, повторения и исключения, attendees как поля данных, вложения/ссылки и permission `free_busy`.
-- **C-03:** CalDAV Server с discovery, iCalendar round-trip, ETag, sync-token, корректной инкрементальной синхронизацией и ACL.
-- **C-04:** единый UI по всем доступным календарям, фильтры, права read/write/free-busy, создание и изменение событий.
-- **C-05 (позже):** приглашения и scheduling по протоколу, ресурсы/переговорные, внешняя двусторонняя CalDAV sync.
+Acceptance: externally created contacts appear without property loss; API and
+CardDAV enforce identical address-book permissions.
 
-**Приёмка:** личный и workspace-календарь подключаются в двух разных CalDAV-клиентах; CRUD и повторение синхронизируются без дублирования; read-only клиент не меняет события; коллега с `free_busy` не видит заголовок приватной встречи.
+### 2.8 Files / WebDAV / Sharing (P1)
 
-### 2.7 Contacts / CardDAV (`P1`)
+- **L-01:** Personal/workspace folders, upload/download/search/move/delete and metadata.
+- **L-02:** Local/S3-compatible bytes, DB metadata/ETag and streaming;
+  resumable/large-file policy requires definition.
+- **L-03:** WebDAV with ACL, file operations and conflict control.
+- **L-04:** Public read links with expiry/revoke and password if approved;
+  upload-to-folder later.
+- **L-05:** Task/page attachments use Files rather than independent byte stores.
+- **L-06 (later):** Restore/history, recycle bin, quotas, thumbnails and more
+  connectors; initial schema accommodates versions.
 
-- **K-01:** личные и workspace-адресные книги; владелец, grants, просмотр по группам.
-- **K-02:** контакты: имя, организация, должность, телефоны, email, адреса, заметки, фото, произвольные поля; связи с задачами/событиями/страницами.
-- **K-03:** CardDAV Server: vCard round-trip, сохранение неизвестных свойств, ETag и инкрементальная синхронизация.
-- **K-04 (позже):** удалённые источники, merge/deduplication и расширенный CRM.
+Acceptance: UI upload and authorized WebDAV access; outsiders denied by known ID;
+share revoke stops access; large uploads do not overflow NATS.
 
-**Приёмка:** контакт, созданный внешним CardDAV-клиентом, появляется в UI без потери неизвестных vCard-полей; права адресной книги работают одинаково в API и CardDAV.
+### 2.9 Pages (P1)
 
-### 2.8 Files / WebDAV / Sharing (`P1`)
+- **P-01:** Personal/workspace hierarchical pages, sections, inherited ACL,
+  sidebar/tree and search.
+- **P-02:** Tiptap headings/lists/tables/code/task lists/images/resource links/templates.
+- **P-03:** Versions/basic restore and safe HTML/attachments. Links/previews
+  require target ACL; public sharing follows the shared mechanism, not M1.
+- **P-04 (later):** Yjs collaboration; Notion databases excluded from MVP.
 
-- **L-01:** личное и workspace-хранилище с папками, загрузкой, скачиванием, поиском, перемещением, удалением и метаданными.
-- **L-02:** local FS или S3-compatible bytes; метаданные/ETag в DB; объёмы передаются streaming, resumable/large-file policy определяется отдельно.
-- **L-03:** WebDAV Server и подключение внешних файловых клиентов с ACL, стандартными файловыми операциями и конфликтным контролем.
-- **L-04:** публичная ссылка с read/expiry/revoke/password (если утверждено); режим «загрузить в папку» — последующий этап.
-- **L-05:** вложения задач/страниц используют Files, а не отдельные независимые бинарные хранилища.
-- **L-06 (позже):** history/restore, recycle bin, quotas, thumbnails и расширенные внешние storage connectors. Схема допускает версии с первого этапа.
+Acceptance: create/move pages with correct section permissions; forbidden embeds
+reveal neither content nor preview. No Pages service/UI exists; work is #11.
 
-**Приёмка:** файл загружается через UI и доступен авторизованным пользователям по WebDAV; outsider не скачивает даже по известному ID; отзыв share link прекращает доступ; загрузка большого файла не вызывает NATS payload overflow.
+### 2.10 Connectors (P2)
 
-### 2.9 Pages (`P1`)
+- **X-01:** Approved manifests, versions, triggers/actions/scopes/secrets and optional sync.
+- **X-02:** User/workspace OAuth/API-key connections with encryption/revoke/audit;
+  personal connections are not shared implicitly.
+- **X-03:** Webhooks/polling/outbound APIs with retries/rate limits and destination policy.
+- **X-04:** HTTP and optional GitHub first; external DAV sync is additional.
 
-- **P-01:** иерархические страницы user/workspace, корневые разделы, наследование ACL, sidebar/tree, поиск.
-- **P-02:** редактор Tiptap: заголовки, списки, таблицы, code, task-list, изображения, ссылки на ресурсы платформы, шаблоны.
-- **P-03:** версии страниц и базовое восстановление, безопасная обработка HTML/вложений; внутренние ссылки на страницы и ресурсы показываются только при ACL. Публичные share links — отдельный этап после общего механизма sharing (не блокируют M1).
-- **P-04 (позже):** совместное CRDT-редактирование через Yjs, Notion-подобные базы данных исключены из MVP.
+Acceptance: registered trigger/action available only with sufficient scopes;
+connection revoke denies new calls.
 
-**Приёмка:** пользователь создаёт и перемещает страницу в дереве; разрешения пересчитываются при переносе между разделами; embedded ссылка на запрещённый файл не раскрывает превью или содержимое.
+### 2.11 Workflows (P2)
 
-### 2.10 Connectors (`P2`)
+- **W-01:** Versioned definitions/state/ownership/ACL; event/schedule/manual/approved webhook.
+- **W-02:** CEL conditions, bounded Starlark transforms, typed Fabric actions;
+  no arbitrary SQL, Docker or network access.
+- **W-03:** Durable runs/attempts, idempotency, timeout/retry/backoff, error/history,
+  manual retry/cancel and audit.
+- **W-04:** Quotas, recursion/loop limits and bounded service or delegated authority.
 
-- **X-01:** реестр доверенных connector manifests; версии, triggers, actions, scopes, secrets, optional external sync.
-- **X-02:** connections владельца `user/workspace`; OAuth/API keys, шифрование, отзыв и аудит; отсутствие автоматического sharing персональных OAuth connections.
-- **X-03:** входящие webhooks, polling, исходящие API с retries/rate limits и сетевой allowlist для небезопасных destinations.
-- **X-04:** первая реализация: универсальный HTTP connector и отдельный GitHub connector; внешняя CalDAV/CardDAV/WebDAV sync — дополнительный набор коннекторов.
+Acceptance: duplicate events produce one internal result; external delivery
+depends on provider deduplication; denied actions have no effect and worker
+restart recovers the run.
 
-**Приёмка:** connector объявляет action и trigger, они появляются в реестре; workflow вызывает action только при достаточных scopes; отзыв connection немедленно блокирует новые вызовы.
+### 2.12 Agents (P2)
 
-### 2.11 Workflows (`P2`)
+- **AG-01:** Personal/workspace agents with model/provider settings, identity,
+  approved tools/scopes/limits/audit and sensitive-action approval.
+- **AG-02:** Interactive, bounded task and event/scheduled modes.
+- **AG-03:** Use the same operations and ACL as human users.
+- **AG-04:** Compatible local/remote model endpoints; MCP requires its own auth boundary.
+- **AG-05 (later):** Isolated coding runtimes and optional browser/terminal;
+  no general Docker socket access.
 
-- **W-01:** workflow definition, version, state, ownership/ACL; triggers: Arc event, schedule, manual, approved webhook.
-- **W-02:** condition на CEL, transform/script на ограниченном Starlark, типизированные actions через Service Fabric; никакого прямого произвольного SQL/Docker/сетевого доступа из скрипта.
-- **W-03:** durable runs, attempts, idempotency, timeout, retry/backoff, error state, история шагов, manual retry/cancel, audit.
-- **W-04:** execution quotas, циклические вызовы/recursion limits, запрет бесконечных автоматизаций; actions от service account или ограниченной делегации пользователя.
+Acceptance: missing files.read denies file access; approved sensitive actions,
+actor/on_behalf_of provenance and bounded traced runs.
 
-**Приёмка:** на событие создания task workflow фиксирует один внутренний результат при duplicate delivery; внешняя отправка зависит от дедупликации провайдера; workflow с запрещённым action заканчивается `PERMISSION_DENIED` без побочных изменений; run восстанавливается после рестарта worker.
+### 2.13 Runtime Control and Infrastructure Agent (P3; safe baseline in P0)
 
-### 2.12 Agents (`P2`)
+- **R-01 (M0):** Node/template/deployment, immutable revision, operation and
+  observation schemas plus RuntimeProvider; separate desired, observed and Fabric readiness.
+- **R-02 (M0):** Independent Compose/systemd bootstrap for NATS, Core, Gate and
+  owner storage. M0 requires fake-Agent contracts, not a live host executor.
+  arc.runtime.manage is separate from workspace administration and defaults deny.
+  Current Compose covers infrastructure/migrations only; Core startup is #15.
+- **R-03 (M0):** Versioned node-bound desired/observation protocol, invocation/
+  proof, idempotency and fake negative tests; no Docker management UI requirement.
+- **R-04 (M6):** Initial trusted Linux/Docker node, approved templates and immutable
+  images; manage only owned resources. No arbitrary Compose/shell, privileged
+  workloads, host binds/devices/sockets/network or unrestricted parameters.
+- **R-05 (M6):** Create/start/stop/restart/update/delete, replica count, quotas,
+  bounded health/logs; secret references only. Destructive volume purge is separate.
+- **R-06 (M6):** Leased reconcile and single writer, monotonic revision/CAS,
+  pending/running/succeeded/failed/cancelled operations, retry and idempotency.
+  Stale requests cannot overwrite newer desired state.
+- **R-07 (M6):** No cached desired execution during Core/NATS outage. Preserve
+  workloads and reconcile safely after reconnect; Agent failure does not stop them.
+- **R-08 (M6):** Image updates create revisions; single-node recreate may have
+  downtime. No automatic rollback/zero-downtime promise.
+- **R-09 (later):** Multi-node placement, hostile-code sandbox and automatic safe rollback.
+- **R-10 (M6 extension):** Typed docker.container/lxd.instance/systemd.service
+  drivers on explicitly selected trusted nodes/VPS. No Docker emulation for LXD/
+  systemd and no exposed host API.
+- **R-11 (M6):** Outbound NATS TLS/NKey; signed snapshot ≤30s binds fresh request,
+  node, complete approved template digest/revision and spec revision. Independent
+  invocation/proof/live policy, durable high-water journal and exclusive writer;
+  corrupt state never silently resets.
+- **R-12 (M6):** English Gate/Svelte UI for nodes/capabilities/resources/operations/
+  desired/observed and bounded health/logs, including loading/empty/error/offline.
+  UI grants no rights and never calls host/Agent APIs directly.
 
-- **AG-01:** personal/workspace agents, модель и provider settings, identity, allowed tools, limits, scopes, audit, approval required для чувствительных действий.
-- **AG-02:** три режима: интерактивный, bounded task run, event/scheduled; tools берутся из approved capability registry.
-- **AG-03:** агенты читают/меняют задачи, календари, контакты, файлы, страницы **через те же операции и ACL**, что используют люди.
-- **AG-04:** поддержка OpenAI-compatible API и локальных/удалённых моделей при наличии совместимого endpoint; MCP endpoint/adapter как отдельная поверхность авторизации.
-- **AG-05 (позже):** coding agents в изолированных runtime-контейнерах (Codex, Claude Code, OpenCode, custom), browser/terminal optional. Никакой универсальной передачи Docker socket агенту.
+Current Control, private Node RPC, Linux Agent/journal and restricted systemd
+driver are partial #13 delivery; see [services](../services/README.md) and
+[Agent](../services/agent/README.md) for exact limits. Management stays disabled
+without explicit trusted policy/signing key. Admin authorization adapter, Gate/UI,
+Docker/LXD, Core reconcile/outbox publisher and complete health/logs are missing.
+Host effects use test adapters; live unit start/stop is not established.
+M6 is not integrated as a whole; M7 covers full crash/offline/replica/recovery.
 
-**Приёмка:** agent без `files.read` не может прочесть файл; агент может предложить создание события, которое требует user approval; все side-effects указывают actor и `on_behalf_of`; event-driven run завершается с трассировкой.
+## 3. Non-functional requirements
 
-### 2.13 Runtime Control и Arc Infrastructure Agent (`P3`, безопасный каркас в `P0`)
-
-- **R-01 (M0):** `RuntimeNode`, `RuntimeTemplate`, `Deployment`, immutable spec revision, `RuntimeOperation`, `InstanceObservation`, схемы БД и `RuntimeProvider` интерфейс; разделить desired state в Core, наблюдения от Agent и подтверждённую Fabric readiness.
-- **R-02 (M0):** bootstrap Compose/systemd готовит SQLite-тома и запускает NATS, Arc Core и Arc Gate независимо от управляющего API; **реального Arc Infrastructure Agent в M0 нет**, только fake Agent для контрактных guardrails. В M6 реальный Agent запускается отдельно и не управляет bootstrap. `arc.runtime.manage` отдельно от workspace-admin, default deny.
-- **R-03 (M0):** контракт NATS desired snapshot/observations с per-node service credentials, invocation/proof, version/revision, идемпотентностью; fake Agent и negative contract tests. M0 **не** включает фактическое управление Docker из UI.
-- **R-04 (M6):** единственный поддерживаемый host — один доверенный Linux/Docker node; Agent выполняет только approved templates/immutable image digests и управляет **только** подтверждённо принадлежащими deployment контейнерами. Никакого arbitrary Compose, shell, privileged containers, host mounts, Docker socket/host network в managed workloads.
-- **R-05 (M6):** create/start/stop/restart/update/delete managed deployment, replica count, quotas CPU/RAM/PIDs/disk, health/logs/observations; secrets только по ссылкам, без записи чувствительных значений в БД/сообщения/логи. Destructive volume purge отдельно подтверждается.
-- **R-06 (M6):** Core reconciler с lease и Agent single-writer сериализацией; monotonic spec revision, expected-revision конфликт, операции `pending/running/succeeded/failed/cancelled`, retry/backoff и idempotency. Устаревшая команда никогда не перезаписывает новый desired state.
-- **R-07 (M6):** при потере Core/NATS Agent не исполняет старые кэшированные изменения, работающие контейнеры сохраняются; после восстановления выполняет safe reconciliation и пересверяет Fabric readiness. Изолированное падение Agent не останавливает workloads.
-- **R-08 (M6):** update — смена immutable image digest и создание новой revision; single-node recreate допускает downtime. Автоматический rollback и zero-downtime rollout не обещаются, пока не доказана совместимость миграций.
-- **R-09 (после M6 baseline):** multi-node scheduler/placement, доверенный sandbox для враждебных плагинов и кодовых агентов, автоматический безопасный rollback — дополнительные возможности.
-
-- **R-10 (расширение M6, решение 2026-11-10):** самостоятельный Runtime для доверенных VPS; отдельные `docker.container`, `lxd.instance`, `systemd.service` и capability drivers. LXD/systemd не имитируют Docker deployment. Explicit target node без автоматического placement. Все host effects проходят ту же admin-only границу; произвольный shell, Compose и открытые Docker/LXD API исключены.
-- **R-11 (расширение M6):** Agent устанавливает исходящее NATS TLS/NKey соединение через приватную сеть. Signed snapshot ≤30 секунд привязан к свежему pull request/node, approved template revision + digest полного содержимого и immutable spec revision; transport invocation/proof и online Core policy обязательны дополнительно. Persistent high-water mark, exclusive node writer и идемпотентные host drivers обязательны; повреждённый journal не обнуляется автоматически.
-- **R-12 (M6 UI):** русский Svelte 5 интерфейс через approved Gate API: узлы, capabilities, ресурсы, desired/observed/operations и ограниченные logs/health. Loading/empty/error/offline состояния обязательны; UI не выдаёт права и не обращается напрямую к Agent или host API.
-
-**Состояние восстановления 2026-11-10:** утерянные локальные коммиты из #8–10 недоступны. Восстановлены SDK snapshot/spec/template validation, обязательный digest approved template, `RuntimeProvider`, executor/fake driver и Linux durable journal. В Core реализован owner-local `Control`: node/template registry, atomic desired/revision/operation/audit/outbox, signed pull, idempotent report/observed state и admin reads; миграция `000006_runtime_control` сохраняет старую desired таблицу без превращения произвольного JSON в host effects. Пройдены targeted SQLite/fake-Agent guardrails. Закрытый node NATS transport и SDK NodeClient интегрированы с live Identity/Access/Fabric и проверены по TLS/NKey (два узла, fake driver, replay/revoke/offline). Включение node transport явно задаётся `RuntimeNodeRPC`, с node-specific subjects и точными service-only bootstrap rules; dynamic enrollment требует рестарта Core. Это **не Integrated M6 целиком**: administrative Identity/ACL adapter, Gate API, Docker/LXD drivers и Svelte UI ещё отсутствуют. Отдельный Linux `cmd/arc-agent` / `services/agent`, online polling/backoff, graceful SIGTERM и systemd driver реализованы; journal перенесён в `services/agent/journal`. Driver управляет только operator-installed `arc-managed-<resource-id>.service`, сохраняет unit/data при delete и проверяет ownership/aliases/dependencies. Network smoke запускает отдельный Agent; реальные host start/stop и M7 ещё не проверены. Управление включается только с явной trusted policy + signing key, по умолчанию отключено. Agent polling/retry и online drift repair подключены; Core scheduler/reconciler и outbox publisher пока не реализованы. Работа — [#13](https://github.com/pavlith/arc/issues/13).
-
-**Интеграция M0:** миграции и interfaces компилируются; fake Agent отклоняет неправильный node/proof/revision и запрещённый template; bootstrap сервисы нельзя указать как managed; `tasks/notifications` работают без реального Docker agent. **Интеграция M6:** один happy path управления deployment и критические запреты spoof credentials/host mounts/privileged. Полная матрица replicas 2→3, crash/host/agent recovery, duplicate/stale revisions, отсутствие секретов, сохранение volumes и статусы `Degraded`/`Failed` выполняется в M7.
-
-## 3. Нефункциональные требования и гарантии
-
-| ID | Требование | Проверка |
+| ID | Requirement | Evidence |
 |---|---|---|
-| N-01 Security | TLS на внешнем ingress и внутренних NATS соединениях в production; scoped NATS creds; EdDSA invocation и request proof; audit ACL/credentials/delegations/runtime | E2E security tests, review threat model |
-| N-02 Isolation | Разделение workspace/user + доменный ACL на REST, DAV, RPC, tools и поиске | Negative permission matrix |
-| N-03 Reliability | Transactional outbox, idempotent consumers, retries, deadlines и graceful shutdown | Тесты потери сети, падения consumer, duplicate delivery |
-| N-04 Portability | Linux + Docker Compose self-hosted; база и storage с документированным backup/restore | Сборка с чистого хоста и восстановление backup |
-| N-05 Observability | JSON logs, trace/correlation IDs, health/readiness, метрики Gate/Core/RPC/JetStream | Трассировка сквозного запроса |
-| N-06 Compatibility | CalDAV/CardDAV/WebDAV проходят утверждённую матрицу клиентов | Клиентские интеграционные тесты |
-| N-07 UX | Svelte 5, адаптивный UI, быстрый поиск, клавиатурные операции, доступная навигация | E2E browser tests |
-| N-08 Localization | Русский интерфейс обязателен, i18n архитектура с fallback en | Проверка ключевых сценариев ru/en |
-| N-09 Contract Stability | Immutable manifest/schema digest, SemVer SDK vs API major, безопасное coexistence версий | Contract tests additive/breaking changes, route collisions и 2 majors |
-| N-10 Operability | Migration up/rollback-policy; backup до критичных миграций, startup checks | Upgrade / failure-recovery tests |
-| N-11 Runtime Boundary | Bootstrap независим от управляющего API; Agent-only Docker access, no privileged/host mount и только approved image digests | Критические privilege guardrails в M6, полная host/permission matrix в M7 |
+| N-01 Security | External/internal TLS, scoped credentials, invocation/proof and audit | Security guardrails and threat review |
+| N-02 Isolation | User/workspace/domain ACL on all entry points/search | Negative permission matrix |
+| N-03 Reliability | Outbox, idempotent consumers, retry/deadline/shutdown | Network/crash/duplicate tests |
+| N-04 Portability | Linux/Compose, documented storage and backup/restore | Clean-host install and restore |
+| N-05 Observability | Safe JSON logs, request/trace IDs, health/readiness and metrics | Correlated end-to-end request |
+| N-06 Compatibility | Approved CalDAV/CardDAV/WebDAV clients | Client integration matrix |
+| N-07 UX | Responsive Svelte 5, search, keyboard and accessible navigation | Browser/accessibility checks |
+| N-08 Language | English UI and engineering materials; other locales optional | Key flows and language scan |
+| N-09 Contracts | Immutable digests, API major isolation, additive compatibility | Contract/version/collision tests |
+| N-10 Operability | Explicit migrations, rollback policy and backups before critical changes | Upgrade/recovery tests |
+| N-11 Runtime | Independent bootstrap, Agent-only host effects and approved resources | Focused M6 privilege guardrails; full M7 matrix |
 
-**Нормативные M0 defaults:** RPC query 5 с, command 10 с, payload/response ≤256 KiB, replay window idempotency ≥24 ч, access JWT ≤10 мин, invocation JWT ≤60 сек, client assertion ≤30 сек, срок одноразовой делегации по умолчанию 24 ч; никакого положительного decision cache. Отзыв доступа: новая проверка после commit запрещает действие; уже начатые операции могут закончиться. Остальные числовые SLO (p95/RTO/RPO/нагрузка) определяются замерами, а не выдуманными гарантиями.
+Numeric defaults: RPC 5s/10s, 256 KiB, replay ≥24h, access ≤10min, invocation ≤60s,
+assertion ≤30s, default one-time delegation 24h; no positive authorization cache.
+Other SLOs, p95/RTO/RPO and capacity require measurements.
 
-### 3.1 Хранение SQL-данных (решение 2026-10-26)
+### 3.1 SQL storage
 
-Core, Task и Notify используют GORM и отдельные локальные SQLite-файлы; Gate не имеет БД. История миграций принадлежит сервису; Gormigrate запускается явно до приёма трафика, повтор безопасен, неизвестные версии запрещены. WAL, foreign keys и busy timeout обязательны на каждом соединении. Изоляция владельцев обеспечивается отдельными файловыми mounts/правами ОС и RPC/events; общий файл, ATTACH и SQL к чужому владельцу запрещены. Мутация, audit, replay и outbox либо inbox/effect атомарны; SQLite writer lock приобретается до чтения изменяемого состояния, transient busy повторяет всю транзакцию. Многонодовая репликация независимых SQLite-файлов не поддерживается; полная recovery/load matrix остаётся M7.
+Core, Task and Notify own separate local SQLite files and GORM models/migrations;
+Core modules share its file and Gate has no DB. Explicit Gormigrate before traffic,
+immutable IDs, safe replay and denial of unknown history. WAL/foreign keys/busy
+timeout on every connection. Owner mounts/OS permissions and RPC/events isolate
+data; no cross-owner SQL/ATTACH/shared file. Mutation/audit/replay/outbox or inbox/
+effect are atomic; acquire writer lock before mutable reads and retry complete
+busy transactions. Independent SQLite replicas across hosts are unsupported.
+[Database guide](../sdk/database/README.md) covers operation.
 
+## 4. Milestones
 
-## 4. План этапов и выходные артефакты
-
-| Этап | Состав | Условие завершения |
+| Milestone | Scope | Acceptance |
 |---|---|---|
-| **M0 — Foundation** | Arc Core (Identity, ACL, Fabric, Runtime data model + fake provider), NATS/JetStream, `arc-sdk`, Arc Gate, proof-сервисы `tasks` и `notifications`, SQL migrations, approved manifest | Вертикальный smoke и обязательные security/ACL/contract/idempotency guardrails проходят без Docker management API; компоненты имеют статус `Integrated` |
-| **M1 — Office Core** | Миграция Kuayle Task/Projects/Views, Pages, связи ресурсов, уведомления, RU UI | Основные happy paths для двух workspace, личного пространства, задач и страниц интегрированы без обязательной полной UI-регрессии |
-| **M2 — Personal Data** | Calendars+CalDAV, Contacts+CardDAV, free/busy, группы доступа | По одному поддерживаемому внешнему клиенту проходит smoke sync; полная клиентская матрица отложена до M7 |
-| **M3 — Files** | Files Service, object storage, WebDAV, shares, миграция attachments | Happy path streaming/sync/revoke интегрирован; полная WebDAV и failure matrix отложена до M7 |
-| **M4 — Automation** | Events catalog, Workflow Engine, CEL/Starlark, run history | Один durable workflow проходит end-to-end; обязательны guardrails idempotency и запрета недоступного action |
-| **M5 — Integration & Agents** | Connector Registry, базовые connectors, agent orchestration, tools/MCP, approvals | Один ограниченный agent/connector/workflow path использует общий контракт и ACL без обхода прав |
-| **M6 — Managed Runtime** | Single-node Docker Arc Agent, approved templates, deployment UI, replicas/reconcile, ограниченный update, logging/observations | Happy path управления deployment и критические privilege guardrails интегрированы; bootstrap остаётся вне управления |
-| **M7 — Verification & Hardening** | Feature freeze, полный unit/integration/contract/E2E/security/recovery/compatibility/performance цикл | Все обязательные возможности имеют статус `Verified`; итоговая регрессия зелёная, release blockers устранены |
+| M0 Foundation | Core, NATS/JetStream, SDK, Gate, proof Task/Notify, migrations, fake Runtime | Focused vertical smoke and mandatory guardrails; no Docker management required |
+| M1 Office Core | Product Identity, Task/Projects/Views, Pages, resource links, Notify, English UI | Two-workspace/personal/product paths integrated |
+| M2 Personal Data | Calendars/CalDAV, Contacts/CardDAV, free_busy and groups | One client per protocol smoke; full client matrix in M7 |
+| M3 Files | Storage, WebDAV/shares and attachment migration | Streaming/sync/revoke happy path |
+| M4 Automation | Event catalog, CEL/Starlark workflows and run history | Durable path, replay and denied-action guards |
+| M5 Integration & Agents | Connectors, bounded agents, tools/MCP and approvals | One approved end-to-end path using shared ACL |
+| M6 Managed Runtime | Trusted-node drivers, templates, Gate/UI, reconcile, safe updates | Executed lifecycle and critical privilege denials per implemented driver |
+| M7 Verification & Hardening | Freeze, exhaustive correctness/security/recovery/compatibility/performance | Required scope Verified; release blockers resolved |
 
-M0–M6 образуют **Build Phase**: интерфейсы инструментов и event contracts разрабатываются на M0, даже если полные Agents и Workflows выходят позже. Допускается перекрытие этапов без изменения обязательных guardrails. M7 начинается после функциональной заморозки; новые функции в нём не добавляются, кроме изменений для тестопригодности и исправления дефектов.
+M0–M6 may overlap without relaxing guardrails. Tool/event contracts are designed
+in M0 before full agents/workflows. M7 adds only testability changes and fixes.
+No whole-milestone readiness follows from a historical issue closure or one tested library.
 
-## 5. Сквозные сценарии финальной приёмки M7
+## 5. M7 end-to-end acceptance
 
-В M0–M6 автоматизируется только обязательное подмножество guardrails из §6; весь перечень ниже является release-регрессией M7.
+1. Two workspaces, groups/roles and personal resources remain isolated.
+2. Task → calendar → read-only CalDAV; Files attachment follows ACL.
+3. Personal/workspace CardDAV round-trip without property loss.
+4. UI/WebDAV/shares and post-revoke access agree.
+5. Pages hierarchy/version/resource previews enforce target permissions.
+6. Agent acts through live scoped delegation; sensitive actions require approval.
+7. CEL/Starlark workflow invokes approved actions and recovers after restart.
+8. Invalid service digest/major/schema/proof denies; duplicate events preserve internal effects.
+9. Runtime UI changes desired replicas; Agent reconciles and denies privileged/bootstrap targets.
+10. Restore databases, objects, secrets and relevant JetStream state on a clean host.
 
-1. **Два workspace:** сотрудник состоит в A и B; выходит из A; личный календарь остаётся, корпоративные ресурсы A недоступны во всех протоколах.
-2. **ACL:** группа «Бухгалтерия» может редактировать общий календарь, «Менеджеры» видят только занятость; ресурс B не читается через подмену ID.
-3. **Dynamic service:** заранее утверждённый manifest+schema digest, instance proof/readiness и snapshot revision позволяют Gate открыть только разрешённый route; rogue service, route collision, несовместимый major, no responders/timeout проверяются отрицательными тестами.
-4. **Event delivery:** Task создан, outbox публикует событие, Notification worker выполняет действие; потребитель останавливается и затем восстанавливается без потерь или дублей.
-5. **Sync:** пользователь подключает личный и shared календарь, адресную книгу и файлы к внешним DAV-клиентам с корректными permissions и конфликтным контролем.
-6. **Resource links:** встреча содержит ссылку на страницу и файл; пользователь без прав видит только разрешённые сведения, содержимое ссылки скрыто.
-7. **Agent:** агент запрашивает создание задачи/встречи по делегации; чувствительное действие проходит approval; все изменения аудируются.
-8. **Workflow:** событие → условие CEL → обработка Starlark → типизированное действие; права не обходятся, повторное событие не дублирует side effect.
-9. **Infrastructure:** UI увеличивает replica count управляемого сервиса, Agent приводит состояние к требуемому; запрет на privileged workloads и управление bootstrap.
-10. **Disaster recovery:** после восстановления БД/объектов и secrets на чистом хосте Gate, Core, NATS и прикладные сервисы сохраняют согласованные данные/permissions.
+## 6. Readiness and verification policy
 
-## 6. Уровни готовности и политика тестирования
+Implemented: builds, empty migration and principal path executed.
+Integrated: connected path, diagnostics, focused smoke and mandatory guardrails.
+Verified: full relevant M7 matrix executed. M0–M6 require Integrated for accepted
+scope; production requires Verified. See [architecture §10](ARCHITECTURE.md#10-verification-policy)
+for the single verification policy. Missing code has no current readiness claim.
 
-| Уровень | Definition of Done |
-|---|---|
-| `Implemented` | Код собирается; миграции применяются к пустой БД; основной сценарий пройден вручную или test client; отложенные проверки записаны как сценарии с ID |
-| `Integrated` | Возможность подключена к Arc; есть logs/metrics/trace; проходит короткий smoke и обязательные guardrails затронутых security/contract/data boundaries |
-| `Verified` | Автоматизированы и пройдены полные unit/integration/contract/E2E, negative permission и failure/recovery сценарии M7 |
+## 7. M0 deliveries and remaining decisions
 
-Для завершения M0–M6 достаточно `Integrated`; требование иметь полный набор unit + integration + E2E на каждом build-этапе отменено. Production-релиз требует `Verified` для обязательного scope.
-
-Во время M0–M6 на каждом изменении выполняются compile/build, formatting/static analysis затронутых модулей, новые миграции на пустой БД, schema/manifest validation и один smoke изменённого happy path. Целевое локальное время этого контура — до 1–2 минут. Точечный regression test добавляется при исправлении найденного дефекта.
-
-Нельзя откладывать guardrails для invocation JWT/request proof, основных ACL deny/revoke/cross-root случаев, миграций, idempotency/outbox/inbox, contract digest/version/route collision, Runtime privilege boundary и одного вертикального сценария `login → Gate → service → Access → DB → event/consumer`. Исчерпывающие CRUD unit tests, UI/browser, DAV-клиенты, timezone/recurrence, chaos/soak/load, полная permission matrix, accessibility/i18n и backup/restore/upgrade combinations переносятся в M7.
-
-Тестопригодность является частью `Integrated`: время/UUID/сеть/storage/providers заменяемы, бизнес-логика отделена от transport handlers, schemas/fixtures версионируются, seed data воспроизводимы, idempotency встроена сразу. Документация описывает только реально реализованное; архитектурные отклонения обновляются в обоих документах до слияния кода.
-
-## 7. M0: конкретные deliverables и оставшиеся этапные вопросы
-
-M0 выполняется без рефакторинга всего Kuayle: минимальные `tasks` и `notifications` — отдельные proof-services. Их цель — подтвердить жизнеспособность фундамента Arc короткими guardrails, а не завершить полную регрессию. Детальная миграция Kuayle начинается в M1.
-
-| Порядок | Обязательная поставка M0 | Критерий готовности |
+| Delivery / Issue | Scope | Required focused evidence |
 |---|---|---|
-| 1 | Bootstrap NATS/SQLite/Compose, миграции, доверенные service accounts/keys и **минимальный SDK transport** (`connect/request/reply`, typed error) | Повторный startup и smoke RPC без Gate; секреты не попадают в БД/логи |
-| 2 | Identity поверх транспортного SDK: login/session+refresh rotation, memberships/groups, service accounts/keys, signed invocation+request proof, delegation и token exchange (пока через test client, без Gate) | Test vectors proof/canonical payload, `aud/op/caller`, replay assertion, один revoke-path и запрет self-delegation проходят; полная negative matrix — M7 |
-| 3 | Access: утверждённые resource types, grants, ACL roots, `reserve/activate/abort/delete`, `Check/CheckMany/ListAccessibleRoots` | Guardrails owner/no-grant, revoke, cross-root spoofing, fail-closed и повтор `reserve/activate`; полная матрица и recovery — M7 |
-| 4 | **Доработка** `arc-sdk` + Fabric: проверяемый manifest/schema digest, Micro discovery, instance proof/readiness, RPC schema/error/versioning и JetStream | Rogue digest/action/schema отвергается; majors изолированы; idempotency и duplicate event проверены; replicas/reconnect/timeout matrix — M7 |
-| 5 | Arc Gate: atomic RouteSnapshot revision, auth boundary, error mapping, reserved paths, route reconciliation | Approved route работает; invalid signature и reserved/conflicting route отвергаются; Core unavailable даёт fail-closed; полная restart/error matrix — M7 |
-| 6 | Task proof-service + Outbox, Notify consumer с inbox/idempotency | Повтор события не создаёт второй **внутренний транзакционный** effect; внешний effect получает dedup key; расширенная crash matrix — M7 |
-| 7 | Runtime DB/interfaces/fake Agent + logs/metrics + минимальный contract smoke | Сборка и чистая установка проходят; fake Agent отвергает плохой proof/revision, запрещённый template и bootstrap target; реального Docker management в M0 нет |
+| 1 / #2 | NATS/SQLite bootstrap, explicit migrations, minimal transport | Repeated clean start, RPC and credential isolation |
+| 2 / #3 | Identity/session/refresh/delegation/invocation | Proof/audience/operation/replay, revoke and self-delegation denial |
+| 3 / #4 | Root/grant lifecycle and online ACL | Owner/deny/revoke/cross-root/fail-closed and reserve replay |
+| 4 / #5 | Approved Fabric contracts, readiness, typed RPC/events | Digest/schema/action/version, command replay and duplicate event |
+| 5 / #6 | Signed Gate routes and auth boundary | Approved route, signature/collision and Core outage |
+| 6 / #7 | Proof Task outbox and Notify inbox | Vertical path, internal atomicity and stable outbound key |
+| 7 / #8 | Runtime contracts/fake Agent and diagnostics | Revision/template/bootstrap denials and correlated smoke |
 
-**Открыто до следующих этапов (не блокирует M0):** M1 — подробная миграция Task/Projects, судьба legacy GitHub и модель личных задач; M2 — меж-workspace sharing, DAV scheduling и совместимость клиентов; M3 — блокировки/версии/stream revoke для WebDAV; M4–M5 — Starlark sandbox, approval classes, connector secrets; после M6 baseline — multi-node runtime, автоматический rollback и zero-downtime rollouts.
+#2–#7 preserve historical delivery acceptance, with current code mapped in their
+bodies. #8 needs current acceptance; #13 restores/extends Runtime. #9–#10 describe
+lost M1 work that must be reimplemented. #15 owns the missing Core command and
+secure startup, which prevents claiming a complete standalone platform install.
+Current paths/limits live in component guides; status remains in Issue labels.
 
-**Контрольные точки ревизии v0.8:** до реализации зафиксированы `op`-bound invocation, правило `share` vs `manage_acl`, подписанный Gate snapshot, отсутствие реального Agent в M0, атомарность inbox+DB effect и честное at-least-once для внешних действий. В Build Phase измерить базовую задержку вертикального сценария; полные p50/p95 под двумя/тремя репликами выполнить в M7 и только затем решать необходимость оптимизации. Не принимать P1–P3 и полную регрессию как блокирующие M0.
+Open decisions: M1 Kuayle import/personal Task model; M2 sharing/DAV scheduling/
+client matrix; M3 WebDAV locking/versioning/stream revoke; M4–M5 Starlark limits,
+approval classes/connector secrets; beyond M6 placement/rollback/zero-downtime.
+Preserve operation-bound invocation, explicit ACL self-grant audit, signed routes,
+atomic inbox/effect and honest external at-least-once semantics.
 
-**M0 baseline v0.8 пригоден для прототипирования, но ещё не проверен исполняемым кодом.** M0 получает статус `Integrated` после минимальных guardrails; статус `Verified` возможен только после M7. Любые изменения semantics в ходе проверок вносятся сразу в [ARCHITECTURE.md](ARCHITECTURE.md) и этот документ; новых ADR-файлов не требуется.
+## 8. M7 verification
 
-## 8. M7: обязательная финальная верификация
-
-M7 начинается после feature freeze M0–M6 и включает:
-
-1. Unit tests сложной бизнес-логики, policy evaluation, recurrence/conflict и преобразований данных.
-2. Integration tests SQLite/GORM/Gormigrate, NATS/JetStream, object storage, migrations и внешних adapters.
-3. Полные contract/security matrices Identity, ACL, Fabric, Gate, agents/workflows и Runtime.
-4. Browser E2E, RU/EN, accessibility и поддерживаемые CalDAV/CardDAV/WebDAV clients.
-5. Crash/network/restart, duplicate delivery, stale revisions, backup/restore и upgrade/failure recovery.
-6. Нагрузочные измерения p50/p95, лимитов и длительные soak-сценарии без преждевременного объявления SLO.
-7. Повторную полную регрессию после исправления release blockers.
-
-Выход M7: обязательный scope имеет статус `Verified`, открытые дефекты классифицированы, release blockers отсутствуют, документация соответствует фактическому поведению Arc.
+After feature freeze, execute complete business/policy unit tests; SQLite/NATS/
+storage/adapters integration; Identity/ACL/Fabric/Gate/agent/Runtime contracts;
+browser/accessibility and supported DAV clients; crash/network/restart/replay/
+stale revision/backup/upgrade recovery; measured p50/p95 and soak/load. Rerun release
+regression after fixes. Required scope must be Verified with classified remaining
+defects, no release blockers and documentation matching behavior.

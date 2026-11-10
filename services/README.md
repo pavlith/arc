@@ -1,17 +1,76 @@
 # Arc services
 
-- `core/`: Identity, Access, Fabric and Runtime in one trusted process and one SQLite file. Modules call direct Go interfaces; owner tables use module prefixes.
-- `task/`: approved `task` service, task/root mutations, transactional replay/outbox and online ACL checks.
-- `notify/`: approved `notify` service, atomic inbox/notification effects and durable delivery intents with stable provider keys.
-- `agent/`: independent Linux infrastructure process, online reconcile, private durable journal and approved systemd unit driver; executable `cmd/arc-agent`.
-- `gate/`: HTTPS ingress using signed routes and online Core checks, without a database.
+| Component | Current surface | Remaining product scope |
+|---|---|---|
+| `core/` | In-process Identity/Access/Fabric/Runtime composition, owner SQLite and private RPC | Standalone entry point #15; product/admin APIs #9; diagnostics #8 |
+| `gate/` | `cmd/arc-gate`, HTTPS auth, signed routes and online Core checks; no DB | Product routes, WS/DAV adapters |
+| `task/` | `cmd/arc-task`, workspace proof create/get/list, roots and atomic replay/outbox | Editing, projects/views and UI #9–#10 |
+| `notify/` | `cmd/arc-notify`, internal inbox/notification and persisted fake outbound intents | User inbox/subscriptions, realtime and real channels #9/#12 |
+| `agent/` | `cmd/arc-agent`, private node RPC, durable journal and restricted systemd driver | Admin/Gate/UI, Docker/LXD and Core reconcile #13 |
 
-Each SQL owner provides GORM models/repositories and explicit ordered Gormigrate migrations in its own `migrations/` package. SDK bootstrap opens only that service's absolute `sqlite_path`; it never runs migrations or chooses a service. Core uses the private SDK Micro bootstrap; domain services use `sdk/service.Compose` and typed `sdk/module` registrations.
+There is no UI package. Historical reports of unavailable implementations do not
+extend this table. Core is a service package, currently hosted by integration
+fixtures; `cmd/arc-core` is missing. Every new implementation starts with its Issue.
 
-`cmd/arc-task` and `cmd/arc-notify` own separate config, credentials, NATS connections and data volumes. Deploy migrations with `cmd/arc-sqlite-migrate -service OWNER -db /absolute/owner.sqlite` before traffic. CGO and a C compiler are required. Different services must never share or mount each other's database files.
+## Ownership and startup
 
-Run `bash scripts/verify-changed.sh` for changed code and `bash scripts/test-m0-06.sh` for TLS/NKey and actual domain-process guardrails. Full M7 recovery/load coverage is separate.
+Domain services use `sdk/service.Compose` and typed modules. Core uses privileged
+private bootstrap transport and direct Go interfaces. Each SQL owner supplies its
+own models and ordered migrations. [Database rules](../sdk/database/README.md) cover
+CGO, file permissions, transactions and backups.
 
-Runtime recovery is tracked in [#13](https://github.com/pavlith/arc/issues/13). `runtime.Control` is an owner-local Core component implementing `sdk/agent.RuntimeProvider`: node/template admission, typed resources, immutable receipts/revisions, operation state, per-node inventory discovery after reconnect, signed pull and idempotent observation reports. Migration `000006_runtime_control` adds its tables; legacy `runtime.Desired.Spec` remains storage only and never reaches privileged drivers. Changes commit desired/revision/operation/audit/hint outbox atomically. Report receipts, observations, node liveness, operation state and audit are also atomic. Template content digests bind Core approval to the Agent's independent local allowlist.
+Task/Notify require NATS/JetStream, a provisioned Core/Gate, registered service
+accounts and signed approved installations. Example configs:
+[Task](../deploy/task/config.example.json), [Notify](../deploy/notify/config.example.json).
+These commands are not a complete platform installer:
 
-Core enables Control only with explicit `RuntimeControlPolicy` and `RuntimeSnapshotSigningKey`. The trusted policy must require live `arc.runtime.manage` for an authenticated, nondelegated Arc admin and derive node service identity from verified context; disabled identities are additionally rejected by Core storage checks. `RuntimeNodeRPC=true` additionally binds inventory/desired.get/report for nodes approved before startup, using the actual Core Identity verifier and signed service-only Fabric bootstrap rules. Agent connections use a node-specific `sdk.Config.InboxPrefix` and broker permissions that exclude other nodes and reply inboxes. Network handlers override custom local node identity policy with verified claims; management is never exposed through this protocol. New enrollment requires a Core restart, while key/policy/node revocation is checked live. There is no administrative policy adapter, Gate endpoint, outbox publisher or Docker/LXD driver yet. The standalone `services/agent` process and systemd driver are implemented; see [Agent bootstrap and limitations](agent/README.md). Run `make runtime-smoke` with the NATS server version pinned in Compose to check isolated TLS/NKey and fake-Agent guardrails. `services/agent/journal` supplies Linux durable exclusive ownership for the standalone host Agent. Svelte UI must use approved Gate APIs. Earlier unpushed implementation reports do not describe this checkout.
+```sh
+bash scripts/migrate.sh task /absolute/task.sqlite
+bash scripts/migrate.sh notify /absolute/notify.sqlite
+go run ./cmd/arc-task -config /path/to/task.json
+go run ./cmd/arc-notify -config /path/to/notify.json
+```
+
+Each process receives its own config, absolute database path/data directory and
+NATS credentials. Service Ed25519 seed is 32 raw bytes with mode 0600; Core public
+key is a JSON base64 string. Never pass Core/operator private keys to a domain
+service or mount another owner's database. `deploy/docker/Dockerfile.domain`
+accepts `SERVICE=task|notify`.
+
+Task artifact: `task/api/v1/contract/`; Notify: `notify/api/v1/contract.go`.
+`fabric.Core.Approve` requires operator signature and exact identity/deployment.
+Notify pins Task provider/digest/subject/durable and uses operator-managed recipient
+addressing. The proof fixture provisions Task/DLQ streams; it is not an operator
+installation API.
+
+## Task proof API
+
+```http
+POST /api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/tasks
+Authorization: Bearer <access token>
+Idempotency-Key: <stable client key>
+Content-Type: application/json
+
+{"title":"Proof"}
+```
+
+GET the collection with `?limit=10` lists up to 100 own permitted tasks; GET
+`.../tasks/{task_id}` reads one. Signed route bindings and domain DB establish
+root/workspace; online Access applies on execution and replay. Internal
+`task.roots.grants` has no HTTP exposure. Task mutation/audit/result/outbox and
+Notify inbox/notification/intent are atomic. Fake delivery preserves provider key;
+external delivery has no exactly-once guarantee.
+
+Run `make m0-06-smoke`; dependencies and limits are in
+[verification](../docs/DEVELOPMENT.md#verification).
+
+## Runtime
+
+Core Control requires explicit live `RuntimeControlPolicy` and a snapshot signing
+key; it defaults off. `RuntimeNodeRPC=true` binds only node inventory/pull/report,
+not management. New node enrollment requires Core restart; disable/key/policy
+revocation is online. Owner-local interfaces do not supply remote authentication.
+The administrative policy/Gate adapter, Core reconciler/hint publisher and full
+health/log APIs are missing. See [architecture §7](../docs/ARCHITECTURE.md#7-runtime-control-and-infrastructure-agent)
+and [Agent operations](agent/README.md). Run `make runtime-smoke` for the private
+protocol and standalone Agent lifecycle; live host effects are a separate check.

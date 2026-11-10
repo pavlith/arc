@@ -1,28 +1,28 @@
-name: Задача
-description: Реализация согласованной части Arc
+name: Task
+description: Implement an agreed part of Arc
 title: "[Task]: "
 labels: ["type: task"]
 body:
   - type: textarea
     id: outcome
     attributes:
-      label: Результат
-      description: Какой проверяемый результат должен быть получен?
-      placeholder: После выполнения...
+      label: Outcome
+      description: What verifiable result should this Issue deliver?
+      placeholder: After completion...
     validations:
       required: true
   - type: textarea
     id: scope
     attributes:
       label: Scope
-      description: Что входит и явно не входит в задачу?
+      description: What is included and excluded?
     validations:
       required: true
   - type: textarea
     id: acceptance
     attributes:
-      label: Критерии приёмки
-      description: Перечислите наблюдаемые условия завершения.
+      label: Acceptance criteria
+      description: List observable completion conditions.
       placeholder: |
         - [ ] ...
         - [ ] ...
@@ -31,29 +31,29 @@ body:
   - type: dropdown
     id: milestone
     attributes:
-      label: Этап
+      label: Milestone
       options: [M0, M1, M2, M3, M4, M5, M6, M7]
     validations:
       required: true
   - type: dropdown
     id: priority
     attributes:
-      label: Приоритет
+      label: Priority
       options: [P0, P1, P2, P3]
     validations:
       required: true
   - type: textarea
     id: references
     attributes:
-      label: Связанные требования
-      description: Ссылки на разделы REQUIREMENTS/ARCHITECTURE и зависимые Issues.
+      label: References
+      description: Requirement/architecture sections and dependent Issues.
       placeholder: docs/REQUIREMENTS.md §...
     validations:
       required: true
   - type: textarea
     id: verification
     attributes:
-      label: Минимальная проверка
-      description: Какие проверки обязательны на текущем этапе?
+      label: Minimal verification
+      description: Which focused checks are required for this scope?
     validations:
       required: true

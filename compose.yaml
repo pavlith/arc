@@ -34,7 +34,7 @@ services:
     build:
       context: .
       dockerfile: deploy/docker/Dockerfile.migrate
-    profiles: ["tools", "m0-06"]
+    profiles: ["tools"]
     command: ["-service", "task", "-db", "/var/lib/arc/task/task.sqlite"]
     network_mode: none
     read_only: true
@@ -46,34 +46,13 @@ services:
     build:
       context: .
       dockerfile: deploy/docker/Dockerfile.migrate
-    profiles: ["tools", "m0-06"]
+    profiles: ["tools"]
     command: ["-service", "notify", "-db", "/var/lib/arc/notify/notify.sqlite"]
     network_mode: none
     read_only: true
     cap_drop: ["ALL"]
     volumes:
       - notify-data:/var/lib/arc/notify
-
-  rpc-smoke:
-    build:
-      context: .
-      dockerfile: deploy/docker/Dockerfile.smoke
-    profiles: ["tools"]
-    depends_on:
-      - nats
-    command:
-      - -url=tls://nats:4222
-      - -ca=/run/secrets/nats_ca_cert
-      - -service-seed=/run/secrets/nats_echo_service_seed
-      - -client-seed=/run/secrets/nats_smoke_client_seed
-      - -jetstream-seed=/run/secrets/nats_jetstream_admin_seed
-    read_only: true
-    cap_drop: ["ALL"]
-    secrets:
-      - nats_ca_cert
-      - nats_echo_service_seed
-      - nats_smoke_client_seed
-      - nats_jetstream_admin_seed
 
 volumes:
   nats-data:
@@ -90,9 +69,3 @@ secrets:
     file: ./.secrets/dev/nats-server.key
   nats_ca_cert:
     file: ./.secrets/dev/ca.crt
-  nats_echo_service_seed:
-    file: ./.secrets/dev/nats-echo-service.seed
-  nats_smoke_client_seed:
-    file: ./.secrets/dev/nats-smoke-client.seed
-  nats_jetstream_admin_seed:
-    file: ./.secrets/dev/nats-jetstream-admin.seed

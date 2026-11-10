@@ -18,7 +18,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pavlith/arc/internal/testdb"
 	"github.com/pavlith/arc/sdk"
 	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/events"
@@ -28,6 +27,7 @@ import (
 	"github.com/pavlith/arc/services/core/modules/access"
 	"github.com/pavlith/arc/services/core/modules/fabric"
 	"github.com/pavlith/arc/services/core/modules/identity"
+	"github.com/pavlith/arc/test/testdb"
 	"gorm.io/gorm"
 )
 

@@ -13,10 +13,10 @@ on:
       - "scripts/verify-changed.sh"
       - "sdk/**"
       - "cmd/**"
-      - "internal/**"
+      - "test/**"
       - "go.mod"
       - "go.sum"
-      - "deploy/docker/**"
+      - "deploy/**"
   pull_request:
     branches: [dev]
     paths:
@@ -29,10 +29,10 @@ on:
       - "scripts/verify-changed.sh"
       - "sdk/**"
       - "cmd/**"
-      - "internal/**"
+      - "test/**"
       - "go.mod"
       - "go.sum"
-      - "deploy/docker/**"
+      - "deploy/**"
 
 permissions:
   contents: read

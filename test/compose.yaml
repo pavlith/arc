@@ -1,0 +1,30 @@
+# Test overlay; paths resolve relative to the root compose.yaml.
+services:
+  rpc-smoke:
+    build:
+      context: .
+      dockerfile: test/docker/Dockerfile.smoke
+    profiles: ["tools"]
+    depends_on:
+      - nats
+    command:
+      - -url=tls://nats:4222
+      - -ca=/run/secrets/nats_ca_cert
+      - -service-seed=/run/secrets/nats_echo_service_seed
+      - -client-seed=/run/secrets/nats_smoke_client_seed
+      - -jetstream-seed=/run/secrets/nats_jetstream_admin_seed
+    read_only: true
+    cap_drop: ["ALL"]
+    secrets:
+      - nats_ca_cert
+      - nats_echo_service_seed
+      - nats_smoke_client_seed
+      - nats_jetstream_admin_seed
+
+secrets:
+  nats_echo_service_seed:
+    file: ./.secrets/dev/nats-echo-service.seed
+  nats_smoke_client_seed:
+    file: ./.secrets/dev/nats-smoke-client.seed
+  nats_jetstream_admin_seed:
+    file: ./.secrets/dev/nats-jetstream-admin.seed

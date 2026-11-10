@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
-	"github.com/pavlith/arc/internal/testdb"
 	"github.com/pavlith/arc/sdk"
 	"github.com/pavlith/arc/sdk/agent"
 	"github.com/pavlith/arc/sdk/rpc"
@@ -28,6 +27,7 @@ import (
 	"github.com/pavlith/arc/services/core/modules/access"
 	"github.com/pavlith/arc/services/core/modules/identity"
 	"github.com/pavlith/arc/services/core/modules/runtime"
+	"github.com/pavlith/arc/test/testdb"
 )
 
 func rpcNonce() string {

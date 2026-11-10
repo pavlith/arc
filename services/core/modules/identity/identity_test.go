@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pavlith/arc/internal/testdb"
 	"github.com/pavlith/arc/sdk"
 	"github.com/pavlith/arc/sdk/rpc"
 	"github.com/pavlith/arc/sdk/security"
+	"github.com/pavlith/arc/test/testdb"
 )
 
 type testPolicy struct{ owner, gate, worker, resource string }

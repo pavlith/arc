@@ -1,46 +1,46 @@
-name: Предложение
-description: Изменение требований, архитектуры или границ продукта
+name: Proposal
+description: Change requirements, architecture or product scope
 title: "[Proposal]: "
 labels: ["type: proposal"]
 body:
   - type: textarea
     id: problem
     attributes:
-      label: Проблема
-      description: Какую проблему решает изменение?
+      label: Problem
+      description: What problem does the change solve?
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
-      label: Предлагаемое решение
+      label: Proposed solution
     validations:
       required: true
   - type: textarea
     id: alternatives
     attributes:
-      label: Альтернативы
-      description: Какие варианты рассмотрены и почему не выбраны?
+      label: Alternatives
+      description: Which alternatives were considered and rejected?
     validations:
       required: true
   - type: textarea
     id: impact
     attributes:
-      label: Влияние
-      description: Совместимость, безопасность, миграции, эксплуатация и документация.
+      label: Impact
+      description: Security, migrations, operations, contracts and documentation.
     validations:
       required: true
   - type: dropdown
     id: target
     attributes:
-      label: Предполагаемый этап
-      options: [M0, M1, M2, M3, M4, M5, M6, M7, После M7]
+      label: Target milestone
+      options: [M0, M1, M2, M3, M4, M5, M6, M7, After M7]
     validations:
       required: true
   - type: dropdown
     id: priority
     attributes:
-      label: Приоритет
+      label: Priority
       options: [P0, P1, P2, P3]
     validations:
       required: true

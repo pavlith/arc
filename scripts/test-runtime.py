@@ -25,7 +25,7 @@ def main():
         scratch = pathlib.Path(directory)
         secrets = scratch / "secrets"
         subprocess.run([
-            "go", "run", "./cmd/arc-dev-bootstrap", "-out", str(secrets),
+            "go", "run", "./test/bootstrap", "-out", str(secrets),
             "-runtime-dir", str(secrets), "-store-dir", str(scratch / "jetstream"),
         ], cwd=root, check=True, stdout=subprocess.DEVNULL)
         config = secrets / "nats-server.conf"

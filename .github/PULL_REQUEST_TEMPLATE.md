@@ -1,18 +1,13 @@
-## Результат
+## Outcome
 
-<!-- Что изменено и зачем. -->
-
+<!-- What problem is solved and how behavior changes. An open repository Issue is required. -->
 Closes #
+<!-- Use Refs #N for partial/draft delivery; Closes #N only when all scope is satisfied. -->
 
-## Проверка
+## Verification
 
-<!-- Только фактически выполненные команды и ручные проверки. -->
+<!-- Actual checks and results only. Include relevant skips and deferred M7 coverage. -->
 
-- [ ] Выполнена минимальная проверка затронутого контура
-- [ ] Добавлен regression test для исправленного дефекта (если применимо)
-- [ ] Обновлены требования/архитектура (если изменён контракт)
-- [ ] Отложенные проверки M7 явно указаны и не заявлены как пройденные
+## Risks
 
-## Риски
-
-<!-- Миграции, безопасность, совместимость, известные ограничения. -->
+<!-- Material security, migration, operational or known limitations. -->

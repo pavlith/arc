@@ -8,10 +8,10 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/pavlith/arc/internal/testdb"
 	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/core"
 	"github.com/pavlith/arc/services/core/modules/runtime"
+	"github.com/pavlith/arc/test/testdb"
 )
 
 func TestCoreWiringAndFailClosedConfiguration(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"maps"
-	"time"
+	"github.com/pavlith/arc/sdk/security"
 
 	contract "github.com/pavlith/arc/sdk/agent"
 )
@@ -47,10 +47,9 @@ func New(cfg Config) (*Module, error) {
 // Apply binds the signed snapshot to the requested resource before the executor
 // checks the journal and dispatches to the driver.
 func (m *Module) Apply(ctx context.Context, resourceID, requestID string, raw []byte) (contract.Snapshot, contract.Observation, error) {
-	snapshot, err := contract.Verify(raw, m.executor.CoreKey, m.executor.NodeID, requestID, time.Now(), m.executor.Templates)
-	if err != nil || snapshot.Spec.ID != resourceID {
+	snapshot, observation, err := m.executor.ReconcileResource(ctx, raw, requestID, resourceID)
+	if errors.Is(err, contract.ErrInvalid) || errors.Is(err, security.ErrUnauthenticated) {
 		return contract.Snapshot{}, contract.Observation{}, ErrInvalidSnapshot
 	}
-	observation, err := m.executor.Reconcile(ctx, raw, requestID)
 	return snapshot, observation, err
 }

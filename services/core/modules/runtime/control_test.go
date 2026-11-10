@@ -522,3 +522,37 @@ func TestControlReportRollbackAndTerminalFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestInventoryCoalescesNodeLiveness(t *testing.T) {
+	f := newControlFixture(t)
+	ctx := context.Background()
+	readSeen := func() time.Time {
+		t.Helper()
+		var row struct{ LastSeenAt *time.Time }
+		if err := f.db.Table("runtime_nodes").Select("last_seen_at").Where("id=?", "node-one").Take(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+		if row.LastSeenAt == nil {
+			t.Fatal("node has no liveness timestamp")
+		}
+		return *row.LastSeenAt
+	}
+	if _, err := f.control.Inventory(ctx, agent.InventoryRequest{NodeID: "node-one"}); err != nil {
+		t.Fatal(err)
+	}
+	first := readSeen()
+	f.now = f.now.Add(30 * time.Second)
+	if _, err := f.control.Inventory(ctx, agent.InventoryRequest{NodeID: "node-one"}); err != nil {
+		t.Fatal(err)
+	}
+	if !readSeen().Equal(first) {
+		t.Fatal("unchanged node caused unnecessary heartbeat write")
+	}
+	f.now = f.now.Add(61 * time.Second)
+	if _, err := f.control.Inventory(ctx, agent.InventoryRequest{NodeID: "node-one"}); err != nil {
+		t.Fatal(err)
+	}
+	if !readSeen().After(first) {
+		t.Fatal("online node liveness did not refresh")
+	}
+}

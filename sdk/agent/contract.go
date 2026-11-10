@@ -47,6 +47,7 @@ type Spec struct {
 	Kind             Kind   `json:"kind"`
 	TemplateID       string `json:"template_id"`
 	TemplateRevision int64  `json:"template_revision"`
+	TemplateDigest   string `json:"template_digest"`
 	Revision         int64  `json:"revision"`
 	State            State  `json:"state"`
 	Replicas         int    `json:"replicas"`
@@ -105,7 +106,7 @@ func (t Template) Validate() error {
 }
 func (s Spec) Validate(t Template, node string) error {
 	if t.Validate() != nil || !ValidID(node) || s.NodeID != node || !ValidID(s.ID) || Bootstrap(s.ID) ||
-		s.TemplateID != t.ID || s.TemplateRevision != t.Revision || s.Kind != t.Kind || s.Revision < 1 || s.Revision > maxRevision || s.Replicas < 0 || s.Replicas > t.MaxReplicas {
+		s.TemplateID != t.ID || s.TemplateRevision != t.Revision || s.TemplateDigest != TemplateDigest(t) || s.Kind != t.Kind || s.Revision < 1 || s.Revision > maxRevision || s.Replicas < 0 || s.Replicas > t.MaxReplicas {
 		return ErrInvalid
 	}
 	switch s.State {
@@ -199,8 +200,20 @@ func Verify(raw []byte, key ed25519.PublicKey, node, request string, now time.Ti
 
 // SpecDigest excludes request freshness: repeated pulls of the same revision
 // must be identical even though their request IDs and expiration differ.
-func SpecDigest(s Spec) string {
-	raw, _ := json.Marshal(s)
+func SpecDigest(s Spec) string { return objectDigest(s) }
+
+// TemplateDigest binds a template reference to its complete approved contents.
+func TemplateDigest(t Template) string { return objectDigest(t) }
+
+func objectDigest(v any) string {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return ""
+	}
+	raw, err = security.CanonicalJSON(raw)
+	if err != nil {
+		return ""
+	}
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
 }

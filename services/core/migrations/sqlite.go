@@ -116,5 +116,6 @@ func SQLite() []*gormigrate.Migration {
 			}
 			return nil
 		}},
+		runtimeControl(),
 	}
 }

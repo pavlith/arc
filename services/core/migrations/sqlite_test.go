@@ -45,7 +45,8 @@ func TestCoreSQLiteMigrationsAndOwnerIsolation(t *testing.T) {
 		"identity_command_results", "access_resource_types", "access_policy_state",
 		"access_operations", "access_policy_audit", "fabric_contracts",
 		"fabric_instances", "fabric_route_state", "fabric_outbox",
-		"runtime_desired_deployments", "schema_migrations",
+		"runtime_desired_deployments", "runtime_nodes", "runtime_templates", "runtime_resources",
+		"runtime_operations", "runtime_revisions", "runtime_reports", "runtime_observations", "runtime_audit", "runtime_outbox", "schema_migrations",
 	} {
 		if !db.Migrator().HasTable(name) {
 			t.Errorf("missing Core table %q", name)
@@ -58,7 +59,7 @@ func TestCoreSQLiteMigrationsAndOwnerIsolation(t *testing.T) {
 		t.Fatalf("migrations not repeatable: %v", err)
 	}
 	var count int64
-	if err := db.Table("schema_migrations").Count(&count).Error; err != nil || count != 5 {
+	if err := db.Table("schema_migrations").Count(&count).Error; err != nil || count != 6 {
 		t.Fatalf("migration history has %d entries: %v", count, err)
 	}
 }

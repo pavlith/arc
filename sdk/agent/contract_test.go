@@ -42,7 +42,7 @@ func fixture(t *testing.T) (agent.Snapshot, agent.Template, ed25519.PublicKey, e
 		t.Fatal(err)
 	}
 	template := agent.Template{ID: "task", Revision: 1, Kind: agent.Docker, Target: "registry/arc/task@sha256:" + strings.Repeat("a", 64), MaxReplicas: 3}
-	s := agent.Snapshot{Version: 1, RequestID: "fresh-request-123456", OperationID: "op-one", IssuedAt: 1000, ExpiresAt: 1030, Spec: agent.Spec{ID: "task-prod", NodeID: "node-one", Kind: agent.Docker, TemplateID: "task", TemplateRevision: 1, Revision: 1, State: agent.Running, Replicas: 1}}
+	s := agent.Snapshot{Version: 1, RequestID: "fresh-request-123456", OperationID: "op-one", IssuedAt: 1000, ExpiresAt: 1030, Spec: agent.Spec{ID: "task-prod", NodeID: "node-one", Kind: agent.Docker, TemplateID: "task", TemplateRevision: 1, TemplateDigest: agent.TemplateDigest(template), Revision: 1, State: agent.Running, Replicas: 1}}
 	return s, template, pub, key
 }
 func encoded(t *testing.T, s agent.Snapshot, key ed25519.PrivateKey) []byte {
@@ -74,6 +74,7 @@ func TestSnapshotBoundary(t *testing.T) {
 		"bootstrap":         func(s *agent.Snapshot) { s.Spec.ID = "arc-core" },
 		"template":          func(s *agent.Snapshot) { s.Spec.TemplateID = "unknown" },
 		"template revision": func(s *agent.Snapshot) { s.Spec.TemplateRevision = 2 },
+		"template digest":   func(s *agent.Snapshot) { s.Spec.TemplateDigest = strings.Repeat("0", 64) },
 		"replicas":          func(s *agent.Snapshot) { s.Spec.Replicas = 4 },
 		"kind":              func(s *agent.Snapshot) { s.Spec.Kind = agent.Systemd },
 		"revision":          func(s *agent.Snapshot) { s.Spec.Revision = 0 },
@@ -173,5 +174,13 @@ func TestTemplateAllowlist(t *testing.T) {
 		if bad.Validate() == nil {
 			t.Fatalf("unsafe unit accepted: %s", unit)
 		}
+	}
+}
+
+func TestSnapshotBindsTemplateContents(t *testing.T) {
+	s, template, pub, key := fixture(t)
+	template.Target = "registry/arc/task@sha256:" + strings.Repeat("b", 64)
+	if _, err := agent.Verify(encoded(t, s, key), pub, "node-one", s.RequestID, time.Unix(1001, 0), map[string]agent.Template{"task": template}); err == nil {
+		t.Fatal("same template ID/revision with different image accepted")
 	}
 }

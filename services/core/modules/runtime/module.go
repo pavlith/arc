@@ -21,6 +21,8 @@ type Authorize func(context.Context, string, string) error
 type Module struct {
 	GormDB    *gorm.DB
 	Authorize Authorize
+	// Control is optional until a trusted live policy is explicitly installed.
+	Control *Control
 }
 
 // Desired is an immutable snapshot of the desired deployment spec.

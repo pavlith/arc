@@ -30,18 +30,20 @@ type Module interface {
 }
 
 type Config struct {
-	GormDB                  *gorm.DB
-	NATS                    sdk.Config
-	Version                 string
-	IdentitySigningKid      string
-	IdentitySigningKey      ed25519.PrivateKey
-	InstallationApprovalKey ed25519.PublicKey
-	ContractBootstrap       []access.Approved
-	SnapshotKid             string
-	SnapshotSigningKey      ed25519.PrivateKey
-	RouteTrustKey           ed25519.PrivateKey
-	RuntimeAuthorize        runtime.Authorize
-	Now                     func() time.Time
+	GormDB                    *gorm.DB
+	NATS                      sdk.Config
+	Version                   string
+	IdentitySigningKid        string
+	IdentitySigningKey        ed25519.PrivateKey
+	InstallationApprovalKey   ed25519.PublicKey
+	ContractBootstrap         []access.Approved
+	SnapshotKid               string
+	SnapshotSigningKey        ed25519.PrivateKey
+	RouteTrustKey             ed25519.PrivateKey
+	RuntimeAuthorize          runtime.Authorize
+	RuntimeControlPolicy      runtime.ControlPolicy
+	RuntimeSnapshotSigningKey ed25519.PrivateKey
+	Now                       func() time.Time
 }
 
 type Service struct {
@@ -81,6 +83,14 @@ func New(cfg Config) (*Service, error) {
 	ac.ContractSource = fb
 	id.Policy = ac
 	rt := &runtime.Module{GormDB: cfg.GormDB, Authorize: cfg.RuntimeAuthorize}
+	if cfg.RuntimeControlPolicy != nil || len(cfg.RuntimeSnapshotSigningKey) != 0 {
+		control, err := runtime.NewControl(runtime.ControlConfig{DB: cfg.GormDB, Policy: cfg.RuntimeControlPolicy, SigningKey: cfg.RuntimeSnapshotSigningKey, Now: cfg.Now})
+		if err != nil {
+			return nil, ErrInvalid
+		}
+		rt.Control = control
+	}
+
 	return &Service{
 		Identity: id, Access: ac, Fabric: fb, Runtime: rt,
 		connection: cfg.NATS, version: cfg.Version,

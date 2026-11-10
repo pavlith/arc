@@ -37,7 +37,6 @@ const (
 	Cancelled  OperationStatus = "cancelled"
 )
 
-
 // ReportJournal holds a receipt before sending it to Core. A crash must not
 // turn an uncertain acknowledgement into a new operation/event identifier.
 type ReportJournal interface {

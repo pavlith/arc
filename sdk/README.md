@@ -5,7 +5,7 @@ library **within** this module; it has no `go.mod` or `go.sum`.
 
 | Package | Role |
 | --- | --- |
-| `sdk/agent` | Typed infrastructure specs/templates and content digests, signed short-lived snapshots, RuntimeProvider pull/report, serialized executor and driver/journal interfaces; no host API or NATS endpoints yet |
+| `sdk/agent` | Typed infrastructure specs/templates and content digests, signed short-lived snapshots, RuntimeProvider inventory/pull/report, per-node NATS NodeClient with operation-bound invocation/proof, serialized executor and driver/journal interfaces; no host driver |
 | `sdk/bootstrap` | Common infrastructure config, independent process resources |
 | `sdk/transport` | Native NATS queue endpoints and Micro-compatible PING/INFO/STATS |
 | `sdk` | Approved service registration, readiness, lease checks, transport ownership |
@@ -36,6 +36,8 @@ entire `nats.go/micro` package. Service monitoring retains the public
 Actual NATS network, JetStream and NKey/TLS remain in `nats.go`.
 Do not directly register domain endpoints with `sdk/transport`: its job is
 routing and introspection, **not** proof, policy or schema checks.
+
+`sdk/agent.NewNodeClient` fixes one node ID on an existing RPC connection and takes an operation-bound `InvocationCredentials` factory. Use `sdk.Connect` with that node's TLS/NKey paths and `InboxPrefix: "_INBOX.runtime.<node-id>"`; the broker should allow reply subscriptions only under that prefix. The factory must obtain a service invocation from Identity and respect the supplied context; assertions alone are rejected by Runtime. Concrete `ctl.runtime.v1.node.<node-id>.*` subjects are limited to inventory, desired.get and report. The executor must independently verify signed pull responses against its Core key and local template allowlist. `make runtime-smoke` exercises the private Core protocol with real TLS/NKey, Identity, Access and a fake host driver.
 
 Go syntax:
 

@@ -17,6 +17,15 @@ func TestValidateSubject(t *testing.T) {
 		subject string
 		valid   bool
 	}{
+		{name: "runtime inventory", subject: "ctl.runtime.v1.node.node-one.inventory", valid: true},
+		{name: "runtime pull", subject: "ctl.runtime.v1.node.node-one.desired.get", valid: true},
+		{name: "runtime report", subject: "ctl.runtime.v1.node.node-one.report", valid: true},
+		{name: "runtime wildcard", subject: "ctl.runtime.v1.node.*.report", valid: false},
+		{name: "runtime unknown", subject: "ctl.runtime.v1.node.node-one.exec", valid: false},
+		{name: "runtime wrong major", subject: "ctl.runtime.v2.node.node-one.report", valid: false},
+		{name: "runtime empty node", subject: "ctl.runtime.v1.node..report", valid: false},
+		{name: "runtime non-node ctl", subject: "ctl.runtime.v1.shell", valid: false},
+		{name: "runtime numeric node", subject: "ctl.runtime.v1.node.1node.report", valid: false},
 		{name: "valid", subject: "rpc.bootstrap.v1.echo", valid: true},
 		{name: "wildcard", subject: "rpc.bootstrap.v1.*", valid: false},
 		{name: "missing major", subject: "rpc.bootstrap.echo", valid: false},

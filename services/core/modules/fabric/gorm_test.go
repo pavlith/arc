@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/pavlith/arc/sdk"
+	"github.com/pavlith/arc/sdk/agent"
 	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/database"
 	"github.com/pavlith/arc/sdk/security"
@@ -170,5 +171,40 @@ func TestSQLiteFabricSignedCatalogAndRouteSnapshots(t *testing.T) {
 	f.Identity = &identity.Core{}
 	if _, err := f.Routes(ctx); !errors.Is(err, security.ErrUnavailable) {
 		t.Fatalf("different database owner accepted: %v", err)
+	}
+}
+
+func TestSQLiteFabricRuntimeBootstrapStaysClosed(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "core.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close(db)
+	if err := database.Migrate(ctx, db, coremigrations.SQLite()); err != nil {
+		t.Fatal(err)
+	}
+	operator := key(121)
+	f := &Core{GormDB: db, Identity: &identity.Core{GormDB: db}, ApprovalKey: operator.Public().(ed25519.PublicKey)}
+	valid := access.Rule{Caller: "10000000-0000-4000-8000-000000000010", Audience: agent.NodeAudience, Operation: agent.OperationInventory, ActorKinds: []string{"service"}}
+	f.Bootstrap = []access.Approved{approved(t, operator, access.Approval{Rules: []access.Rule{valid}})}
+	if _, err := f.LoadAccess(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for name, mutate := range map[string]func(*access.Rule){
+		"management":  func(r *access.Rule) { r.Operation = "runtime.v1.resources.apply" },
+		"user actor":  func(r *access.Rule) { r.ActorKinds = []string{"user"} },
+		"mixed actor": func(r *access.Rule) { r.ActorKinds = []string{"service", "agent"} },
+		"actions":     func(r *access.Rule) { r.Actions = []string{"arc.runtime.manage"} },
+		"downstream":  func(r *access.Rule) { r.DownstreamFrom = []string{"task/v1:task.read"} },
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := valid
+			mutate(&r)
+			f.Bootstrap = []access.Approved{approved(t, operator, access.Approval{Rules: []access.Rule{r}})}
+			if _, err := f.LoadAccess(ctx); !errors.Is(err, security.ErrDenied) {
+				t.Fatalf("Runtime bootstrap broadened: %v", err)
+			}
+		})
 	}
 }

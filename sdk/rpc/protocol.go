@@ -84,6 +84,19 @@ func ValidateSubject(subject string) error {
 		return errors.New("rpc: invalid subject")
 	}
 	tokens := strings.Split(subject, ".")
+	// Runtime's closed node protocol is deliberately restricted to concrete,
+	// per-node endpoints; this is not a general ctl.* RPC escape hatch.
+	if len(tokens) >= 4 && tokens[0] == "ctl" && tokens[1] == "runtime" {
+		if len(tokens) < 6 || tokens[2] != "v1" || tokens[3] != "node" || !validToken(tokens[4]) || len(tokens[4]) > 63 || tokens[4][0] < 'a' || tokens[4][0] > 'z' {
+			return errors.New("rpc: invalid Runtime node subject")
+		}
+		suffix := strings.Join(tokens[5:], ".")
+		if suffix != "inventory" && suffix != "desired.get" && suffix != "report" {
+			return errors.New("rpc: unknown Runtime node operation")
+		}
+		return nil
+	}
+
 	if len(tokens) < 4 || tokens[0] != "rpc" || !validToken(tokens[1]) {
 		return errors.New("rpc: subject must match rpc.<service>.v<major>.<operation>")
 	}

@@ -29,3 +29,7 @@ m0-06-build:
 
 m0-06-up:
 	docker compose -f compose.yaml -f compose.m0-06.yaml --profile m0-06 up --build task notify
+
+.PHONY: runtime-smoke
+runtime-smoke:
+	python3 scripts/test-runtime.py

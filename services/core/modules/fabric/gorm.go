@@ -9,6 +9,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/pavlith/arc/sdk/agent"
 	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/database"
 	"github.com/pavlith/arc/sdk/security"
@@ -77,7 +78,7 @@ func (c *Core) loadAccessGORM(ctx context.Context) (*access.Contracts, error) {
 		}
 		for _, rule := range policy.Rules {
 			if rule.Audience != "identity/v1" &&
-				!(rule.Audience == "fabric/v1" && rule.Operation == "fabric.v1.routes") {
+				!(rule.Audience == "fabric/v1" && rule.Operation == "fabric.v1.routes") && !runtimeNodeRule(rule) {
 				return nil, security.ErrDenied
 			}
 		}
@@ -176,4 +177,17 @@ func (c *Core) routesGORM(ctx context.Context) (SignedSnapshot, error) {
 		}
 	}
 	return SignSnapshot(snap, kid, c.SnapshotKey)
+}
+
+// Only the closed node protocol may join the pinned control-plane bootstrap.
+// Runtime management, user/delegated actors and downstream tools remain denied.
+func runtimeNodeRule(rule access.Rule) bool {
+	if rule.Audience != agent.NodeAudience || len(rule.ActorKinds) != 1 || rule.ActorKinds[0] != "service" || len(rule.Actions) != 0 || len(rule.DownstreamFrom) != 0 || len(rule.DownstreamActions) != 0 {
+		return false
+	}
+	switch rule.Operation {
+	case agent.OperationInventory, agent.OperationPull, agent.OperationReport:
+		return true
+	}
+	return false
 }

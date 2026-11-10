@@ -43,6 +43,7 @@ type Config struct {
 	RuntimeAuthorize          runtime.Authorize
 	RuntimeControlPolicy      runtime.ControlPolicy
 	RuntimeSnapshotSigningKey ed25519.PrivateKey
+	RuntimeNodeRPC            bool
 	Now                       func() time.Time
 }
 
@@ -89,6 +90,14 @@ func New(cfg Config) (*Service, error) {
 			return nil, ErrInvalid
 		}
 		rt.Control = control
+	}
+
+	if cfg.RuntimeNodeRPC {
+		if rt.Control == nil {
+			return nil, ErrInvalid
+		}
+		verifier := id.Verifier()
+		rt.NodeVerifier = &verifier
 	}
 
 	return &Service{

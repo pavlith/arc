@@ -22,7 +22,8 @@ type Module struct {
 	GormDB    *gorm.DB
 	Authorize Authorize
 	// Control is optional until a trusted live policy is explicitly installed.
-	Control *Control
+	Control      *Control
+	NodeVerifier *security.Verifier
 }
 
 // Desired is an immutable snapshot of the desired deployment spec.
@@ -37,11 +38,17 @@ type Desired struct {
 
 func (m *Module) ID() string { return "runtime" }
 
-// Runtime exposes no privileged NATS/Docker endpoint in M0. It is an in-process
-// Core module; any future RPC must use a separately approved protected contract.
-func (m *Module) Bind(_ *sdk.Service) (func(), error) {
+// M0 binds no Runtime endpoints. The explicit M6 node verifier enables only
+// the closed per-node protocol, never administrative or host-driver APIs.
+func (m *Module) Bind(service *sdk.Service) (func(), error) {
 	if m == nil || m.GormDB == nil || m.Authorize == nil {
 		return nil, security.ErrUnavailable
+	}
+	if m.NodeVerifier != nil {
+		if m.Control == nil {
+			return nil, security.ErrUnavailable
+		}
+		return nil, m.Control.BindNodeRPC(service, *m.NodeVerifier)
 	}
 	return nil, nil
 }

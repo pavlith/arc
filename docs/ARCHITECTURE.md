@@ -22,7 +22,7 @@ flowchart TB
     Agent --> Host[Approved host drivers]
 ```
 
-The diagram includes planned components. Current executable surfaces and gaps are documented in [services](../services/README.md); Issues hold actionable work. [Standalone Core](../services/core/README.md) uses explicit migrations and signed local bootstrap policy; no UI package exists. Historical reports of lost local implementations do not establish current behavior.
+The diagram includes planned components. Current executable surfaces and gaps are documented in [services](../services/README.md). [Standalone Core](../services/core/README.md) uses explicit migrations and signed local bootstrap policy. Gate can serve the first Svelte workspace and Task view. Historical reports of lost local implementations do not establish current behavior.
 
 ## 2. Process and data ownership
 
@@ -271,7 +271,9 @@ Protected handler pipeline: verify invocation/proof → validate schema → reso
 
 Gate is a standalone HTTP process without a database. HTTPS is direct or behind explicitly trusted proxy CIDRs; forwarded headers are accepted only from trusted peers, resolving client IP from the right of the proxy chain. Configure header/read/write/idle deadlines, graceful shutdown, 200 KiB HTTP bodies within the 256 KiB RPC envelope, bounded per-IP rates and explicit HTTPS CORS origins. `/healthz` is liveness; `/readyz` reflects accepted routes and reconciliation.
 
-Current auth routes: POST `/api/v1/arc/auth/login`, `/refresh`, `/logout`; GET `/api/v1/arc/auth/session`. Login requires allowed Origin and returns session/CSRF/access data; session and refresh credentials are Secure/HttpOnly/SameSite=Lax `__Host-` cookies. CSRF cookie/header must match and Identity checks its hash for mutations. Refresh credentials are not returned as plaintext JSON. Bearer uses Core `Verifier.Access` with `aud=gate` and live session; mixing Bearer and session cookie is rejected. Separate CLI token endpoints reported in lost work are absent.
+Browser auth uses POST `/api/v1/arc/auth/login`, `/refresh`, `/logout` and GET `/api/v1/arc/auth/session`. Login requires allowed Origin and returns session metadata and CSRF data. Session and refresh credentials are Secure/HttpOnly/SameSite=Lax `__Host-` cookies. The CSRF cookie/header must match and Identity checks its hash for mutations. Browser sessions issue no Bearer token. CLI clients use POST `/api/v1/arc/cli/token`, `/refresh` and `/logout` without Origin or cookies. CLI token families rotate independently of browser families. Bearer uses Core `Verifier.Access` with `aud=gate` and live session. Mixing Bearer and session cookie is rejected.
+
+The reserved `/api/v1/arc/identity/` routes map to exact operator-approved `identity.v1.product.*` RPCs. Core verifies the Gate assertion and request proof, then resolves the live browser session and checks current workspace membership or administrator authority. Workspace commands check permission inside their owner transaction before replay. Domain Task routes still require a verified Fabric snapshot and operation-bound invocation.
 
 Each protected request validates session online, exchanges a target invocation, and signs a fresh Gate proof. The recipient repeats invocation, domain binding and ACL checks. Preserve request ID, traceparent, deadline and original idempotency key. Missing responder → 503, deadline → 504, authority outage → fail closed. Snapshots do not cache authorization. Public auth exposes no recovery, installation or Runtime administration.
 
@@ -401,7 +403,7 @@ deploy/                    # example config, Dockerfiles, explicit migrator
 docs/                      # requirements, architecture and development
 ```
 
-`cmd/arc-core` uses the existing Core composition with strict owner-local bootstrap; it does not expose product provisioning or Runtime management. There is no current `ui/` package; planned UI uses Svelte 5 and shadcn-svelte. Do not create separate Go modules or restore legacy paths for compatibility.
+`cmd/arc-core` uses the existing Core composition with strict owner-local bootstrap. Product Identity is available through approved Gate routes. The first Svelte 5 UI lives in `ui/`. Do not create separate Go modules or restore legacy paths for compatibility.
 
 ## 12. Decision register
 

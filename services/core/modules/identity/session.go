@@ -102,6 +102,10 @@ func (c *Core) rateLimit(ctx context.Context, bucket string, limit int) error {
 
 // BootstrapUser is a local Core administration operation, never bound to an RPC.
 func (c *Core) BootstrapUser(ctx context.Context, email, password string) (string, string, error) {
+	return c.provisionUser(ctx, email, password, "core")
+}
+
+func (c *Core) provisionUser(ctx context.Context, email, password, actor string) (string, string, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if !strings.Contains(email, "@") || len(email) > 254 {
 		return "", "", ErrDenied
@@ -125,12 +129,19 @@ func (c *Core) BootstrapUser(ctx context.Context, email, password string) (strin
 		if e := t.WithContext(ctx).Exec(`INSERT INTO identity_password_credentials(user_id,password_hash,recovery_hash) VALUES( ?,?,?)`, id, encoded, hash(recovery)).Error; e != nil {
 			return e
 		}
-		return audit(ctx, t, "core", "users.create", id, "ok")
+		return audit(ctx, t, actor, "users.create", id, "ok")
 	})
 	return id, recovery, e
 }
 func (c *Core) Login(ctx context.Context, email, password string) (LoginResult, error) {
+	return c.login(ctx, email, password, "legacy")
+}
+
+func (c *Core) login(ctx context.Context, email, password, channel string) (LoginResult, error) {
 	var out LoginResult
+	if channel != "legacy" && channel != "browser" && channel != "cli" {
+		return out, ErrDenied
+	}
 	email = strings.ToLower(strings.TrimSpace(email))
 	if e := c.rate(ctx, "login:global"); e != nil {
 		return out, e
@@ -175,9 +186,11 @@ func (c *Core) Login(ctx context.Context, email, password string) (LoginResult, 
 	}
 	out.Session.UserID = uid
 	out.Session.ExpiresAt = c.now().Add(24 * time.Hour)
-	out.AccessToken, e = c.access(out.Session)
-	if e != nil {
-		return LoginResult{}, e
+	if channel != "browser" {
+		out.AccessToken, e = c.access(out.Session)
+		if e != nil {
+			return LoginResult{}, e
+		}
 	}
 	e = c.tx(ctx, func(t *gorm.DB) error {
 		// Lock password row so concurrent recovery cannot leave a new live session.
@@ -188,7 +201,7 @@ func (c *Core) Login(ctx context.Context, email, password string) (LoginResult, 
 		if liveHash != encoded {
 			return ErrUnauthenticated
 		}
-		if e := t.WithContext(ctx).Exec(`INSERT INTO identity_sessions(id,user_id,secret_hash,csrf_hash,expires_at) VALUES( ?,?,?,?,?)`, out.Session.ID, uid, hash(out.Secret), hash(out.CSRF), out.Session.ExpiresAt).Error; e != nil {
+		if e := t.WithContext(ctx).Exec(`INSERT INTO identity_sessions(id,user_id,secret_hash,csrf_hash,expires_at,auth_channel) VALUES(?,?,?,?,?,?)`, out.Session.ID, uid, hash(out.Secret), hash(out.CSRF), out.Session.ExpiresAt, channel).Error; e != nil {
 			return e
 		}
 		if e := t.WithContext(ctx).Exec(`INSERT INTO identity_refresh_families(id,session_id,expires_at) VALUES( ?,?,?)`, family, out.Session.ID, out.Session.ExpiresAt).Error; e != nil {
@@ -201,6 +214,9 @@ func (c *Core) Login(ctx context.Context, email, password string) (LoginResult, 
 	})
 	if e != nil {
 		return LoginResult{}, e
+	}
+	if channel == "cli" {
+		out.Secret, out.CSRF = "", ""
 	}
 	return out, nil
 }
@@ -220,7 +236,7 @@ func (c *Core) Introspect(ctx context.Context, sessionSecret string) (Session, e
 	if sessionSecret == "" {
 		return s, ErrUnauthenticated
 	}
-	e := c.db(ctx).WithContext(ctx).Raw(`SELECT s.id,s.user_id,s.expires_at FROM identity_sessions s JOIN identity_users u ON u.id=s.user_id WHERE s.secret_hash=? AND s.revoked_at IS NULL AND s.expires_at>? AND u.status='active'`, hash(sessionSecret), c.now()).Row().Scan(&s.ID, &s.UserID, &s.ExpiresAt)
+	e := c.db(ctx).WithContext(ctx).Raw(`SELECT s.id,s.user_id,s.expires_at FROM identity_sessions s JOIN identity_users u ON u.id=s.user_id WHERE s.secret_hash=? AND s.auth_channel IN ('legacy','browser') AND s.revoked_at IS NULL AND s.expires_at>? AND u.status='active'`, hash(sessionSecret), c.now()).Row().Scan(&s.ID, &s.UserID, &s.ExpiresAt)
 	return s, keyError(e)
 }
 func (c *Core) user(ctx context.Context, auth UserSession) (Session, error) {
@@ -269,6 +285,10 @@ func (c *Core) revokeSession(ctx context.Context, user, id string) error {
 	})
 }
 func (c *Core) Refresh(ctx context.Context, token string) (LoginResult, error) {
+	return c.refresh(ctx, token, "legacy", "")
+}
+
+func (c *Core) refresh(ctx context.Context, token, channel, sessionID string) (LoginResult, error) {
 	var out LoginResult
 	if e := c.rate(ctx, "refresh:global"); e != nil {
 		return out, e
@@ -279,12 +299,15 @@ func (c *Core) Refresh(ctx context.Context, token string) (LoginResult, error) {
 	}
 	reuse := false
 	e = c.tx(ctx, func(t *gorm.DB) error {
-		var family string
+		var family, storedChannel string
 		var consumed, revoked, sessionRevoked sql.NullTime
 		var expiry time.Time
-		e := t.WithContext(ctx).Raw(`SELECT f.id,f.session_id,s.user_id,s.expires_at,r.consumed_at,f.revoked_at,s.revoked_at,f.expires_at FROM identity_refresh_tokens r JOIN identity_refresh_families f ON f.id=r.family_id JOIN identity_sessions s ON s.id=f.session_id JOIN identity_users u ON u.id=s.user_id WHERE r.token_hash=? AND u.status='active'`, hash(token)).Row().Scan(&family, &out.Session.ID, &out.Session.UserID, &out.Session.ExpiresAt, &consumed, &revoked, &sessionRevoked, &expiry)
+		e := t.WithContext(ctx).Raw(`SELECT f.id,f.session_id,s.user_id,s.expires_at,r.consumed_at,f.revoked_at,s.revoked_at,f.expires_at,s.auth_channel FROM identity_refresh_tokens r JOIN identity_refresh_families f ON f.id=r.family_id JOIN identity_sessions s ON s.id=f.session_id JOIN identity_users u ON u.id=s.user_id WHERE r.token_hash=? AND u.status='active'`, hash(token)).Row().Scan(&family, &out.Session.ID, &out.Session.UserID, &out.Session.ExpiresAt, &consumed, &revoked, &sessionRevoked, &expiry, &storedChannel)
 		if e != nil {
 			return keyError(e)
+		}
+		if (storedChannel != channel && !(channel == "browser" && storedChannel == "legacy")) || (sessionID != "" && sessionID != out.Session.ID) {
+			return ErrUnauthenticated
 		}
 		if consumed.Valid {
 			reuse = true
@@ -306,9 +329,11 @@ func (c *Core) Refresh(ctx context.Context, token string) (LoginResult, error) {
 		if e = t.WithContext(ctx).Exec(`INSERT INTO identity_refresh_tokens(token_hash,family_id) VALUES( ?,?)`, hash(next), family).Error; e != nil {
 			return e
 		}
-		out.AccessToken, e = c.access(out.Session)
-		if e != nil {
-			return e
+		if channel != "browser" {
+			out.AccessToken, e = c.access(out.Session)
+			if e != nil {
+				return e
+			}
 		}
 		return audit(ctx, t, "user:"+out.Session.UserID, "sessions.refresh", family, "ok")
 	})

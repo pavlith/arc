@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"mime"
 	"net"
 	"net/http"
@@ -31,6 +32,7 @@ const refreshCookie = "__Host-arc_refresh"
 
 type Config struct {
 	Backend           Backend
+	UI                fs.FS
 	PublicOrigin      string
 	AllowedOrigins    []string
 	TrustedProxies    []netip.Prefix
@@ -195,6 +197,9 @@ func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, id, fault(rpc.CodeRateLimited))
 		return
 	}
+	if g.serveUI(w, r) {
+		return
+	}
 	trace := r.Header.Get("Traceparent")
 	if trace != "" && (!tracePattern.MatchString(trace) || strings.HasPrefix(trace, "00-00000000000000000000000000000000-") || trace[36:52] == "0000000000000000") {
 		writeError(w, id, fault(rpc.CodeValidation))
@@ -220,6 +225,14 @@ func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx = rpc.WithOutgoing(ctx, rpc.Outgoing{RequestID: id, Traceparent: trace})
 	r = r.WithContext(ctx)
 	r.Body = http.MaxBytesReader(w, r.Body, g.cfg.BodyLimit)
+	if strings.HasPrefix(r.URL.Path, "/api/v1/arc/cli/") {
+		g.cli(w, r, id, client)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/api/v1/arc/identity/") {
+		g.productIdentity(w, r, id)
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/api/v1/arc/") {
 		g.auth(w, r, id, client)
 		return

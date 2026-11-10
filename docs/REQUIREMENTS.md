@@ -157,10 +157,11 @@ full replicas/reconnect/recovery remain M7.
 
 Current Gate is a separate process without a DB. It verifies a root-signed,
 request-bound routes/JWKS bundle and preserves request/trace/deadline/idempotency.
-Cookie/CSRF and Bearer authentication exist. Browser login/refresh currently
-return an access token in JSON; separate cookie-only browser and CLI token flows
-are still #9. DAV/WS and UI are planned. M0 covers approved route, bad signature,
-reserved/colliding route and Core outage; full recovery is M7.
+Browser login and refresh use cookie/CSRF sessions. Explicit CLI endpoints
+issue and rotate Bearer credentials for their own session channel. Gate can
+serve the first workspace and Task UI on the same HTTPS origin. DAV/WS are
+planned. M0 covers approved route, bad signature, reserved/colliding route and
+Core outage. Full recovery is M7.
 
 ### 2.5 Task / Projects / Notify (P1; proof services in P0)
 

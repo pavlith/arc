@@ -117,5 +117,8 @@ func SQLite() []*gormigrate.Migration {
 			return nil
 		}},
 		runtimeControl(),
+		{ID: "000007_identity_channels", Migrate: func(tx *gorm.DB) error {
+			return tx.Exec(`ALTER TABLE identity_sessions ADD COLUMN auth_channel TEXT NOT NULL DEFAULT 'legacy' CHECK(auth_channel IN ('legacy','browser','cli'))`).Error
+		}},
 	}
 }

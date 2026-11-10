@@ -26,6 +26,11 @@ type GetRequest struct {
 	Scope
 	TaskID string `json:"task_id"`
 }
+type EditRequest struct {
+	GetRequest
+	Title             string    `json:"title"`
+	ExpectedUpdatedAt time.Time `json:"expected_updated_at"`
+}
 type ListRequest struct {
 	Scope
 	Limit int `json:"limit"`

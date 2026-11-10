@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "service": {
     "name": "task",
-    "build_version": "0.0.6",
+    "build_version": "0.0.7",
     "api_major": 1
   },
   "resources": [
@@ -22,6 +22,33 @@
     }
   ],
   "operations": [
+    {
+      "id": "task.tasks.edit",
+      "subject": "rpc.task.v1.tasks.edit",
+      "kind": "command",
+      "request_schema": "schemas/edit.json",
+      "response_schema": "schemas/task.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "task.workspace",
+        "action": "task.create",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "PATCH",
+        "path": "/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/tasks/{task_id}",
+        "success_status": 200,
+        "bindings": [
+          { "source": "path", "name": "workspace_id", "field": "workspace_id", "type": "string" },
+          { "source": "path", "name": "acl_root_id", "field": "acl_root_id", "type": "string" },
+          { "source": "path", "name": "task_id", "field": "task_id", "type": "string" }
+        ]
+      }
+    },
     {
       "id": "task.task.create",
       "subject": "rpc.task.v1.task.create",

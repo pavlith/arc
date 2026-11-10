@@ -338,7 +338,9 @@ func TestM006(t *testing.T) {
 		t.Helper()
 		r, e := http.NewRequest(method, server.URL+path, strings.NewReader(body))
 		must(e)
-		r.Header.Set("Origin", "https://arc.example")
+		if path != "/api/v1/arc/cli/token" {
+			r.Header.Set("Origin", "https://arc.example")
+		}
 		r.Header.Set("Content-Type", "application/json")
 		r.Header.Set("Authorization", "Bearer "+token)
 		if token == "" {
@@ -356,7 +358,7 @@ func TestM006(t *testing.T) {
 		return res.StatusCode, b
 	}
 	loginHTTP := func(email string) string {
-		c, b := request(client, "POST", "/api/v1/arc/auth/login", fmt.Sprintf(`{"email":%q,"password":"proof fixture password"}`, email), "", "")
+		c, b := request(client, "POST", "/api/v1/arc/cli/token", fmt.Sprintf(`{"email":%q,"password":"proof fixture password"}`, email), "", "")
 		if c != 200 {
 			t.Fatalf("login HTTP %d: %s", c, b)
 		}

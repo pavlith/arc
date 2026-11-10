@@ -38,19 +38,9 @@ func (c *Core) LogoutAccess(ctx context.Context, token string) error {
 	return c.revokeSession(ctx, s.UserID, s.ID)
 }
 func (c *Core) RefreshBrowser(ctx context.Context, session UserSession, token string) (LoginResult, error) {
-	if session.Secret != "" {
-		s, e := c.user(ctx, session)
-		if e != nil {
-			return LoginResult{}, e
-		}
-		var sid string
-		e = c.db(ctx).WithContext(ctx).Raw(`SELECT f.session_id FROM identity_refresh_tokens t JOIN identity_refresh_families f ON f.id=t.family_id WHERE t.token_hash=?`, hash(token)).Row().Scan(&sid)
-		if e != nil {
-			return LoginResult{}, keyError(e)
-		}
-		if sid != s.ID {
-			return LoginResult{}, ErrUnauthenticated
-		}
+	s, e := c.user(ctx, session)
+	if e != nil {
+		return LoginResult{}, e
 	}
-	return c.Refresh(ctx, token)
+	return c.refresh(ctx, token, "browser", s.ID)
 }

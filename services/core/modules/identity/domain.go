@@ -80,7 +80,7 @@ func (c *Core) SetMembership(ctx context.Context, auth UserSession, workspace, u
 		}
 		if previous == "owner" && (revoke || role != "owner") {
 			var owners int
-			if e = t.WithContext(ctx).Raw(`SELECT count(*) FROM identity_memberships WHERE workspace_id=? AND role='owner' AND revoked_at IS NULL`, workspace).Row().Scan(&owners); e != nil {
+			if e = activeOwnerCount(ctx, t, workspace).Scan(&owners); e != nil {
 				return e
 			}
 			if owners <= 1 {
@@ -95,6 +95,13 @@ func (c *Core) SetMembership(ctx context.Context, auth UserSession, workspace, u
 				return e
 			}
 		} else {
+			var active bool
+			if e = t.WithContext(ctx).Raw(`SELECT EXISTS(SELECT 1 FROM identity_users WHERE id=? AND status='active')`, user).Row().Scan(&active); e != nil {
+				return e
+			}
+			if !active {
+				return ErrDenied
+			}
 			if e = t.WithContext(ctx).Exec(`INSERT INTO identity_memberships(workspace_id,user_id,role) VALUES( ?,?,?) ON CONFLICT(workspace_id,user_id) DO UPDATE SET role=?,revoked_at=NULL`, workspace, user, role, role).Error; e != nil {
 				return e
 			}
@@ -342,7 +349,7 @@ func (c *Core) LeaveWorkspace(ctx context.Context, auth UserSession, workspace s
 		}
 		if role == "owner" {
 			var owners int
-			if e = t.WithContext(ctx).Raw(`SELECT count(*) FROM identity_memberships WHERE workspace_id=? AND role='owner' AND revoked_at IS NULL`, workspace).Row().Scan(&owners); e != nil {
+			if e = activeOwnerCount(ctx, t, workspace).Scan(&owners); e != nil {
 				return e
 			}
 			if owners <= 1 {
@@ -360,6 +367,11 @@ func (c *Core) LeaveWorkspace(ctx context.Context, auth UserSession, workspace s
 		}
 		return audit(ctx, t, "user:"+s.UserID, "memberships.leave", workspace, "ok")
 	})
+}
+
+func activeOwnerCount(ctx context.Context, tx *gorm.DB, workspace string) *sql.Row {
+	return tx.WithContext(ctx).Raw(`SELECT count(*) FROM identity_memberships m JOIN identity_users u ON u.id=m.user_id
+		WHERE m.workspace_id=? AND m.role='owner' AND m.revoked_at IS NULL AND u.status='active'`, workspace).Row()
 }
 func (c *Core) DisableAgent(ctx context.Context, auth UserSession, id string) error {
 	s, e := c.user(ctx, auth)

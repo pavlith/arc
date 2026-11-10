@@ -15,10 +15,12 @@ import (
 type LoginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
+	Channel  string `json:"channel,omitempty"`
 }
 type RefreshRequest struct {
 	Session UserSession `json:"session,omitempty"`
 	Token   string      `json:"token"`
+	Channel string      `json:"channel,omitempty"`
 }
 type SessionRequest struct {
 	AccessToken string      `json:"access_token,omitempty"`
@@ -69,21 +71,33 @@ func wireError(e error) error {
 	return &rpc.Error{Code: rpc.CodeInternal, Message: "internal error"}
 }
 func bind[Req, Res any](service *sdk.Service, c *Core, name string, h func(context.Context, Req) (Res, error)) error {
-	id := "identity.v1." + name
 	mutation := name == "delegations.create" || name == "delegations.revoke"
+	return bindOperation(service, c, name, mutation, func(ctx context.Context, r Req) (Res, error) {
+		if mutation {
+			return command(ctx, c, "identity.v1."+name, r, h)
+		}
+		return h(ctx, r)
+	})
+}
+
+func bindOperation[Req, Res any](service *sdk.Service, c *Core, name string, mutation bool, h func(context.Context, Req) (Res, error)) error {
+	id := "identity.v1." + name
 	return rpc.Handle(service, rpc.Operation{ID: id, Endpoint: strings.ReplaceAll(name, ".", "_"), Subject: "rpc." + id, QueueGroup: "q.identity.v1", Timeout: 10 * time.Second, Protected: true, Mutation: mutation, Authorize: rpc.AssertionAuthorizer(c.Verifier(), func(ctx context.Context, caller, op string) error {
+		if strings.HasPrefix(name, "product.") {
+			var gate bool
+			if err := c.db(ctx).WithContext(ctx).Raw(`SELECT EXISTS(SELECT 1 FROM identity_service_accounts WHERE id=? AND service_definition='gate' AND disabled_at IS NULL)`, caller).Row().Scan(&gate); err != nil {
+				return wireError(ErrUnavailable)
+			}
+			if !gate {
+				return wireError(ErrDenied)
+			}
+		}
 		if e := c.rateLimit(ctx, "rpc:"+caller+":"+op, 600); e != nil {
 			return wireError(e)
 		}
 		return c.allow(ctx, Authorization{Caller: caller, Audience: "identity/v1", Operation: op})
 	})}, func(ctx context.Context, r Req) (Res, error) {
-		var out Res
-		var e error
-		if mutation {
-			out, e = command(ctx, c, id, r, h)
-		} else {
-			out, e = h(ctx, r)
-		}
+		out, e := h(ctx, r)
 		return out, wireError(e)
 	})
 }
@@ -104,11 +118,24 @@ func (c *Core) BindInternal(s *sdk.Service) error {
 		},
 		func() error {
 			return bind(s, c, "sessions.login", func(ctx context.Context, r LoginRequest) (LoginResult, error) {
-				return c.Login(ctx, r.Email, r.Password)
+				channel := r.Channel
+				if channel == "" {
+					channel = "legacy"
+				}
+				return c.login(ctx, r.Email, r.Password, channel)
 			})
 		},
 		func() error {
 			return bind(s, c, "sessions.refresh", func(ctx context.Context, r RefreshRequest) (LoginResult, error) {
+				if r.Channel == "cli" {
+					if r.Session.Secret != "" || r.Session.CSRF != "" {
+						return LoginResult{}, ErrUnauthenticated
+					}
+					return c.refresh(ctx, r.Token, "cli", "")
+				}
+				if r.Channel != "" && r.Channel != "browser" {
+					return LoginResult{}, ErrDenied
+				}
 				return c.RefreshBrowser(ctx, r.Session, r.Token)
 			})
 		},
@@ -176,7 +203,7 @@ func (c *Core) BindInternal(s *sdk.Service) error {
 			return e
 		}
 	}
-	return nil
+	return c.bindProduct(s)
 }
 
 // TestClient holds only a service instance key, never Core's signing key.

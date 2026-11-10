@@ -31,6 +31,11 @@ func command[Req, Res any](ctx context.Context, c *Core, op string, r Req, h fun
 	if e != nil {
 		return zero, e
 	}
+	return runCommand(ctx, c, s, op, nil, func(ctx context.Context) (Res, error) { return h(ctx, r) })
+}
+
+func runCommand[Res any](ctx context.Context, c *Core, s Session, op string, authorize func(context.Context) error, h func(context.Context) (Res, error)) (Res, error) {
+	var zero Res
 	meta, ok := rpc.Metadata(ctx)
 	if !ok || meta.IdempotencyKey == "" || len(meta.IdempotencyKey) > 128 {
 		return zero, ErrDenied
@@ -44,6 +49,12 @@ func command[Req, Res any](ctx context.Context, c *Core, op string, r Req, h fun
 	e = c.tx(ctx, func(t *gorm.DB) error {
 		if e := c.lockSession(ctx, t, s); e != nil {
 			return e
+		}
+		ctx := context.WithValue(database.TransactionContext(ctx, c.GormDB, t), transactionKey{}, t)
+		if authorize != nil {
+			if e := authorize(ctx); e != nil {
+				return e
+			}
 		}
 		if e := t.WithContext(ctx).Exec(`INSERT INTO identity_command_results(actor,operation,idempotency_key,request_hash) VALUES( ?,?,?,?) ON CONFLICT DO NOTHING`, "user:"+s.UserID, op, meta.IdempotencyKey, digest).Error; e != nil {
 			return e
@@ -59,7 +70,7 @@ func command[Req, Res any](ctx context.Context, c *Core, op string, r Req, h fun
 			return json.Unmarshal(result, &out)
 		}
 		var e error
-		out, e = h(context.WithValue(database.TransactionContext(ctx, c.GormDB, t), transactionKey{}, t), r)
+		out, e = h(ctx)
 		if e != nil {
 			return e
 		}

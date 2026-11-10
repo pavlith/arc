@@ -2,14 +2,14 @@
 
 | Component | Current surface | Remaining product scope |
 |---|---|---|
-| `core/` | `cmd/arc-core`, Identity/Access/Fabric/Runtime composition, owner SQLite and private RPC | Product/admin provisioning APIs #9; diagnostics #8; Runtime policy/adapter #13 |
-| `gate/` | `cmd/arc-gate`, HTTPS auth, signed routes and online Core checks; no DB | Product routes, WS/DAV adapters |
-| `task/` | `cmd/arc-task`, workspace proof create/get/list, roots and atomic replay/outbox | Editing, projects/views and UI #9–#10 |
+| `core/` | `cmd/arc-core`, owner SQLite, private RPC and signed approval for Identity profile, workspace reads/updates, member/group management and administrator provisioning | Atomic workspace creation and invitations #9; Runtime policy/adapter #13 |
+| `gate/` | `cmd/arc-gate`, browser cookies, CLI tokens, signed domain routes, Identity routes and optional UI assets | WS/DAV adapters |
+| `task/` | `cmd/arc-task`, workspace create/get/list and title edits for own tasks, roots and atomic replay/outbox | Projects and views #10 |
 | `notify/` | `cmd/arc-notify`, internal inbox/notification and persisted fake outbound intents | User inbox/subscriptions, realtime and real channels #9/#12 |
 | `agent/` | `cmd/arc-agent`, private node RPC, durable journal and restricted systemd driver | Admin/Gate/UI, Docker/LXD and Core reconcile #13 |
 
-There is no UI package. Historical reports of unavailable implementations do not
-extend this table. [Core startup](core/README.md) uses strict local configuration,
+The first Svelte workspace and Task view is in `ui/`. Historical reports of
+unavailable implementations do not extend this table. [Core startup](core/README.md) uses strict local configuration,
 explicit migrations and signed policy. Every new implementation starts with its Issue.
 
 ## Ownership and startup

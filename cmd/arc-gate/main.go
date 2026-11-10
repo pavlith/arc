@@ -7,11 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"io/fs"
 	"log"
 	"log/slog"
 	"net/netip"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -34,6 +36,7 @@ type config struct {
 	CoreTrustKeyFile string     `json:"core_trust_key_file"`
 	TLSCertFile      string     `json:"tls_cert_file"`
 	TLSKeyFile       string     `json:"tls_key_file"`
+	UIDirectory      string     `json:"ui_directory,omitempty"`
 }
 
 func main() {
@@ -62,6 +65,21 @@ func run(file string) error {
 	}
 	if cfg.Listen == "" {
 		cfg.Listen = ":8443"
+	}
+	var ui fs.FS
+	if cfg.UIDirectory != "" {
+		if !filepath.IsAbs(cfg.UIDirectory) {
+			return errors.New("gate: UI directory must be absolute")
+		}
+		files, err := os.OpenRoot(cfg.UIDirectory)
+		if err != nil {
+			return errors.New("gate: cannot open UI directory")
+		}
+		defer files.Close()
+		ui = files.FS()
+		if info, err := fs.Stat(ui, "index.html"); err != nil || !info.Mode().IsRegular() {
+			return errors.New("gate: UI build is missing index.html")
+		}
 	}
 	key, e := identity.LoadSigningKey(cfg.KeyFile)
 	if e != nil {
@@ -110,6 +128,7 @@ func run(file string) error {
 	g, err := gate.New(gate.Config{
 		HTTP: edge.Config{
 			Backend:        remote,
+			UI:             ui,
 			PublicOrigin:   cfg.PublicOrigin,
 			AllowedOrigins: cfg.AllowedOrigins,
 			TrustedProxies: proxies,

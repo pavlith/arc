@@ -135,6 +135,37 @@ path. Core startup does not enable Runtime management/node RPC; Runtime smoke
 uses a trusted test policy and fake host effects. Live drivers and complete
 health reporting remain #13; M7 is deferred.
 
+## Browser and CLI setup
+
+Build `ui/` with `npm --prefix ui ci` and `npm --prefix ui run build`. Set Gate's
+`ui_directory` to the absolute path to `ui/dist` and open the configured HTTPS
+origin. Gate serves `/` and the built JavaScript/CSS under `/assets/`. All UI
+calls use the same origin and browser cookies. The UI reads the CSRF cookie for
+mutations and sends an idempotency key for Task commands.
+
+Apply Core migrations before starting the updated Core. The session-channel
+migration keeps existing sessions as `legacy`. New browser sessions cannot issue
+Bearer credentials. CLI clients POST email/password to `/api/v1/arc/cli/token`,
+rotate with a `refresh_token` JSON field at `/api/v1/arc/cli/refresh`, and revoke
+the session with its Bearer token at `/api/v1/arc/cli/logout`. These endpoints
+require requests without Origin or cookies.
+
+In the signed Core bootstrap policy, allow the provisioned Gate account the
+exact `identity.v1.product.*` operations it needs with audience `identity/v1`
+and actor kind `bootstrap`. The Task UI uses `profile`, `workspaces.list` and
+`task_roots.list`. Workspace member/group writes also need a current owner or
+administrator role and an `Idempotency-Key`. User provisioning additionally
+requires the user's ID in the signed `admin_users` list. Core remains the
+authority for every write and returns only readable Task roots to the UI.
+
+Task editing needs the signed `task.tasks.edit` operation, online `task.create`
+permission on the root and matching `created_by`. `PATCH` accepts `title` and
+`expected_updated_at`; the writer transaction commits the edit, audit and replay
+record together. Approve the updated Task artifact and a Notify installation
+pinned to the new Task digest through the existing Fabric replacement workflow.
+Include the exact `rpc.task.v1.tasks.edit` subject in Task broker permissions.
+Workspace and Task root provisioning still require the existing operator setup.
+
 ## Agent workflow
 
 Read `AGENTS.md`, applicable skill and only relevant normative sections. Project

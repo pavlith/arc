@@ -42,6 +42,7 @@ type Core struct {
 	PrivateKey ed25519.PrivateKey
 	SigningKid string
 	Now        func() time.Time
+	TaskRoots  func(context.Context, string, string, string) ([]TaskRoot, error)
 }
 
 func (c *Core) now() time.Time {

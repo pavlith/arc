@@ -83,6 +83,7 @@ func New(cfg Config) (*Service, error) {
 		RouteTrustKey: cfg.RouteTrustKey}
 	ac.ContractSource = fb
 	id.Policy = ac
+	id.TaskRoots = ac.TaskRoots
 	rt := &runtime.Module{GormDB: cfg.GormDB, Authorize: cfg.RuntimeAuthorize}
 	if cfg.RuntimeControlPolicy != nil || len(cfg.RuntimeSnapshotSigningKey) != 0 {
 		control, err := runtime.NewControl(runtime.ControlConfig{DB: cfg.GormDB, Policy: cfg.RuntimeControlPolicy, SigningKey: cfg.RuntimeSnapshotSigningKey, Now: cfg.Now})

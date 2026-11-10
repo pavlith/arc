@@ -1,4 +1,4 @@
-// Package tasks implements only the M0 workspace Tasks proof service.
+// Package tasks implements workspace Task operations over approved roots.
 package tasks
 
 import (
@@ -52,6 +52,9 @@ func (s *Service) Register(r *module.Registry) error {
 
 	store := events.Store{DB: s.GormDB}
 	if err := module.BindCommand(r, taskv1.Create, policy, store, s.createGORM); err != nil {
+		return err
+	}
+	if err := module.BindCommand(r, taskv1.Edit, policy, store, s.editGORM); err != nil {
 		return err
 	}
 	if err := module.BindCommand(r, taskv1.Admin, policy, store, s.grantsGORM); err != nil {

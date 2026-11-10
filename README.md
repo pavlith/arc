@@ -14,8 +14,8 @@ operator credentials and signed bootstrap policy. Shared test tools live
 in `test/`, deployment configuration and the explicit migrator in `deploy/`.
 
 The HTTPS Gate → Task/Core → JetStream → Notify proof path and private Runtime node
-protocol have focused guardrails. Full product/admin APIs, Office features and
-Svelte UI are not implemented. See [service capabilities](services/README.md).
+protocol have focused guardrails. The first Svelte workspace and Task flow uses
+the Gate browser session. See [service capabilities](services/README.md).
 Historical Issue reports do not establish code absent from this checkout.
 
 Development requires Go 1.27+ and a C compiler for SQLite/CGO. Network checks also

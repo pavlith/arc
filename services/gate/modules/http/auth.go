@@ -28,17 +28,18 @@ func (g *Gate) auth(w http.ResponseWriter, r *http.Request, id, client string) {
 		}
 		raw, _ := json.Marshal(obj)
 		var q identity.LoginRequest
-		if contract.Strict(raw, &q) != nil {
+		if contract.Strict(raw, &q) != nil || q.Channel != "" {
 			writeError(w, id, fault(rpc.CodeValidation))
 			return
 		}
+		q.Channel = "browser"
 		result, e := g.cfg.Backend.Login(ctx, q)
 		if e != nil {
 			writeError(w, id, e)
 			return
 		}
 		g.cookies(w, result, true)
-		writeJSON(w, 200, map[string]any{"session": result.Session, "csrf": result.CSRF, "access_token": result.AccessToken})
+		writeJSON(w, 200, map[string]any{"session": result.Session, "csrf": result.CSRF})
 		return
 	}
 	if endpoint == "/api/v1/arc/auth/session" && r.Method == "GET" {
@@ -70,12 +71,16 @@ func (g *Gate) auth(w http.ResponseWriter, r *http.Request, id, client string) {
 			writeError(w, id, e)
 			return
 		}
+		if a.AccessToken != "" {
+			writeError(w, id, fault(rpc.CodeUnauthenticated))
+			return
+		}
 		if _, e = g.cfg.Backend.Authenticate(ctx, a); e != nil {
 			writeError(w, id, e)
 			return
 		}
 		if endpoint == "/api/v1/arc/auth/logout" {
-			if e = g.cfg.Backend.Logout(ctx, identity.SessionRequest{Session: a.Session, AccessToken: a.AccessToken}); e != nil {
+			if e = g.cfg.Backend.Logout(ctx, identity.SessionRequest{Session: a.Session}); e != nil {
 				writeError(w, id, e)
 				return
 			}
@@ -86,17 +91,17 @@ func (g *Gate) auth(w http.ResponseWriter, r *http.Request, id, client string) {
 			return
 		}
 		refresh, e := r.Cookie(refreshCookie)
-		if e != nil || a.AccessToken != "" {
+		if e != nil {
 			writeError(w, id, fault(rpc.CodeUnauthenticated))
 			return
 		}
-		res, e := g.cfg.Backend.Refresh(ctx, identity.RefreshRequest{Session: a.Session, Token: refresh.Value})
+		res, e := g.cfg.Backend.Refresh(ctx, identity.RefreshRequest{Session: a.Session, Token: refresh.Value, Channel: "browser"})
 		if e != nil {
 			writeError(w, id, e)
 			return
 		}
 		g.cookies(w, res, false)
-		writeJSON(w, 200, map[string]any{"session": res.Session, "access_token": res.AccessToken})
+		writeJSON(w, 200, map[string]any{"session": res.Session})
 		return
 	}
 	writeError(w, id, fault(rpc.CodeNotFound))

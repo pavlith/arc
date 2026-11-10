@@ -297,12 +297,11 @@ func TestM0Gate(t *testing.T) {
 	cookies := res.Cookies()
 	data := expect(res, 200)
 	var loginBody struct {
-		CSRF        string           `json:"csrf"`
-		AccessToken string           `json:"access_token"`
-		Session     identity.Session `json:"session"`
+		CSRF    string           `json:"csrf"`
+		Session identity.Session `json:"session"`
 	}
 	must(json.Unmarshal(data, &loginBody))
-	if bytes.Contains(data, []byte(`"secret"`)) || bytes.Contains(data, []byte(`"refresh"`)) {
+	if bytes.Contains(data, []byte(`"secret"`)) || bytes.Contains(data, []byte(`"refresh"`)) || bytes.Contains(data, []byte(`"access_token"`)) {
 		t.Fatal("browser credential exposed in response")
 	}
 	for _, c := range cookies {
@@ -385,7 +384,15 @@ func TestM0Gate(t *testing.T) {
 	// Access JWT goes only to Core; a new invocation reaches the owner service.
 	savedJar := httpClient.Jar
 	httpClient.Jar = nil
-	expect(do("GET", "/api/v1/task/read/"+root+"?value=bearer", "", map[string]string{"Authorization": "Bearer " + loginBody.AccessToken}), 200)
+	var cliBody struct {
+		AccessToken string `json:"access_token"`
+	}
+	cli := do("POST", "/api/v1/arc/cli/token", `{"email":"gate-owner@example.test","password":"gate fixture password"}`, nil)
+	must(json.Unmarshal(expect(cli, 200), &cliBody))
+	bearer := map[string]string{"Authorization": "Bearer " + cliBody.AccessToken}
+	expect(do("GET", "/api/v1/task/read/"+root+"?value=bearer", "", bearer), 200)
+	expect(do("POST", "/api/v1/arc/cli/logout", "", bearer), 204)
+	expect(do("GET", "/api/v1/task/read/"+root+"?value=revoked", "", bearer), 401)
 	expect(do("GET", "/api/v1/task/read/"+root+"?value=bad", "", map[string]string{"Authorization": "Bearer invalid"}), 401)
 	httpClient.Jar = savedJar
 	oldRefresh := ""
@@ -440,18 +447,21 @@ func TestM0Gate(t *testing.T) {
 	if replayResult.Code != 401 {
 		t.Fatal("browser refresh replay accepted", replayResult.Code)
 	}
-	expect(do("GET", "/api/v1/task/read/"+root+"?value=refresh-revoked", "", map[string]string{"Authorization": "Bearer " + loginBody.AccessToken}), 401)
 	httpClient.Jar = oldJar
+	expect(do("GET", "/api/v1/arc/auth/session", "", nil), 401)
 	// A fresh login permits an independently tested CSRF-protected logout.
 	res = do("POST", "/api/v1/arc/auth/login", `{"email":"gate-owner@example.test","password":"gate fixture password"}`, map[string]string{"Origin": "https://arc.example"})
+	freshCookies := res.Cookies()
 	fresh := expect(res, 200)
 	must(json.Unmarshal(fresh, &loginBody))
 	expect(do("POST", "/api/v1/arc/auth/logout", `{}`, map[string]string{"Origin": "https://arc.example", "X-CSRF-Token": loginBody.CSRF}), 204)
 	httpClient.Jar = nil
-	expect(do("GET", "/api/v1/task/read/"+root+"?value=revoked", "", map[string]string{"Authorization": "Bearer " + loginBody.AccessToken}), 401)
-	// Existing Identity refresh replay protection remains authoritative.
-	if _, e = id.Refresh(ctx, oldRefresh); !errors.Is(e, identity.ErrUnauthenticated) {
-		t.Fatal("refresh reuse accepted", e)
+	for _, cookie := range freshCookies {
+		if cookie.Name == "__Host-arc_session" {
+			if _, e = id.Introspect(ctx, cookie.Value); !errors.Is(e, identity.ErrUnauthenticated) {
+				t.Fatal("browser session survived logout", e)
+			}
+		}
 	}
 	// Login again for outage/no-responder checks without a stale revoked session.
 	httpClient.Jar, _ = cookiejar.New(nil)

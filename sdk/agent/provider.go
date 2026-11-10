@@ -15,6 +15,7 @@ type RuntimeProvider interface {
 type InventoryRequest struct {
 	NodeID  string `json:"node_id"`
 	AfterID string `json:"after_id,omitempty"`
+	Host *HostFacts `json:"host,omitempty"`
 }
 type InventoryPage struct {
 	ResourceIDs []string `json:"resource_ids"`

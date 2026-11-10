@@ -100,6 +100,10 @@ func (h *fakeHost) Apply(_ context.Context, s agent.Spec, _ agent.Template) (age
 	h.calls++
 	return agent.Observation{ResourceID: s.ID, NodeID: s.NodeID, Revision: s.Revision, State: s.State, Running: s.Replicas}, nil
 }
+func (h *fakeHost) Inspect(_ context.Context, s agent.Spec, _ agent.Template) (agent.Observation, error) {
+	return agent.Observation{ResourceID: s.ID, NodeID: s.NodeID, Revision: s.Revision, State: s.State, Running: s.Replicas}, nil
+}
+
 func TestControlSQLiteAgentRoundTrip(t *testing.T) {
 	f := newControlFixture(t)
 	ctx := context.Background()

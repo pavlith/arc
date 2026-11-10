@@ -65,10 +65,21 @@ or credentials; see [correlated diagnostics](../../docs/DEVELOPMENT.md#correlate
 
 Journal persists intent before effect. Inspector checks completed revisions before
 drift repair, which still needs fresh online authorization. Inspection failure
-denies effect. Report retries preserve event ID while running; pending reports are
-in memory, so crash may create a new receipt while host operations remain idempotent.
-New successful observations refresh liveness. Terminal failure needs a new desired
-revision. SIGTERM/SIGINT release connections/journal and retain workloads.
+denies effect. Pending Core receipts use atomic/fsynced per-resource files and
+retain their event IDs across crashes. Identical observations have stable event
+IDs and do not generate repeated receipts. Core updates node liveness from
+authenticated Inventory at most once per minute, independently of receipts.
+
+Revision high-water marks are stored in separate atomic files under
+`state_directory/revisions/`. Existing `revisions.json` is read as a migration
+baseline and is never rewritten by new agents. Preserve the entire state
+directory across upgrades, including Docker ownership and pending receipts.
+
+Transient host/timeout failures leave the operation pending; every retry first
+fetches a new authorized snapshot. Explicit policy denials can still report
+terminal failure, requiring a new desired revision. Host actions are bounded
+by each short-lived snapshot and may complete over multiple online rounds.
+SIGTERM/SIGINT release connections/journal and retain workloads.
 
 ## Systemd driver
 

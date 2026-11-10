@@ -6,9 +6,9 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"maps"
-	"github.com/pavlith/arc/sdk/security"
 
 	contract "github.com/pavlith/arc/sdk/agent"
+	"github.com/pavlith/arc/sdk/security"
 )
 
 var ErrInvalid = errors.New("agent: invalid service configuration")

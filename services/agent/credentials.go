@@ -2,7 +2,9 @@ package agent
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"strings"
 	"time"
@@ -40,11 +42,11 @@ func Credentials(client identity.Client) contract.InvocationCredentials {
 			return rpc.Credentials{}, ErrUnavailable
 		}
 		return rpc.Credentials{Token: token.Token, Proof: func(subject string, raw []byte) (security.Proof, error) {
-			random, err := nonce("")
-			if err != nil {
-				return security.Proof{}, err
+			var random [16]byte
+			if _, err := rand.Read(random[:]); err != nil {
+				return security.Proof{}, ErrUnavailable
 			}
-			return security.SignProof(client.PrivateKey, subject, raw, claims.JTI, security.Proof{Kid: client.Kid, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Nonce: random})
+			return security.SignProof(client.PrivateKey, subject, raw, claims.JTI, security.Proof{Kid: client.Kid, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Nonce: hex.EncodeToString(random[:])})
 		}}, nil
 	}
 }

@@ -15,6 +15,7 @@ import (
 	contract "github.com/pavlith/arc/sdk/agent"
 	"github.com/pavlith/arc/sdk/rpc"
 	"github.com/pavlith/arc/sdk/security"
+	"github.com/pavlith/arc/services/agent/drivers/docker"
 	"github.com/pavlith/arc/services/agent/drivers/systemd"
 	"github.com/pavlith/arc/services/agent/journal"
 	"github.com/pavlith/arc/services/core/modules/identity"
@@ -75,7 +76,16 @@ func ReadConfig(path string) (FileConfig, error) {
 	}
 	seen := map[string]bool{}
 	for _, t := range cfg.Templates {
-		if t.Validate() != nil || t.Kind != contract.Systemd || t.Target != "arc-managed-"+t.ID+".service" || seen[t.ID] {
+		if t.Validate() != nil || seen[t.ID] {
+			return cfg, ErrInvalid
+		}
+		switch t.Kind {
+		case contract.Docker:
+		case contract.Systemd:
+			if t.Target != "arc-managed-"+t.ID+".service" {
+				return cfg, ErrInvalid
+			}
+		default:
 			return cfg, ErrInvalid
 		}
 		seen[t.ID] = true
@@ -119,6 +129,19 @@ func RunFile(ctx context.Context, path string) error {
 		return ErrInvalid
 	}
 	defer store.Close()
+	templates := make(map[string]contract.Template, len(cfg.Templates))
+	drivers := map[contract.Kind]contract.Driver{contract.Systemd: systemd.New()}
+	for _, t := range cfg.Templates {
+		templates[t.ID] = t
+		if t.Kind == contract.Docker && drivers[t.Kind] == nil {
+			driver, err := docker.Open(cfg.StateDirectory, cfg.NodeID)
+			if err != nil {
+				return ErrInvalid
+			}
+			defer driver.Close()
+			drivers[t.Kind] = driver
+		}
+	}
 	cfg.NATS.Name = "arc-agent-" + cfg.NodeID
 	cfg.NATS.InboxPrefix = "_INBOX.runtime." + cfg.NodeID
 	brokerSeed, err := readOwned(cfg.NATS.NKeySeedFile, true, 4096)
@@ -141,11 +164,11 @@ func RunFile(ctx context.Context, path string) error {
 	if err != nil {
 		return ErrInvalid
 	}
-	templates := map[string]contract.Template{}
-	for _, t := range cfg.Templates {
-		templates[t.ID] = t
-	}
-	service, err := New(Config{NodeID: cfg.NodeID, Provider: provider, CoreKey: coreKey, Templates: templates, Journal: store, Drivers: map[contract.Kind]contract.Driver{contract.Systemd: systemd.New()}, PollInterval: time.Duration(cfg.PollSeconds) * time.Second, Observe: func(resource, code string) { slog.Warn("agent reconciliation", "resource_id", resource, "code", code) }})
+	service, err := New(Config{
+		NodeID: cfg.NodeID, Provider: provider, CoreKey: coreKey, Templates: templates,
+		Journal: store, Drivers: drivers, PollInterval: time.Duration(cfg.PollSeconds) * time.Second,
+		Observe: func(resource, code string) { slog.Warn("agent reconciliation", "resource_id", resource, "code", code) },
+	})
 	if err != nil {
 		return err
 	}

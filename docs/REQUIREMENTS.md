@@ -304,12 +304,12 @@ actor/on_behalf_of provenance and bounded traced runs.
   desired/observed and bounded health/logs, including loading/empty/error/offline.
   UI grants no rights and never calls host/Agent APIs directly.
 
-Current Control, private Node RPC, Linux Agent/journal and restricted systemd
-driver are partial #13 delivery; see [services](../services/README.md) and
+Current Control, private Node RPC, Linux Agent/journal and restricted systemd and
+Docker drivers are partial #13 delivery; see [services](../services/README.md) and
 [Agent](../services/agent/README.md) for exact limits. Management stays disabled
 without explicit trusted policy/signing key. Admin authorization adapter, Gate/UI,
-Docker/LXD, Core reconcile/outbox publisher and complete health/logs are missing.
-Host effects use test adapters; live unit start/stop is not established.
+LXD, Core reconcile/outbox publisher and complete health/logs are missing.
+Host effects use test adapters; live systemd and Docker lifecycle checks are pending.
 M6 is not integrated as a whole; M7 covers full crash/offline/replica/recovery.
 
 ## 3. Non-functional requirements

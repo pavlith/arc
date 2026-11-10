@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/pavlith/arc/sdk"
@@ -37,6 +38,22 @@ func TestPrivateConfigRejectsUnknownAndUnsafeDrivers(t *testing.T) {
 	}
 	if _, err := agent.ReadConfig(path); err == nil {
 		t.Fatal("bootstrap unit accepted")
+	}
+	cfg.Templates = []contract.Template{{ID: "worker", Revision: 1, Kind: contract.Docker, Target: "registry.example/worker@sha256:" + strings.Repeat("b", 64), MaxReplicas: 2}}
+	raw, _ = json.Marshal(cfg)
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := agent.ReadConfig(path); err != nil {
+		t.Fatalf("Docker template rejected: %v", err)
+	}
+	cfg.Templates[0].Target = "registry.example/worker:latest"
+	raw, _ = json.Marshal(cfg)
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := agent.ReadConfig(path); err == nil {
+		t.Fatal("mutable Docker image accepted")
 	}
 	cfg.Templates = nil
 	raw, _ = json.Marshal(cfg)

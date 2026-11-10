@@ -15,6 +15,29 @@ Examples: [config](../../deploy/agent/config.example.json),
 [systemd unit](../../deploy/agent/arc-agent.service). Operator installs binaries,
 credentials, trust roots and units independently of Runtime.
 
+### Ubuntu node setup
+
+Build `arc-agent` for the target architecture and copy the executable, the
+[installer](../../deploy/agent/install.sh) and the systemd unit to the Ubuntu host.
+Keep the installer and unit in the same directory. Provision the node in Core,
+then install the root-owned config at `/etc/arc-agent/config.json` and provision
+the keys and trust roots referenced by it. Run these commands on the target host.
+
+```sh
+bash install.sh list
+bash install.sh plan
+sudo bash install.sh apply /absolute/path/to/arc-agent
+```
+
+The installer uses the existing local Docker Engine when reachable, starts an
+installed `docker.service` when needed, or installs Ubuntu's `docker.io` from
+the configured APT repositories. It installs the Agent binary and systemd unit,
+then checks the local Docker API and Agent process status. Check correlated Agent
+logs for the first successful Runtime round with Core. When updating only the
+config or credentials, restart `arc-agent.service` after the update.
+
+### Node configuration
+
 - Provision a distinct active `arc-agent` service account, node binding and templates
   in Core. Explicitly enable RuntimeNodeRPC; new node enrollment needs Core restart.
 - Config, 32-byte service seed and NKey seed belong to the process user, mode 0600.
@@ -27,6 +50,11 @@ credentials, trust roots and units independently of Runtime.
   Subscribe only `_INBOX.runtime.<node-id>.>`; Agent sets that InboxPrefix.
 
 ## Reconciliation
+
+`modules/reconcile` handles inventory, snapshot requests and reporting to Core.
+`modules/runtime` binds a signed snapshot to the requested resource and uses the
+SDK executor to journal and dispatch effects to the node-local driver for its
+kind. A template requires a configured driver for that kind at startup.
 
 Each round obtains online inventory and fresh signed snapshots; no cached new
 effect during Core/NATS outage and no delete inferred from missing inventory ID.
@@ -54,9 +82,34 @@ and dependencies outside the driver's fixed allowlist.
 Operator owns unit contents and resource/security limits. Running starts;
 stopped/deleted stops and retains unit/data. Already satisfied state does not
 restart. Explicit restart, enable/disable and unit edits are absent. Bootstrap/Agent
-units are forbidden. Docker/LXD kinds exist in SDK but this binary rejects their
-configuration because their drivers are not implemented. Full health/log reporting
-after a terminal operation remains incomplete.
+units are forbidden. Full health/log reporting after a terminal operation
+remains incomplete.
+
+## Docker driver
+
+Add a `docker.container` template to the local Agent config and approve the same
+template revision in Core. Set `target` to a repository and immutable `@sha256:`
+digest already available to the local Docker daemon. The Agent uses Engine API
+v1.44 on `/var/run/docker.sock`. The daemon must support memory, swap, CPU and PID
+limits and use the built-in seccomp profile.
+
+The driver creates, starts, stops, replaces and scales its own containers. It
+records a private creation intent and the Docker container ID under the Agent
+state directory. Preserve this directory across upgrades and restarts. A lost
+creation response is recovered by the saved name and validated container state.
+Deletion removes owned containers without removing volumes. Images that declare
+volumes are rejected.
+
+This driver runs approved images as UID/GID 65532 with read-only root filesystems,
+no network, no host mounts or published ports, and fixed CPU, memory, PID and log
+limits. It reports running replica counts through the existing Core Runtime RPC.
+Docker health status, log retrieval, networked services and one-shot jobs are
+outside the current driver. Docker lifecycle tests use an isolated Engine API
+fixture. On a dedicated Docker test node, set `ARC_AGENT_DOCKER_TEST_IMAGE` to an
+approved local image digest whose entry point stays running under these limits
+and run `go test -count=1 -run '^TestDockerEngineLifecycle$' ./services/agent/drivers/docker`.
+The smoke starts, inspects, stops and removes its test container. Live Docker
+acceptance remains tracked in [#13](https://github.com/pavlith/arc/issues/13).
 
 ## Verification and limits
 

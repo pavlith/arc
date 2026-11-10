@@ -1,4 +1,4 @@
-package agent_test
+package reconcile_test
 
 import (
 	"context"
@@ -13,13 +13,14 @@ import (
 
 	contract "github.com/pavlith/arc/sdk/agent"
 	"github.com/pavlith/arc/sdk/rpc"
-	"github.com/pavlith/arc/services/agent"
 	"github.com/pavlith/arc/services/agent/journal"
+	"github.com/pavlith/arc/services/agent/modules/reconcile"
 )
 
 type provider struct {
 	key                              ed25519.PrivateKey
 	spec                             contract.Spec
+	inventoryID                      string
 	offline, failReport, badSnapshot bool
 	reports                          []contract.Report
 }
@@ -28,7 +29,11 @@ func (p *provider) Inventory(context.Context, contract.InventoryRequest) (contra
 	if p.offline {
 		return contract.InventoryPage{}, errors.New("offline")
 	}
-	return contract.InventoryPage{ResourceIDs: []string{p.spec.ID}}, nil
+	id := p.inventoryID
+	if id == "" {
+		id = p.spec.ID
+	}
+	return contract.InventoryPage{ResourceIDs: []string{id}}, nil
 }
 func (p *provider) Pull(_ context.Context, r contract.PullRequest) (contract.SignedSnapshot, error) {
 	if p.offline {
@@ -76,7 +81,7 @@ func TestAgentOnlineReconcileDriftAndReportRetry(t *testing.T) {
 	}
 	defer store.Close()
 	h := &host{}
-	service, err := agent.New(agent.Config{NodeID: "node-one", Provider: p, CoreKey: pub, Templates: map[string]contract.Template{"task": template}, Journal: store, Drivers: map[contract.Kind]contract.Driver{contract.Docker: h}})
+	service, err := reconcile.New(reconcile.Config{NodeID: "node-one", Provider: p, CoreKey: pub, Templates: map[string]contract.Template{"task": template}, Journal: store, Drivers: map[contract.Kind]contract.Driver{contract.Docker: h}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,6 +116,11 @@ func TestAgentOnlineReconcileDriftAndReportRetry(t *testing.T) {
 		t.Fatal("invalid signed snapshot repaired host")
 	}
 	p.badSnapshot = false
+	p.inventoryID = "another-resource"
+	if service.Step(ctx) == nil || h.calls != 2 {
+		t.Fatal("snapshot for a different resource repaired host")
+	}
+	p.inventoryID = ""
 	p.spec.Revision = 2
 	if err := service.Step(ctx); err != nil || h.calls != 3 {
 		t.Fatalf("new revision: %d %v", h.calls, err)
@@ -126,7 +136,7 @@ func TestAgentOnlineReconcileDriftAndReportRetry(t *testing.T) {
 	defer store.Close()
 	p.badSnapshot = false
 	p.spec.Revision = 1
-	restarted, err := agent.New(agent.Config{NodeID: "node-one", Provider: p, CoreKey: pub, Templates: map[string]contract.Template{"task": template}, Journal: store, Drivers: map[contract.Kind]contract.Driver{contract.Docker: h}})
+	restarted, err := reconcile.New(reconcile.Config{NodeID: "node-one", Provider: p, CoreKey: pub, Templates: map[string]contract.Template{"task": template}, Journal: store, Drivers: map[contract.Kind]contract.Driver{contract.Docker: h}})
 	if err != nil {
 		t.Fatal(err)
 	}

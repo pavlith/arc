@@ -17,6 +17,7 @@ import (
 	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/agent/drivers/docker"
 	"github.com/pavlith/arc/services/agent/drivers/systemd"
+	"github.com/pavlith/arc/services/agent/host"
 	"github.com/pavlith/arc/services/agent/journal"
 	"github.com/pavlith/arc/services/core/modules/identity"
 )
@@ -166,7 +167,7 @@ func RunFile(ctx context.Context, path string) error {
 	}
 	service, err := New(Config{
 		NodeID: cfg.NodeID, Provider: provider, CoreKey: coreKey, Templates: templates,
-		Journal: store, Drivers: drivers, PollInterval: time.Duration(cfg.PollSeconds) * time.Second,
+		Journal: store, Drivers: drivers, PollInterval: time.Duration(cfg.PollSeconds) * time.Second, HostFacts: host.Collect,
 		Observe: func(resource, code string) { slog.Warn("agent reconciliation", "resource_id", resource, "code", code) },
 	})
 	if err != nil {

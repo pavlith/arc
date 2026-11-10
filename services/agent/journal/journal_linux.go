@@ -51,6 +51,10 @@ func Open(dir string) (*Store, error) {
 	s := &Store{dir: dir, lock: lock, records: map[string]agent.Record{}}
 	f, err := os.Open(filepath.Join(dir, "revisions.json"))
 	if errors.Is(err, os.ErrNotExist) {
+		if err := s.readRevisionFiles(); err != nil {
+			s.Close()
+			return nil, err
+		}
 		return s, nil
 	}
 	if err != nil {
@@ -86,6 +90,10 @@ func Open(dir string) (*Store, error) {
 		s.Close()
 		return nil, err
 	}
+	if err := s.readRevisionFiles(); err != nil {
+		s.Close()
+		return nil, err
+	}
 	return s, nil
 }
 func (s *Store) Load(ctx context.Context, id string) (agent.Record, bool, error) {
@@ -118,45 +126,13 @@ func (s *Store) Save(ctx context.Context, id string, r agent.Record) error {
 	if old, ok := s.records[id]; ok && r.Revision == old.Revision && old.Complete && r != old {
 		return agent.ErrStale
 	}
-	next := make(map[string]agent.Record, len(s.records)+1)
-	for k, v := range s.records {
-		next[k] = v
-	}
-	next[id] = r
-	raw, err := json.Marshal(next)
-	if err != nil {
+	// Persist only the changed resource. Existing revisions.json is retained
+	// as a read-only migration baseline; never rewrite the entire JSON map.
+	if err := s.writeRevision(id, r); err != nil {
 		return err
 	}
-	if len(raw) > 16<<20 {
-		return agent.ErrInvalid
-	}
-	f, err := os.CreateTemp(s.dir, ".revisions-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	if _, err = f.Write(raw); err != nil {
-		f.Close()
-		return err
-	}
-	if err = f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	if err = f.Close(); err != nil {
-		return err
-	}
-	if err = os.Rename(f.Name(), filepath.Join(s.dir, "revisions.json")); err != nil {
-		return err
-	}
-	// Once renamed, memory follows the visible state even if directory fsync fails.
-	s.records = next
-	dir, err := os.Open(s.dir)
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
+	s.records[id] = r
+	return nil
 }
 func (s *Store) Close() error {
 	s.mu.Lock()

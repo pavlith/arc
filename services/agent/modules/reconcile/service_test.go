@@ -56,10 +56,14 @@ func (p *provider) Report(_ context.Context, r contract.Report) error {
 type host struct {
 	calls, inspects int
 	running         int
+	failure         error
 }
 
 func (h *host) Apply(_ context.Context, s contract.Spec, _ contract.Template) (contract.Observation, error) {
 	h.calls++
+	if h.failure != nil {
+		return contract.Observation{}, h.failure
+	}
 	h.running = s.Replicas
 	return contract.Observation{ResourceID: s.ID, NodeID: s.NodeID, Revision: s.Revision, State: s.State, Running: h.running}, nil
 }
@@ -91,6 +95,19 @@ func TestAgentOnlineReconcileDriftAndReportRetry(t *testing.T) {
 		t.Fatal("report failure lost or host effect absent")
 	}
 	event := p.reports[0].EventID
+	// Simulate a process crash while Core acknowledgement is uncertain.
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err = journal.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	service, err = reconcile.New(reconcile.Config{NodeID: "node-one", Provider: p, CoreKey: pub, Templates: map[string]contract.Template{"task": template}, Journal: store, Drivers: map[contract.Kind]contract.Driver{contract.Docker: h}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	p.offline = true
 	if service.Step(ctx) == nil || h.calls != 1 {
 		t.Fatal("offline cached state executed")
@@ -102,6 +119,10 @@ func TestAgentOnlineReconcileDriftAndReportRetry(t *testing.T) {
 	}
 	if p.reports[1].EventID != event || h.calls != 1 || h.inspects == 0 {
 		t.Fatal("pending receipt retry or idempotent inspection failed")
+	}
+	// An unchanged observation must not create a fresh operational receipt.
+	if err := service.Step(ctx); err != nil || len(p.reports) != 2 {
+		t.Fatalf("unchanged state created duplicate report: reports=%d err=%v", len(p.reports), err)
 	}
 	h.running = 0
 	if err := service.Step(ctx); err != nil {
@@ -142,5 +163,31 @@ func TestAgentOnlineReconcileDriftAndReportRetry(t *testing.T) {
 	}
 	if restarted.Step(ctx) == nil || h.calls != 3 {
 		t.Fatal("restart accepted stale/invalid revision")
+	}
+}
+
+func TestAgentTransientHostFailureKeepsOperationPending(t *testing.T) {
+	pub, key, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := contract.Template{ID: "task", Revision: 1, Kind: contract.Docker, Target: "registry/task@sha256:" + strings.Repeat("a", 64), MaxReplicas: 1}
+	p := &provider{key: key, spec: contract.Spec{ID: "task", NodeID: "node-one", Kind: contract.Docker, TemplateID: template.ID, TemplateRevision: 1, TemplateDigest: contract.TemplateDigest(template), Revision: 1, State: contract.Running, Replicas: 1}}
+	store, err := journal.Open(filepath.Join(t.TempDir(), "journal"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	h := &host{failure: context.DeadlineExceeded}
+	service, err := reconcile.New(reconcile.Config{NodeID: "node-one", Provider: p, CoreKey: pub, Templates: map[string]contract.Template{"task": template}, Journal: store, Drivers: map[contract.Kind]contract.Driver{contract.Docker: h}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Step(context.Background()); err == nil || len(p.reports) != 0 {
+		t.Fatalf("temporary failure was reported as terminal: err=%v reports=%v", err, p.reports)
+	}
+	h.failure = nil
+	if err := service.Step(context.Background()); err != nil || len(p.reports) != 1 || h.calls != 2 {
+		t.Fatalf("retry after fresh pull failed: err=%v reports=%v calls=%d", err, p.reports, h.calls)
 	}
 }

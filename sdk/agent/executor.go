@@ -33,10 +33,15 @@ type Journal interface {
 	Save(context.Context, string, Record) error
 }
 
+// Inspector re-observes actual host state without causing effects.
+type Inspector interface {
+	Inspect(context.Context, Spec, Template) (Observation, error)
+}
+
 // Driver must be idempotent across crashes and must inspect real host state.
 // No driver may claim a completed revision without a fresh host observation.
 type Driver interface {
-	Inspect(context.Context, Spec, Template) (Observation, error)
+	Inspector
 	Apply(context.Context, Spec, Template) (Observation, error)
 }
 

@@ -1,0 +1,23 @@
+{
+  "node_id": "node-one",
+  "service_id": "<registered arc-agent service account uuid>",
+  "kid": "node-key-v1",
+  "key_file": "/etc/arc-agent/service.seed",
+  "core_snapshot_key_file": "/etc/arc-agent/core-snapshot-public.json",
+  "state_directory": "/var/lib/arc-agent",
+  "poll_seconds": 5,
+  "nats": {
+    "URL": "tls://nats.internal:4222",
+    "NKeySeedFile": "/etc/arc-agent/nats.seed",
+    "TLSCAFile": "/etc/arc-agent/ca.crt"
+  },
+  "templates": [
+    {
+      "id": "worker",
+      "revision": 1,
+      "kind": "systemd.service",
+      "target": "arc-managed-worker.service",
+      "max_replicas": 1
+    }
+  ]
+}

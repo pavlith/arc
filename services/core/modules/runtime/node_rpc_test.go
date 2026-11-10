@@ -1,6 +1,7 @@
 package runtime_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -8,18 +9,21 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/nats-io/nats.go"
-	"github.com/pavlith/arc/agent/journal"
 	"github.com/pavlith/arc/internal/testdb"
 	"github.com/pavlith/arc/sdk"
 	"github.com/pavlith/arc/sdk/agent"
 	"github.com/pavlith/arc/sdk/rpc"
 	"github.com/pavlith/arc/sdk/security"
+	nodeService "github.com/pavlith/arc/services/agent"
+	"github.com/pavlith/arc/services/agent/journal"
 	"github.com/pavlith/arc/services/core"
 	"github.com/pavlith/arc/services/core/modules/access"
 	"github.com/pavlith/arc/services/core/modules/identity"
@@ -322,6 +326,67 @@ func TestRuntimeNodeRPC(t *testing.T) {
 			t.Fatalf("foreign reply inbox error: %v", err)
 		}
 
+	})
+	t.Run("standalone_agent", func(t *testing.T) {
+		binary := os.Getenv("ARC_RUNTIME_AGENT_BINARY")
+		if binary == "" {
+			t.Skip("runtime harness builds cmd/arc-agent")
+		}
+		directory := t.TempDir()
+		keyFile := filepath.Join(directory, "service.seed")
+		must(os.WriteFile(keyFile, keys[1].Seed(), 0600))
+		rootFile := filepath.Join(directory, "core-public.json")
+		public, err := json.Marshal(snapshotKey.Public().(ed25519.PublicKey))
+		must(err)
+		must(os.WriteFile(rootFile, public, 0600))
+		brokerKey := filepath.Join(directory, "nats.seed")
+		seed, err := os.ReadFile(filepath.Join(secrets, "nats-jetstream-admin.seed"))
+		must(err)
+		must(os.WriteFile(brokerKey, seed, 0600))
+		cfg := nodeService.FileConfig{NodeID: "node-two", ServiceID: accounts[1], Kid: kids[1], KeyFile: keyFile, CoreSnapshotKeyFile: rootFile, StateDirectory: filepath.Join(directory, "state"), NATS: config("nats-jetstream-admin.seed", "standalone-agent"), PollSeconds: 1}
+		cfg.NATS.NKeySeedFile = brokerKey
+		configFile := filepath.Join(directory, "agent.json")
+		encoded, err := json.Marshal(cfg)
+		must(err)
+		must(os.WriteFile(configFile, encoded, 0600))
+		namespace := "proof:" + accounts[1] + ":" + kids[1]
+		nonces := func() int64 {
+			var count int64
+			must(db.Table("identity_assertion_nonces").Where("namespace=?", namespace).Count(&count).Error)
+			return count
+		}
+		before := nonces()
+		command := exec.Command(binary, "-config", configFile)
+		var output bytes.Buffer
+		command.Stderr = &output
+		must(command.Start())
+		done := make(chan error, 1)
+		go func() { done <- command.Wait() }()
+		defer func() { _ = command.Process.Kill() }()
+		timeout := time.After(5 * time.Second)
+		connected := false
+		for !connected {
+			select {
+			case err := <-done:
+				t.Fatalf("Agent exited before online inventory: %v %s", err, output.String())
+			case <-timeout:
+				t.Fatal("Agent did not authenticate inventory")
+			case <-time.After(10 * time.Millisecond):
+				connected = nonces() >= before+2
+			}
+		}
+		must(command.Process.Signal(syscall.SIGTERM))
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("Agent SIGTERM/interrupt shutdown: %v %s", err, output.String())
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("Agent did not stop")
+		}
+		reopened, err := journal.Open(cfg.StateDirectory)
+		must(err)
+		must(reopened.Close())
 	})
 	t.Run("core_unavailable", func(t *testing.T) {
 		must(service.Stop())

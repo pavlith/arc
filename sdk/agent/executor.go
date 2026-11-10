@@ -39,6 +39,12 @@ type Driver interface {
 	Apply(context.Context, Spec, Template) (Observation, error)
 }
 
+// Inspector re-observes an already completed revision on a fresh online pull.
+// A drifted resource may be repaired idempotently; inspection errors fail closed.
+type Inspector interface {
+	Inspect(context.Context, Spec, Template) (Observation, error)
+}
+
 // Executor serializes the node. It requires a new verified pull even for retries;
 // no method executes a stored intent without online Core confirmation.
 type Executor struct {
@@ -73,33 +79,54 @@ func (e *Executor) Reconcile(ctx context.Context, raw []byte, request string) (O
 	if err := ctx.Err(); err != nil {
 		return Observation{}, err
 	}
-	record, exists, err := e.Journal.Load(ctx, s.Spec.ID)
-	if err != nil {
-		return Observation{}, security.ErrUnavailable
-	}
-	digest := SpecDigest(s.Spec)
-	if exists {
-		if s.Spec.Revision < record.Revision || (s.Spec.Revision == record.Revision && (digest != record.Digest || record.OperationID != s.OperationID)) {
-			return Observation{}, ErrStale
-		}
-		if s.Spec.Revision == record.Revision && record.Complete {
-			return record.Observation, nil
-		}
-	}
-	record = Record{Revision: s.Spec.Revision, Digest: digest, OperationID: s.OperationID}
-	if err := e.Journal.Save(ctx, s.Spec.ID, record); err != nil {
-		return Observation{}, security.ErrUnavailable
-	}
-	// Stop starting new effects when the online authorization expires. A driver
-	// must respect cancellation between host API calls; existing workloads survive.
-	deadline := time.Unix(s.ExpiresAt, 0)
-	// Allow a test clock without changing the actual remaining lease duration.
-	remaining := deadline.Sub(now) - time.Since(started)
+	remaining := time.Unix(s.ExpiresAt, 0).Sub(now) - time.Since(started)
 	if remaining <= 0 {
 		return Observation{}, ErrStale
 	}
 	effectCtx, cancel := context.WithTimeout(ctx, remaining)
 	defer cancel()
+	record, exists, err := e.Journal.Load(effectCtx, s.Spec.ID)
+	if err != nil {
+		return Observation{}, security.ErrUnavailable
+	}
+	digest := SpecDigest(s.Spec)
+	completed := false
+	if exists {
+		if s.Spec.Revision < record.Revision || (s.Spec.Revision == record.Revision && (digest != record.Digest || record.OperationID != s.OperationID)) {
+			return Observation{}, ErrStale
+		}
+		completed = s.Spec.Revision == record.Revision && record.Complete
+		if completed {
+			inspector, ok := driver.(Inspector)
+			if !ok {
+				return record.Observation, nil
+			}
+			current, err := inspector.Inspect(effectCtx, s.Spec, e.Templates[s.Spec.TemplateID])
+			if err != nil {
+				return Observation{}, err
+			}
+			if err := effectCtx.Err(); err != nil {
+				return Observation{}, err
+			}
+			if current.ResourceID != s.Spec.ID || current.NodeID != e.NodeID || current.Revision != s.Spec.Revision || current.State != s.Spec.State {
+				return Observation{}, ErrInvalid
+			}
+			if current.Running == s.Spec.Replicas {
+				return current, nil
+			}
+		}
+	}
+	// A completed intent remains durable during drift repair. Resetting its
+	// high-water mark would weaken crash/replay protection.
+	if !completed {
+		record = Record{Revision: s.Spec.Revision, Digest: digest, OperationID: s.OperationID}
+		if err := e.Journal.Save(effectCtx, s.Spec.ID, record); err != nil {
+			return Observation{}, security.ErrUnavailable
+		}
+	}
+	if err := effectCtx.Err(); err != nil {
+		return Observation{}, err
+	}
 	obs, err := driver.Apply(effectCtx, s.Spec, e.Templates[s.Spec.TemplateID])
 	if err != nil {
 		return Observation{}, err
@@ -112,7 +139,7 @@ func (e *Executor) Reconcile(ctx context.Context, raw []byte, request string) (O
 	}
 	record.Complete = true
 	record.Observation = obs
-	if err := e.Journal.Save(ctx, s.Spec.ID, record); err != nil {
+	if err := e.Journal.Save(effectCtx, s.Spec.ID, record); err != nil {
 		return Observation{}, security.ErrUnavailable
 	}
 	return obs, nil

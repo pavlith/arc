@@ -1,0 +1,23 @@
+[Unit]
+Description=Arc Infrastructure Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/arc-agent -config /etc/arc-agent/config.json
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=15s
+StateDirectory=arc-agent
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/arc-agent
+
+[Install]
+WantedBy=multi-user.target

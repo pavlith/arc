@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pavlith/arc/agent/journal"
 	"github.com/pavlith/arc/sdk/agent"
+	"github.com/pavlith/arc/services/agent/journal"
 )
 
 func TestDurableRevisionsAndSingleWriter(t *testing.T) {

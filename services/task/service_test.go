@@ -16,10 +16,11 @@ func TestTaskApprovedArtifactAndTypedBindings(t *testing.T) {
 	if c.Manifest.Service.Name != "task" || c.Manifest.Service.APIMajor != 1 {
 		t.Fatal("unexpected Tasks Fabric identity", c.Manifest.Service)
 	}
-	if len(c.Manifest.Operations) != 4 || len(c.Manifest.Events) != 1 {
-		t.Fatal("changed M0-06 operation/event boundary")
+	operations := []string{taskv1.Create.ID, taskv1.Get.ID, taskv1.List.ID, taskv1.Edit.ID, taskv1.Admin.ID}
+	if len(c.Manifest.Operations) != len(operations) || len(c.Manifest.Events) != 1 {
+		t.Fatal("unexpected Task operation or event")
 	}
-	for _, op := range []string{taskv1.Create.ID, taskv1.Get.ID, taskv1.List.ID, taskv1.Admin.ID} {
+	for _, op := range operations {
 		if _, err := c.Operation(op); err != nil {
 			t.Fatal(err)
 		}

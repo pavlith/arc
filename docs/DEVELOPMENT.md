@@ -141,7 +141,7 @@ Build `ui/` with `npm --prefix ui ci` and `npm --prefix ui run build`. Set Gate'
 `ui_directory` to the absolute path to `ui/dist` and open the configured HTTPS
 origin. Gate serves `/` and the built JavaScript/CSS under `/assets/`. All UI
 calls use the same origin and browser cookies. The UI reads the CSRF cookie for
-mutations and sends an idempotency key for Task commands.
+mutations and sends an idempotency key for Identity and Task commands.
 
 Apply Core migrations before starting the updated Core. The session-channel
 migration keeps existing sessions as `legacy`. New browser sessions cannot issue
@@ -158,13 +158,23 @@ administrator role and an `Idempotency-Key`. User provisioning additionally
 requires the user's ID in the signed `admin_users` list. Core remains the
 authority for every write and returns only readable Task roots to the UI.
 
+Allow `workspaces.create` and `invitations.create`, `invitations.revoke` and
+`invitations.accept` under the same exact Identity operation prefix to enable
+workspace creation and invitations in the UI. Owners and administrators may
+invite a provisioned account as a member or guest. Share the link with the
+recipient, who signs in with the specified email and accepts within 48 hours.
+The token travels in a URL fragment and Core persists only its hash. The
+optional `workspaces.archive` operation lets an owner archive a workspace by
+posting its `workspace_id` to `/api/v1/arc/identity/workspaces/archive`.
+
 Task editing needs the signed `task.tasks.edit` operation, online `task.create`
 permission on the root and matching `created_by`. `PATCH` accepts `title` and
 `expected_updated_at`; the writer transaction commits the edit, audit and replay
 record together. Approve the updated Task artifact and a Notify installation
 pinned to the new Task digest through the existing Fabric replacement workflow.
 Include the exact `rpc.task.v1.tasks.edit` subject in Task broker permissions.
-Workspace and Task root provisioning still require the existing operator setup.
+New workspaces receive a corporate ACL root. Task roots still require the existing
+operator setup.
 
 ## Agent workflow
 

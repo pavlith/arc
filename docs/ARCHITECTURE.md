@@ -122,6 +122,8 @@ Register only independently permissioned roots: personal/workspace roots, calend
 
 Personal roots may have no workspace; workspace roots require `owner_id=workspace_id`. One acyclic ACL parent must share owner/scope in M0. `inherit_acl=false` stops ancestor grants without changing ownership or system safeguards. Sharing adds a grant rather than moving ownership. Root reparenting/ownership transfer is outside M0. Workspace group/role grants stay in the same workspace; M0 personal sharing targets individual users.
 
+Core creates the corporate `arc.workspace` root, the workspace, its owner membership and both audit records in one SQLite transaction. The root shares the workspace UUID and carries no domain permissions. The registry uses a disabled internal identity for the provider foreign key. Domain providers still own their content roots and use the existing reservation and activation protocol. An owner can archive a workspace. The transaction revokes memberships and pending invitations, removes group assignments and closes the corporate root. Subsequent Access checks deny workspace-scoped roots. Domain data and personal roots are retained.
+
 ### 4.2. Check algorithm
 
 Actions are exact contract-defined strings. `calendar.free_busy` does not imply `calendar.read`; ACL management does not imply content read/download. Fabric validates operation/action mappings.

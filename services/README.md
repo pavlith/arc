@@ -2,7 +2,7 @@
 
 | Component | Current surface | Remaining product scope |
 |---|---|---|
-| `core/` | `cmd/arc-core`, owner SQLite, private RPC and signed approval for Identity profile, workspace reads/updates, member/group management and administrator provisioning | Atomic workspace creation and invitations #9; Runtime policy/adapter #13 |
+| `core/` | `cmd/arc-core`, owner SQLite, private RPC and signed approval for Identity profile, workspace lifecycle and invitations, member/group management and administrator provisioning | Runtime policy and adapter #13 |
 | `gate/` | `cmd/arc-gate`, browser cookies, CLI tokens, signed domain routes, Identity routes and optional UI assets | WS/DAV adapters |
 | `task/` | `cmd/arc-task`, workspace create/get/list and title edits for own tasks, roots and atomic replay/outbox | Projects and views #10 |
 | `notify/` | `cmd/arc-notify`, internal inbox/notification and persisted fake outbound intents | User inbox/subscriptions, realtime and real channels #9/#12 |

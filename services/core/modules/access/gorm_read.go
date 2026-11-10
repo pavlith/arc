@@ -46,6 +46,13 @@ func (c *Core) readTypeGORM(tx *gorm.DB, name string) (TypeSpec, error) {
 		Row().Scan(&provider, &digest); err != nil {
 		return TypeSpec{}, err
 	}
+	if name == workspaceRootType {
+		if provider != workspaceRootAccount || digest != workspaceRootDigest {
+			return TypeSpec{}, ErrUnavailable
+		}
+		return TypeSpec{Type: name, Provider: provider, Actions: []string{workspaceManageAction},
+			ShareAction: workspaceManageAction, CreateAction: workspaceManageAction, DeleteAction: workspaceManageAction}, nil
+	}
 	return c.Contracts.Type(name, provider, digest)
 }
 
@@ -201,6 +208,10 @@ func (c *Core) evaluateGORM(tx *gorm.DB, cl security.Claims, q CheckRequest) (bo
 	if resource.State != "active" || cl.WorkspaceID != "" && cl.WorkspaceID != resource.WorkspaceID {
 		return false, nil
 	}
+	active, err := workspaceIsActive(tx, resource.WorkspaceID)
+	if err != nil || !active {
+		return false, err
+	}
 	spec, err := c.readTypeGORM(tx, resource.Type)
 	if err != nil {
 		return false, err
@@ -264,6 +275,15 @@ func (c *Core) evaluateGORM(tx *gorm.DB, cl security.Claims, q CheckRequest) (bo
 		AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>?))`,
 		ids, kind, id, q.Action, c.now()).Row().Scan(&allowed)
 	return allowed, err
+}
+
+func workspaceIsActive(tx *gorm.DB, workspace string) (bool, error) {
+	if workspace == "" {
+		return true, nil
+	}
+	var active bool
+	err := tx.Raw(`SELECT EXISTS(SELECT 1 FROM identity_workspaces WHERE id=? AND archived_at IS NULL)`, workspace).Row().Scan(&active)
+	return active, err
 }
 
 func (c *Core) checkGORM(ctx context.Context, q CheckRequest) (Decision, error) {
@@ -409,6 +429,13 @@ func (c *Core) userScopeGORM(ctx context.Context, user string, resources, action
 			}
 			if err != nil {
 				return err
+			}
+			active, err := workspaceIsActive(tx, resource.WorkspaceID)
+			if err != nil {
+				return err
+			}
+			if !active {
+				return ErrDenied
 			}
 			parents, valid, err := chainGORM(tx, resource)
 			if err != nil {

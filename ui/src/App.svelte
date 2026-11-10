@@ -16,6 +16,13 @@
   let task = $state(null);
   let title = $state('');
   let draft = $state('');
+  let workspaceName = $state('');
+  let inviting = $state(false);
+  let inviteEmail = $state('');
+  let inviteRole = $state('member');
+  let shareInvite = $state(null);
+  let incomingInvite = $state('');
+  let inviteDraft = null;
   let retry = null;
 
   const identity = '/api/v1/arc/identity';
@@ -30,6 +37,9 @@
     scope = null;
     tasks = [];
     task = null;
+    shareInvite = null;
+    inviteDraft = null;
+    inviting = false;
     retry = null;
   }
 
@@ -73,7 +83,14 @@
     if (workspaces.length) await chooseWorkspace(workspaces[0]);
   }
 
-  onMount(() => { void run(loadProfile, true); });
+  onMount(() => {
+    const token = new URLSearchParams(location.hash.slice(1)).get('invite');
+    if (token && /^[A-Za-z0-9_-]{43}$/.test(token)) {
+      incomingInvite = token;
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+    void run(loadProfile, true);
+  });
 
   async function signIn(event) {
     event.preventDefault();
@@ -91,6 +108,9 @@
     scopes = [];
     tasks = [];
     task = null;
+    shareInvite = null;
+    inviteDraft = null;
+    inviting = false;
     scopes = await pages(`${identity}/task_roots/list`, { workspace_id: item.id });
     if (scopes.length) await chooseScope(scopes[0]);
   }
@@ -121,6 +141,44 @@
     const result = await api(path, { method, body, key: retry.key });
     retry = null;
     return result;
+  }
+
+  async function createWorkspace(event) {
+    event.preventDefault();
+    if (!workspaceName.trim()) return;
+    await run(async () => {
+      const item = await command('POST', `${identity}/workspaces/create`, { name: workspaceName.trim() });
+      workspaceName = '';
+      workspaces = [...workspaces.filter((old) => old.id !== item.id), item];
+      await chooseWorkspace(item);
+    });
+  }
+
+  function newInviteToken() {
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    return btoa(String.fromCharCode(...bytes)).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+  }
+
+  async function createInvitation(event) {
+    event.preventDefault();
+    await run(async () => {
+      const input = { workspace_id: workspace.id, email: inviteEmail.trim(), role: inviteRole };
+      const signature = JSON.stringify(input);
+      if (inviteDraft?.signature !== signature) inviteDraft = { signature, token: newInviteToken() };
+      const invite = await command('POST', `${identity}/invitations/create`, { ...input, token: inviteDraft.token });
+      shareInvite = { ...invite, url: `${location.origin}/#invite=${inviteDraft.token}` };
+      inviteDraft = null;
+      inviteEmail = '';
+    });
+  }
+
+  async function acceptInvitation() {
+    await run(async () => {
+      const item = await command('POST', `${identity}/invitations/accept`, { token: incomingInvite });
+      incomingInvite = '';
+      workspaces = [...workspaces.filter((old) => old.id !== item.id), item];
+      await chooseWorkspace(item);
+    });
   }
 
   async function createTask(event) {
@@ -154,6 +212,7 @@
     <section class="signin" aria-labelledby="signin-title">
       <span class="brand">Arc</span>
       <h1 id="signin-title">Sign in</h1>
+      {#if incomingInvite}<p class="muted">Sign in with the email address on your invitation.</p>{/if}
       {#if error}<p class="error" role="alert">{error}</p>{/if}
       <form onsubmit={signIn}>
         <label>Email <input type="email" autocomplete="username" required maxlength="254" bind:value={email} /></label>
@@ -179,13 +238,45 @@
       {:else}
         <p class="muted">No workspaces assigned.</p>
       {/each}
+      <form class="new-workspace" onsubmit={createWorkspace}>
+        <label>Workspace name <input required maxlength="128" bind:value={workspaceName} /></label>
+        <button class="primary" disabled={busy}>Create workspace</button>
+      </form>
     </aside>
     <main class="content" aria-busy={busy}>
       {#if error}<p class="error" role="alert">{error}</p>{/if}
+      {#if incomingInvite}
+        <section class="invitation" aria-label="Workspace invitation">
+          <p>You have a workspace invitation.</p>
+          <button class="primary" disabled={busy} onclick={acceptInvitation}>Accept invitation</button>
+        </section>
+      {/if}
       {#if workspace}
         <div class="section-header"><div><p class="muted">{workspace.name}</p><h1>Tasks</h1></div>
-          {#if scope}<button disabled={busy} onclick={() => run(loadTasks)}>Refresh</button>{/if}
+          <div class="actions">
+            {#if workspace.role === 'owner' || workspace.role === 'admin'}
+              <button disabled={busy} onclick={() => inviting = !inviting}>{inviting ? 'Close invitation form' : 'Invite member'}</button>
+            {/if}
+            {#if scope}<button disabled={busy} onclick={() => run(loadTasks)}>Refresh</button>{/if}
+          </div>
         </div>
+        {#if inviting}
+          <section class="invitation" aria-label="Invite a workspace member">
+            <form onsubmit={createInvitation}>
+              <label>Recipient email <input type="email" required maxlength="254" bind:value={inviteEmail} /></label>
+              <label>Role <select bind:value={inviteRole}><option value="member">Member</option><option value="guest">Guest</option></select></label>
+              <button class="primary" disabled={busy}>Create invitation</button>
+            </form>
+            {#if shareInvite}
+              <label>Share this invitation link <input readonly value={shareInvite.url} /></label>
+              <p class="muted">Expires {time.format(new Date(shareInvite.expires_at))}.</p>
+              <button disabled={busy} onclick={() => run(async () => {
+                await command('POST', `${identity}/invitations/revoke`, { workspace_id: workspace.id, id: shareInvite.id });
+                shareInvite = null;
+              })}>Revoke invitation</button>
+            {/if}
+          </section>
+        {/if}
         {#if scopes.length > 1}
           <label class="scope">Task scope
             <select value={scope?.id} disabled={busy} onchange={(event) => {
@@ -197,7 +288,7 @@
           </label>
         {/if}
         {#if !scope}
-          <p class="empty">{busy ? 'Loading task scopes…' : 'No task scopes are available in this workspace.'}</p>
+          <p class="empty">{busy ? 'Loading task scopes…' : 'No Task roots are available in this workspace.'}</p>
         {:else}
           {#if scope.can_write}
             <form class="new-task" onsubmit={createTask}>

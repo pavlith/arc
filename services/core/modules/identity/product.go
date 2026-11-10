@@ -27,6 +27,7 @@ type Profile struct {
 
 type Workspace struct {
 	ID       string `json:"id"`
+	RootID   string `json:"acl_root_id"`
 	Name     string `json:"name"`
 	Role     string `json:"role"`
 	Revision int64  `json:"revision"`
@@ -53,6 +54,10 @@ type Page struct {
 
 type WorkspaceInput struct {
 	WorkspaceID string `json:"workspace_id"`
+}
+
+type WorkspaceCreate struct {
+	Name string `json:"name"`
 }
 
 type WorkspacePage struct {
@@ -115,8 +120,9 @@ func (c *Core) productRole(ctx context.Context, workspace, user string, manager 
 		return "", productInvalid()
 	}
 	var role string
-	err := c.db(ctx).WithContext(ctx).Raw(`SELECT role FROM identity_memberships
-		WHERE workspace_id=? AND user_id=? AND revoked_at IS NULL`, workspace, user).Row().Scan(&role)
+	err := c.db(ctx).WithContext(ctx).Raw(`SELECT m.role FROM identity_memberships m
+		JOIN identity_workspaces w ON w.id=m.workspace_id AND w.archived_at IS NULL
+		WHERE m.workspace_id=? AND m.user_id=? AND m.revoked_at IS NULL`, workspace, user).Row().Scan(&role)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", productNotFound()
 	}
@@ -138,9 +144,9 @@ func (c *Core) profile(ctx context.Context, user string) (Profile, error) {
 
 func (c *Core) workspaces(ctx context.Context, user string, q Page) ([]Workspace, error) {
 	out := []Workspace{}
-	err := c.db(ctx).WithContext(ctx).Raw(`SELECT w.id,w.name,w.revision,m.role
+	err := c.db(ctx).WithContext(ctx).Raw(`SELECT w.id,COALESCE(w.acl_root_id,'') AS root_id,w.name,w.revision,m.role
 		FROM identity_workspaces w JOIN identity_memberships m ON m.workspace_id=w.id
-		WHERE m.user_id=? AND m.revoked_at IS NULL AND w.id>? ORDER BY w.id LIMIT 100`, user, q.After).Scan(&out).Error
+		WHERE m.user_id=? AND m.revoked_at IS NULL AND w.archived_at IS NULL AND w.id>? ORDER BY w.id LIMIT 100`, user, q.After).Scan(&out).Error
 	return out, err
 }
 
@@ -150,7 +156,8 @@ func (c *Core) workspace(ctx context.Context, user string, q WorkspaceInput) (Wo
 		return Workspace{}, err
 	}
 	out := Workspace{ID: q.WorkspaceID, Role: role}
-	err = c.db(ctx).WithContext(ctx).Raw(`SELECT name,revision FROM identity_workspaces WHERE id=?`, q.WorkspaceID).Row().Scan(&out.Name, &out.Revision)
+	err = c.db(ctx).WithContext(ctx).Raw(`SELECT name,revision,COALESCE(acl_root_id,'') FROM identity_workspaces WHERE id=?`, q.WorkspaceID).
+		Row().Scan(&out.Name, &out.Revision, &out.RootID)
 	return out, err
 }
 
@@ -299,6 +306,11 @@ func bindProductWrite[Q interface{ workspaceID() string }, R any](s *sdk.Service
 
 func (c *Core) bindProduct(s *sdk.Service) error {
 	registrations := []func() error{
+		func() error { return c.bindProductWorkspaceCreate(s) },
+		func() error { return c.bindProductWorkspaceArchive(s) },
+		func() error { return bindProductWrite(s, c, "invitations.create", true, c.createInvitation) },
+		func() error { return bindProductWrite(s, c, "invitations.revoke", true, c.revokeInvitation) },
+		func() error { return c.bindInvitationAccept(s) },
 		func() error { return c.bindProductProvision(s) },
 		func() error {
 			return bindProductRead(s, c, "profile", func(ctx context.Context, user string, _ Empty) (Profile, error) { return c.profile(ctx, user) })
@@ -342,6 +354,30 @@ func (c *Core) bindProduct(s *sdk.Service) error {
 		}
 	}
 	return nil
+}
+
+func (c *Core) bindProductWorkspaceCreate(s *sdk.Service) error {
+	const name = "product.workspaces.create"
+	return bindOperation(s, c, name, true, func(ctx context.Context, req ProductRequest[WorkspaceCreate]) (Workspace, error) {
+		if c.CreateWorkspaceRoot == nil {
+			return Workspace{}, ErrUnavailable
+		}
+		user, err := c.user(ctx, req.Session)
+		if err != nil {
+			return Workspace{}, err
+		}
+		nameInput, err := productName(req.Input.Name)
+		if err != nil {
+			return Workspace{}, err
+		}
+		id, err := runCommand(ctx, c, user, "identity.v1."+name, nil, func(ctx context.Context) (string, error) {
+			return c.CreateWorkspace(ctx, req.Session, nameInput)
+		})
+		if err != nil {
+			return Workspace{}, err
+		}
+		return c.workspace(ctx, user.UserID, WorkspaceInput{WorkspaceID: id})
+	})
 }
 
 func (c *Core) bindProductProvision(s *sdk.Service) error {

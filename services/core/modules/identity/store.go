@@ -37,12 +37,14 @@ type Policy interface {
 	Authorize(context.Context, Authorization) error
 }
 type Core struct {
-	GormDB     *gorm.DB
-	Policy     Policy
-	PrivateKey ed25519.PrivateKey
-	SigningKid string
-	Now        func() time.Time
-	TaskRoots  func(context.Context, string, string, string) ([]TaskRoot, error)
+	GormDB               *gorm.DB
+	Policy               Policy
+	PrivateKey           ed25519.PrivateKey
+	SigningKid           string
+	Now                  func() time.Time
+	TaskRoots            func(context.Context, string, string, string) ([]TaskRoot, error)
+	CreateWorkspaceRoot  func(context.Context, string, string) error
+	ArchiveWorkspaceRoot func(context.Context, string, string) error
 }
 
 func (c *Core) now() time.Time {

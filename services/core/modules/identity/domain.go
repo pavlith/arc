@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pavlith/arc/sdk/database"
 	"github.com/pavlith/arc/sdk/security"
 	"gorm.io/gorm"
 )
@@ -38,13 +39,21 @@ func (c *Core) CreateWorkspace(ctx context.Context, auth UserSession, name strin
 		if e := t.WithContext(ctx).Exec(`INSERT INTO identity_memberships(workspace_id,user_id,role) VALUES( ?,?,'owner')`, id, s.UserID).Error; e != nil {
 			return e
 		}
+		if c.CreateWorkspaceRoot != nil {
+			if e := c.CreateWorkspaceRoot(database.TransactionContext(ctx, c.GormDB, t), id, s.UserID); e != nil {
+				return e
+			}
+			if e := t.WithContext(ctx).Exec(`UPDATE identity_workspaces SET acl_root_id=? WHERE id=?`, id, id).Error; e != nil {
+				return e
+			}
+		}
 		return audit(ctx, t, "user:"+s.UserID, "workspaces.create", id, "ok")
 	})
 	return id, e
 }
 func workspaceRole(ctx context.Context, t *gorm.DB, workspace, user string) (string, error) {
 	var revision int64
-	if e := t.WithContext(ctx).Raw(`SELECT revision FROM identity_workspaces WHERE id=?`, workspace).Row().Scan(&revision); e != nil {
+	if e := t.WithContext(ctx).Raw(`SELECT revision FROM identity_workspaces WHERE id=? AND archived_at IS NULL`, workspace).Row().Scan(&revision); e != nil {
 		return "", keyError(e)
 	}
 	var role string
@@ -103,6 +112,11 @@ func (c *Core) SetMembership(ctx context.Context, auth UserSession, workspace, u
 				return ErrDenied
 			}
 			if e = t.WithContext(ctx).Exec(`INSERT INTO identity_memberships(workspace_id,user_id,role) VALUES( ?,?,?) ON CONFLICT(workspace_id,user_id) DO UPDATE SET role=?,revoked_at=NULL`, workspace, user, role, role).Error; e != nil {
+				return e
+			}
+		}
+		if (previous == "owner" || previous == "admin") && (revoke || (role != "owner" && role != "admin")) {
+			if e = c.revokeIssuedInvitations(ctx, t, workspace, user); e != nil {
 				return e
 			}
 		}
@@ -361,6 +375,11 @@ func (c *Core) LeaveWorkspace(ctx context.Context, auth UserSession, workspace s
 		}
 		if e = t.WithContext(ctx).Exec(`DELETE FROM identity_group_members WHERE workspace_id=? AND user_id=?`, workspace, s.UserID).Error; e != nil {
 			return e
+		}
+		if role == "owner" || role == "admin" {
+			if e = c.revokeIssuedInvitations(ctx, t, workspace, s.UserID); e != nil {
+				return e
+			}
 		}
 		if e = t.WithContext(ctx).Exec(`UPDATE identity_workspaces SET revision=revision+1 WHERE id=?`, workspace).Error; e != nil {
 			return e

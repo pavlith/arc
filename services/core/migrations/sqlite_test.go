@@ -41,7 +41,7 @@ func execReject(t *testing.T, db *gorm.DB, sql string, args ...any) {
 func TestCoreSQLiteMigrationsAndOwnerIsolation(t *testing.T) {
 	db := openCore(t)
 	for _, name := range []string{
-		"identity_users", "identity_sessions", "identity_delegations",
+		"identity_users", "identity_sessions", "identity_delegations", "identity_workspace_invitations",
 		"identity_command_results", "access_resource_types", "access_policy_state",
 		"access_operations", "access_policy_audit", "fabric_contracts",
 		"fabric_instances", "fabric_route_state", "fabric_outbox",
@@ -59,7 +59,7 @@ func TestCoreSQLiteMigrationsAndOwnerIsolation(t *testing.T) {
 		t.Fatalf("migrations not repeatable: %v", err)
 	}
 	var count int64
-	if err := db.Table("schema_migrations").Count(&count).Error; err != nil || count != 6 {
+	if err := db.Table("schema_migrations").Count(&count).Error; err != nil || count != int64(len(migrations.SQLite())) {
 		t.Fatalf("migration history has %d entries: %v", count, err)
 	}
 }

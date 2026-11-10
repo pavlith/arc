@@ -33,6 +33,8 @@ form { display: grid; gap: 1rem; }
 .workspaces { padding: 1.6rem 1rem; background: #fff; border-right: 1px solid #dce2ed; }
 .workspaces h2 { padding: 0 .6rem .8rem; }
 .workspaces button { display: block; width: 100%; text-align: left; border-color: transparent; margin-bottom: .3rem; overflow-wrap: anywhere; }
+.new-workspace { border-top: 1px solid #dce2ed; padding: .9rem .6rem 0; margin-top: 1rem; }
+.new-workspace button { text-align: center; }
 .content { padding: clamp(1rem, 3vw, 2.5rem); width: 100%; max-width: 76rem; }
 .section-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.2rem; }
 .section-header .muted { margin-bottom: .2rem; }
@@ -47,6 +49,8 @@ form { display: grid; gap: 1rem; }
 .status { color: #53647d; white-space: nowrap; }
 .details, .empty { padding: 1.15rem; border: 1px solid #dce2ed; border-radius: 9px; background: #fff; }
 .details { display: grid; gap: .8rem; align-content: start; overflow-wrap: anywhere; }
+.invitation { display: grid; gap: .8rem; max-width: 34rem; margin-bottom: 1.2rem; padding: 1rem; background: #fff; border: 1px solid #dce2ed; border-radius: 9px; }
+.invitation button { justify-self: start; }
 .error { color: #8a2625; background: #fff0ee; border: 1px solid #e9c5c0; padding: .7rem .85rem; border-radius: 7px; }
 .content > .error { margin-bottom: 1rem; }
 

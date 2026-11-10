@@ -38,27 +38,27 @@ func (c *Control) Inventory(ctx context.Context, request agent.InventoryRequest)
 	}
 	err = database.RetryBusy(ctx, func() error {
 		return c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if _, err := activeNode(tx, request.NodeID, caller); err != nil {
-			return err
-		}
-		var ids []string
-		if err := tx.Model(&models.RuntimeResource{}).Where("node_id=? AND id>?", request.NodeID, request.AfterID).Order("id").Limit(101).Pluck("id", &ids).Error; err != nil {
-			return err
-		}
-		if len(ids) > 100 {
-			ids = ids[:100]
-			out.NextID = ids[99]
-		}
-		out.ResourceIDs = append(out.ResourceIDs, ids...)
-		// Inventory authenticates the node on every round. Refresh node liveness
-		// at most once per minute, without one audit/receipt per resource.
-		now := c.now().UTC()
-		if err := tx.Model(&models.RuntimeNode{}).
-			Where("id=? AND active=1 AND (last_seen_at IS NULL OR last_seen_at<?)", request.NodeID, now.Add(-time.Minute)).
-			Update("last_seen_at", now).Error; err != nil {
-			return err
-		}
-		return nil
+			if _, err := activeNode(tx, request.NodeID, caller); err != nil {
+				return err
+			}
+			var ids []string
+			if err := tx.Model(&models.RuntimeResource{}).Where("node_id=? AND id>?", request.NodeID, request.AfterID).Order("id").Limit(101).Pluck("id", &ids).Error; err != nil {
+				return err
+			}
+			if len(ids) > 100 {
+				ids = ids[:100]
+				out.NextID = ids[99]
+			}
+			out.ResourceIDs = append(out.ResourceIDs, ids...)
+			// Inventory authenticates the node on every round. Refresh node liveness
+			// at most once per minute, without one audit/receipt per resource.
+			now := c.now().UTC()
+			if err := tx.Model(&models.RuntimeNode{}).
+				Where("id=? AND active=1 AND (last_seen_at IS NULL OR last_seen_at<?)", request.NodeID, now.Add(-time.Minute)).
+				Update("last_seen_at", now).Error; err != nil {
+				return err
+			}
+			return nil
 		})
 	})
 	if err != nil {

@@ -41,6 +41,7 @@ import (
 	taskv1 "github.com/pavlith/arc/services/task/api/v1"
 	tasks "github.com/pavlith/arc/services/task/modules/tasks"
 	"github.com/pavlith/arc/test/testdb"
+	"github.com/pavlith/arc/test/testlog"
 	"gorm.io/gorm"
 )
 
@@ -58,6 +59,7 @@ func TestM006(t *testing.T) {
 	if os.Getenv("ARC_DOMAIN_BIN_DIR") == "" {
 		t.Skip("run scripts/test-m0-06.sh")
 	}
+	logs := testlog.Capture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
 	defer cancel()
 	must := func(e error) {
@@ -460,6 +462,44 @@ func TestM006(t *testing.T) {
 		t.Fatal("inbox missing")
 	}
 	t.Logf("login → Gate → Tasks → outbox → JetStream → notification: %s (includes delayed consumer start)", verticalLatency)
+	t.Run("correlated_diagnostics", func(t *testing.T) {
+		const trace = "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+		var eventID string
+		must(tdb.QueryRow("SELECT event_id FROM outbox LIMIT 1").Scan(&eventID))
+		coreOps := map[string]bool{}
+		for _, entry := range logs.Entries() {
+			if entry["msg"] == "arc rpc" && entry["request_id"] == "m006-request" && entry["traceparent"] == trace && entry["duration_ms"] != nil && entry["error_code"] == "" {
+				coreOps[entry["operation"].(string)] = true
+			}
+		}
+		for _, op := range []string{"identity.v1.invocations.verify", "identity.v1.invocations.exchange_service", "access.v1.check"} {
+			if !coreOps[op] {
+				t.Fatal("nested Core RPC lost request/trace context", op)
+			}
+		}
+		for _, kind := range []string{"task", "notify"} {
+			raw, err := os.ReadFile(filepath.Join(confDir, kind+".log"))
+			must(err)
+			var rpcFound, eventFound bool
+			for _, entry := range testlog.Parse(raw) {
+				if entry["traceparent"] != trace || entry["duration_ms"] == nil || entry["error_code"] != "" {
+					continue
+				}
+				rpcFound = rpcFound || entry["msg"] == "arc rpc" && entry["operation"] == tasks.Create && entry["request_id"] == "m006-request"
+				stage := "publish"
+				if kind == "notify" {
+					stage = "consume"
+				}
+				eventFound = eventFound || entry["msg"] == "arc event" && entry["kind"] == stage && entry["event_id"] == eventID && entry["delivery_lag_ms"] != nil
+			}
+			if kind == "task" && !rpcFound || !eventFound {
+				t.Fatal("missing process RPC/event correlation", kind)
+			}
+			if bytes.Contains(raw, []byte(token)) || bytes.Contains(raw, []byte("proof fixture password")) {
+				t.Fatal("credentials entered process diagnostics", kind)
+			}
+		}
+	})
 	// Measure one uninterrupted create-to-effect with both workers already running.
 	controlObserver, e := coreSvc.Connection().Subscribe("ctl.arc.fabric.>", func(m *nats.Msg) { countsMu.Lock(); counts[m.Subject]++; countsMu.Unlock() })
 	must(e)

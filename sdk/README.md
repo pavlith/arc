@@ -24,7 +24,8 @@ library **within** this module; it has no `go.mod` or `go.sum`.
 
 Domain services have executables under `cmd/arc-<service>` and own API,
 migrations, modules and composition under `services/<service>/`. Core currently
-has no executable entry point; see [#15](https://github.com/pavlith/arc/issues/15). `sdk/bootstrap` does not know concrete services.
+uses [its own privileged bootstrap](../services/core/README.md) in `cmd/arc-core`.
+`sdk/bootstrap` does not know concrete services.
 
 Domain RPC subscriptions require a **Fabric-approved contract** and runtime
 lease; private Core bootstrap and node protocols have explicit separate policy. `sdk/service.Compose` installs typed operations and enforces online ACL

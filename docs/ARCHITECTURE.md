@@ -22,7 +22,7 @@ flowchart TB
     Agent --> Host[Approved host drivers]
 ```
 
-The diagram includes planned components. Current executable surfaces and gaps are documented in [services](../services/README.md); Issues hold actionable work. The checkout currently lacks `cmd/arc-core` ([#15](https://github.com/pavlith/arc/issues/15)) and a UI package. Historical reports of lost local implementations do not establish current behavior.
+The diagram includes planned components. Current executable surfaces and gaps are documented in [services](../services/README.md); Issues hold actionable work. [Standalone Core](../services/core/README.md) uses explicit migrations and signed local bootstrap policy; no UI package exists. Historical reports of lost local implementations do not establish current behavior.
 
 ## 2. Process and data ownership
 
@@ -358,7 +358,7 @@ Use owner-local SQLite with WAL, foreign keys, 10-second busy timeout, explicit 
 
 Back up using SQLite backup API or stop the owner while preserving committed WAL, plus objects, secrets and relevant JetStream state. Workspace export is not disaster recovery. Online authorization cannot fall back to a saved snapshot during Core outage. Jobs require leases or idempotent distribution.
 
-Required diagnostics include safe structured logs, request/trace IDs, operation latency/errors, auth/ACL denial, delivery lag and desired/observed health. Optional telemetry hooks and transport counters currently exist; full correlated operational diagnostics are not established by their presence ([#8](https://github.com/pavlith/arc/issues/8)). Never log payloads, credentials or secret env. Do not turn M0 into a general policy engine, scheduler or plugin platform.
+Required diagnostics include safe structured logs, request/trace IDs, operation latency/errors, auth/ACL denial, delivery lag and desired/observed health. The M0 [diagnostic baseline](DEVELOPMENT.md#correlated-diagnostics) correlates nested RPCs, Agent reconciliation and JetStream publication/inbox processing. Correlation metadata grants no authority and does not change signed input, replay keys or transaction boundaries. Full health/log reporting and the M7 matrix remain separate. Never log payloads, credentials or secret env. Do not turn M0 into a general policy engine, scheduler or plugin platform.
 
 ## 10. Verification policy
 
@@ -389,7 +389,7 @@ After M6 feature freeze, execute exhaustive business/unit, permission, browser/a
 ## 11. Repository layout
 
 ```text
-cmd/{arc-gate,arc-agent,arc-task,arc-notify}/
+cmd/{arc-core,arc-gate,arc-agent,arc-task,arc-notify}/
 services/core/modules/{identity,access,fabric,runtime}/
 services/{gate,agent,task,notify}/
 services/<owner>/migrations/
@@ -401,7 +401,7 @@ deploy/                    # example config, Dockerfiles, explicit migrator
 docs/                      # requirements, architecture and development
 ```
 
-`cmd/arc-core` is the missing production entry point tracked in #15. There is no current `ui/` package; planned UI uses Svelte 5 and shadcn-svelte. Do not create separate Go modules or restore legacy paths for compatibility.
+`cmd/arc-core` uses the existing Core composition with strict owner-local bootstrap; it does not expose product provisioning or Runtime management. There is no current `ui/` package; planned UI uses Svelte 5 and shadcn-svelte. Do not create separate Go modules or restore legacy paths for compatibility.
 
 ## 12. Decision register
 

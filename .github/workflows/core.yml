@@ -1,0 +1,48 @@
+name: Standalone Core startup guardrails
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - ".github/workflows/core.yml"
+      - "cmd/arc-core/**"
+      - "services/core/**"
+      - "sdk/**"
+      - "test/bootstrap/**"
+      - "deploy/core/**"
+      - "deploy/migrate/**"
+      - "scripts/test-core.py"
+      - "compose.yaml"
+      - "go.mod"
+      - "go.sum"
+  pull_request:
+    branches: [dev]
+    paths:
+      - ".github/workflows/core.yml"
+      - "cmd/arc-core/**"
+      - "services/core/**"
+      - "sdk/**"
+      - "test/bootstrap/**"
+      - "deploy/core/**"
+      - "deploy/migrate/**"
+      - "scripts/test-core.py"
+      - "compose.yaml"
+      - "go.mod"
+      - "go.sum"
+
+permissions:
+  contents: read
+
+jobs:
+  startup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.3"
+          cache-dependency-path: go.sum
+      - run: go vet ./services/core ./cmd/arc-core
+      - run: go install github.com/nats-io/nats-server/v2@v2.15.1
+      - run: make core-smoke

@@ -1,7 +1,6 @@
 package runtime_test
 
 import (
-	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -28,6 +27,7 @@ import (
 	"github.com/pavlith/arc/services/core/modules/identity"
 	"github.com/pavlith/arc/services/core/modules/runtime"
 	"github.com/pavlith/arc/test/testdb"
+	"github.com/pavlith/arc/test/testlog"
 )
 
 func rpcNonce() string {
@@ -81,6 +81,9 @@ func TestRuntimeNodeRPC(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 	defer cancel()
+	logs := testlog.Capture(t)
+	const trace = "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+	ctx = rpc.WithOutgoing(ctx, rpc.Outgoing{RequestID: "runtime-smoke", Traceparent: trace})
 	secrets := os.Getenv("ARC_RUNTIME_NATS_SECRETS")
 	config := func(seed, name string) sdk.Config {
 		cfg := sdk.Config{URL: url, Name: name, NKeySeedFile: filepath.Join(secrets, seed), TLSCAFile: filepath.Join(secrets, "ca.crt")}
@@ -357,29 +360,43 @@ func TestRuntimeNodeRPC(t *testing.T) {
 		}
 		before := nonces()
 		command := exec.Command(binary, "-config", configFile)
-		var output bytes.Buffer
+		var output testlog.Recorder
 		command.Stderr = &output
 		must(command.Start())
 		done := make(chan error, 1)
 		go func() { done <- command.Wait() }()
 		defer func() { _ = command.Process.Kill() }()
+		correlatedRound := func() bool {
+			remoteLogs := logs.Entries()
+			for _, local := range output.Entries() {
+				if local["msg"] != "arc reconcile" || local["request_id"] == "" || local["traceparent"] == "" || local["error_code"] != "" {
+					continue
+				}
+				for _, remote := range remoteLogs {
+					if remote["msg"] == "arc rpc" && remote["operation"] == agent.OperationInventory && remote["request_id"] == local["request_id"] && remote["traceparent"] == local["traceparent"] {
+						return true
+					}
+				}
+			}
+			return false
+		}
 		timeout := time.After(5 * time.Second)
 		connected := false
 		for !connected {
 			select {
 			case err := <-done:
-				t.Fatalf("Agent exited before online inventory: %v %s", err, output.String())
+				t.Fatalf("Agent exited before online inventory: %v %s", err, output.Bytes())
 			case <-timeout:
-				t.Fatal("Agent did not authenticate inventory")
+				t.Fatal("Agent did not authenticate and correlate inventory")
 			case <-time.After(10 * time.Millisecond):
-				connected = nonces() >= before+2
+				connected = nonces() >= before+2 && correlatedRound()
 			}
 		}
 		must(command.Process.Signal(syscall.SIGTERM))
 		select {
 		case err := <-done:
 			if err != nil {
-				t.Fatalf("Agent SIGTERM/interrupt shutdown: %v %s", err, output.String())
+				t.Fatalf("Agent SIGTERM/interrupt shutdown: %v %s", err, output.Bytes())
 			}
 		case <-time.After(5 * time.Second):
 			t.Fatal("Agent did not stop")
@@ -387,6 +404,27 @@ func TestRuntimeNodeRPC(t *testing.T) {
 		reopened, err := journal.Open(cfg.StateDirectory)
 		must(err)
 		must(reopened.Close())
+	})
+	t.Run("correlated_diagnostics", func(t *testing.T) {
+		seen := map[string]bool{}
+		denied := false
+		for _, entry := range logs.Entries() {
+			if entry["msg"] != "arc rpc" || entry["request_id"] != "runtime-smoke" || entry["traceparent"] != trace || entry["duration_ms"] == nil {
+				continue
+			}
+			if entry["error_code"] == "" {
+				seen[entry["operation"].(string)] = true
+			}
+			denied = denied || entry["error_code"] == string(rpc.CodeUnauthenticated) || entry["error_code"] == string(rpc.CodePermissionDenied)
+		}
+		for _, op := range []string{"identity.v1.invocations.exchange_service", agent.OperationInventory, agent.OperationPull, agent.OperationReport} {
+			if !seen[op] {
+				t.Fatal("missing correlated Runtime operation", op)
+			}
+		}
+		if !denied || strings.Contains(string(logs.Bytes()), valid.Token) {
+			t.Fatal("denial diagnostics missing or invocation leaked")
+		}
 	})
 	t.Run("core_unavailable", func(t *testing.T) {
 		must(service.Stop())

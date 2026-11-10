@@ -142,10 +142,7 @@ func (r *Registry) observe(ctx context.Context, module, op, kind string, start t
 	if r.observer == nil {
 		return
 	}
-	code := rpc.Code("")
-	if *err != nil {
-		code = rpc.ErrorCode(*err)
-	}
+	code := rpc.DiagnosticCode(*err)
 	r.observer.Observe(ctx, telemetry.Observation{
 		Service: r.service, Module: module, Operation: op, Kind: kind,
 		Duration: time.Since(start), ErrorCode: code,

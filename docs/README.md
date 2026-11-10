@@ -14,7 +14,7 @@ Development; component guides add only component-specific details.
 Component instructions stay beside their implementation:
 
 - [SDK](../sdk/README.md), [transport](../sdk/transport/README.md), [database](../sdk/database/README.md).
-- [Services](../services/README.md), [Linux Agent](../services/agent/README.md).
+- [Services](../services/README.md), [Core startup](../services/core/README.md), [Linux Agent](../services/agent/README.md).
 - [Shared test infrastructure](../test/README.md).
 
 [GitHub Issues](https://github.com/pavlith/arc/issues) own actionable work and labels

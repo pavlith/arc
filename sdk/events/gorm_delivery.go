@@ -37,7 +37,9 @@ func (d Delivery) PublishBatch(ctx context.Context, js nats.JetStreamContext, li
 		return 0, contract.ErrInvalid
 	}
 	n := 0
+	observations := make([]deliveryObservation, 0, limit)
 	err := database.RetryBusy(ctx, func() error {
+		observations = observations[:0]
 		return d.Store.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			// A write statement first obtains SQLite's reserved writer lock.
 			// Without it, a read-then-update transaction can fail with
@@ -76,7 +78,10 @@ func (d Delivery) PublishBatch(ctx context.Context, js nats.JetStreamContext, li
 				if contract.Strict(v.raw, &ev) != nil || Validate(d.Contract, v.subject, ev) != nil {
 					return contract.ErrInvalid
 				}
-				if _, err := js.Publish(v.subject, v.raw, nats.MsgId(v.id), nats.Context(ctx)); err != nil {
+				start := time.Now()
+				_, err := js.Publish(v.subject, v.raw, nats.MsgId(v.id), nats.Context(ctx))
+				observations = append(observations, deliveryResult(ctx, "publish", ev, start, err))
+				if err != nil {
 					return err
 				}
 				if err := tx.Exec(`UPDATE outbox SET published_at=? WHERE event_id=?`,
@@ -88,6 +93,11 @@ func (d Delivery) PublishBatch(ctx context.Context, js nats.JetStreamContext, li
 			return nil
 		})
 	})
+	// Keep logging I/O outside the SQLite writer transaction. A publish record
+	// describes the broker result, not a committed outbox marker.
+	for _, observation := range observations {
+		observation.log(ctx)
+	}
 	return n, err
 }
 

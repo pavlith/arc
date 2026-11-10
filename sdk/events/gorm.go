@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/database"
@@ -118,7 +119,7 @@ func (s Store) Enqueue(ctx context.Context, tx *gorm.DB, m *contract.Compiled, s
 // Identical redelivery is a no-op; an event ID with different canonical content
 // is rejected. The unique inbox key is acquired BEFORE reading prior results.
 func (s Store) Consume(ctx context.Context, consumer, subject string,
-	m *contract.Compiled, raw []byte, handler func(context.Context, *gorm.DB, Envelope) error) error {
+	m *contract.Compiled, raw []byte, handler func(context.Context, *gorm.DB, Envelope) error) (result error) {
 	if ctx == nil || s.DB == nil || consumer == "" || m == nil || handler == nil {
 		return contract.ErrInvalid
 	}
@@ -126,6 +127,10 @@ func (s Store) Consume(ctx context.Context, consumer, subject string,
 	if contract.Strict(raw, &ev) != nil || Validate(m, subject, ev) != nil {
 		return contract.ErrInvalid
 	}
+	start := time.Now()
+	defer func() { deliveryResult(ctx, "consume", ev, start, result).log(ctx) }()
+	ctx = rpc.WithOutgoing(ctx, rpc.Outgoing{Traceparent: ev.Traceparent})
+	ctx = rpc.WithOutgoing(ctx, rpc.Correlation(ctx))
 	canonical, err := security.CanonicalJSON(raw)
 	if err != nil {
 		return err

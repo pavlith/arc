@@ -1,6 +1,6 @@
 GO ?= go
 
-.PHONY: test-bootstrap verify m0-01-smoke m0-02-smoke m0-03-smoke m0-04-smoke m0-05-smoke m0-06-smoke runtime-smoke
+.PHONY: test-bootstrap verify m0-01-smoke m0-02-smoke m0-03-smoke m0-04-smoke m0-05-smoke m0-06-smoke runtime-smoke core-smoke
 
 test-bootstrap:
 	$(GO) run ./test/bootstrap -out .secrets/dev
@@ -28,3 +28,6 @@ m0-06-smoke:
 
 runtime-smoke:
 	python3 scripts/test-runtime.py
+
+core-smoke:
+	python3 scripts/test-core.py

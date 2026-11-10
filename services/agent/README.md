@@ -31,7 +31,9 @@ credentials, trust roots and units independently of Runtime.
 Each round obtains online inventory and fresh signed snapshots; no cached new
 effect during Core/NATS outage and no delete inferred from missing inventory ID.
 Effects are serial and bounded by snapshot expiry; failures back off up to a minute.
-Logs contain IDs and fixed codes, not payloads/secrets.
+Each online round uses one request/trace context across Identity and private
+Runtime RPC. Reconciliation logs include duration and fixed codes, never payloads
+or credentials; see [correlated diagnostics](../../docs/DEVELOPMENT.md#correlated-diagnostics).
 
 Journal persists intent before effect. Inspector checks completed revisions before
 drift repair, which still needs fresh online authorization. Inspection failure

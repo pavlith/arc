@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/pavlith/arc/sdk/transport"
@@ -52,27 +53,38 @@ func Handle[Req, Res any](service EndpointService, operation Operation, handler 
 }
 
 func handleRequest[Req, Res any](request transport.Request, operation Operation, handler Handler[Req, Res]) {
+	start := time.Now()
+	ctx := context.Background()
+	code := CodeInternal
+	defer func() {
+		correlation := Correlation(ctx)
+		slog.InfoContext(ctx, "arc rpc", "operation", operation.ID,
+			"request_id", correlation.RequestID, "traceparent", correlation.Traceparent,
+			"duration_ms", float64(time.Since(start))/float64(time.Millisecond), "error_code", code)
+	}()
 	requestID := "unknown"
+	fail := func(err *Error) { code = respondError(request, requestID, err) }
 	if len(request.Data()) > MaxMessageSize {
-		respondError(request, requestID, &Error{Code: CodeValidation, Message: "request exceeds 256 KiB"})
+		fail(&Error{Code: CodeValidation, Message: "request exceeds 256 KiB"})
 		return
 	}
 	var envelope requestEnvelope
 	if err := decodeStrict(request.Data(), &envelope); err != nil {
-		respondError(request, requestID, &Error{Code: CodeValidation, Message: "invalid request envelope"})
+		fail(&Error{Code: CodeValidation, Message: "invalid request envelope"})
 		return
 	}
 	requestID = envelope.RequestID
+	ctx = WithOutgoing(ctx, safeCorrelation(Outgoing{RequestID: requestID, Traceparent: envelope.Traceparent}))
 	if requestID == "" || envelope.Operation != operation.ID || envelope.SchemaVersion != SchemaVersion {
-		respondError(request, requestID, &Error{Code: CodeValidation, Message: "request metadata mismatch"})
+		fail(&Error{Code: CodeValidation, Message: "request metadata mismatch"})
 		return
 	}
 	if envelope.DeadlineAt.IsZero() || !envelope.DeadlineAt.After(time.Now()) {
-		respondError(request, requestID, &Error{Code: CodeDeadlineExceeded, Message: "request deadline exceeded", Retryable: true})
+		fail(&Error{Code: CodeDeadlineExceeded, Message: "request deadline exceeded", Retryable: true})
 		return
 	}
 	if operation.Mutation && (envelope.IdempotencyKey == "" || len(envelope.IdempotencyKey) > 128) {
-		respondError(request, requestID, &Error{Code: CodeValidation, Message: "idempotency key required"})
+		fail(&Error{Code: CodeValidation, Message: "idempotency key required"})
 		return
 	}
 	var payload Req
@@ -81,7 +93,7 @@ func handleRequest[Req, Res any](request transport.Request, operation Operation,
 		decode = json.Unmarshal
 	}
 	if err := decode(envelope.Payload, &payload); err != nil {
-		respondError(request, requestID, &Error{Code: CodeValidation, Message: "invalid request payload"})
+		fail(&Error{Code: CodeValidation, Message: "invalid request payload"})
 		return
 	}
 
@@ -90,45 +102,45 @@ func handleRequest[Req, Res any](request transport.Request, operation Operation,
 	if contractDeadline.Before(effectiveDeadline) {
 		effectiveDeadline = contractDeadline
 	}
-	ctx, cancel := context.WithDeadline(context.Background(), effectiveDeadline)
+	ctx, cancel := context.WithDeadline(ctx, effectiveDeadline)
 	defer cancel()
 
 	if operation.Protected && operation.Authorize == nil {
-		respondError(request, requestID, &Error{Code: CodeUnavailable, Message: "security unavailable"})
+		fail(&Error{Code: CodeUnavailable, Message: "security unavailable"})
 		return
 	}
 	if operation.Authorize != nil {
 		authorized, err := operation.Authorize(ctx, operation.Subject, request.Data())
 		if err != nil {
-			respondError(request, requestID, publicError(err))
+			fail(publicError(err))
 			return
 		}
 		if authorized == nil {
-			respondError(request, requestID, &Error{Code: CodeUnavailable, Message: "security unavailable"})
+			fail(&Error{Code: CodeUnavailable, Message: "security unavailable"})
 			return
 		}
 		ctx = authorized
 	}
 	ctx = context.WithValue(ctx, metadataKey{}, RequestMetadata{RequestID: envelope.RequestID, Traceparent: envelope.Traceparent, IdempotencyKey: envelope.IdempotencyKey, Payload: envelope.Payload})
 	if operation.ValidateRequest != nil && operation.ValidateRequest(envelope.Payload) != nil {
-		respondError(request, requestID, &Error{Code: CodeValidation, Message: "request schema mismatch"})
+		fail(&Error{Code: CodeValidation, Message: "request schema mismatch"})
 		return
 	}
 	response, err := invoke(ctx, handler, payload)
 	if err != nil {
-		respondError(request, requestID, publicError(err))
+		fail(publicError(err))
 		return
 	}
 	data, err := json.Marshal(response)
 	if err != nil {
-		respondError(request, requestID, &Error{Code: CodeInternal, Message: "internal error"})
+		fail(&Error{Code: CodeInternal, Message: "internal error"})
 		return
 	}
 	if operation.ValidateResponse != nil && operation.ValidateResponse(data) != nil {
-		respondError(request, requestID, &Error{Code: CodeInternal, Message: "response schema mismatch"})
+		fail(&Error{Code: CodeInternal, Message: "response schema mismatch"})
 		return
 	}
-	respond(request, responseEnvelope{RequestID: requestID, Data: data})
+	code = respond(request, responseEnvelope{RequestID: requestID, Data: data})
 }
 
 func invoke[Req, Res any](ctx context.Context, handler Handler[Req, Res], request Req) (response Res, err error) {
@@ -140,17 +152,25 @@ func invoke[Req, Res any](ctx context.Context, handler Handler[Req, Res], reques
 	return handler(ctx, request)
 }
 
-func respondError(request transport.Request, requestID string, err *Error) {
-	respond(request, responseEnvelope{RequestID: requestID, Error: publicError(err)})
+func respondError(request transport.Request, requestID string, err *Error) Code {
+	return respond(request, responseEnvelope{RequestID: requestID, Error: publicError(err)})
 }
 
-func respond(request transport.Request, envelope responseEnvelope) {
+func respond(request transport.Request, envelope responseEnvelope) Code {
+	code := Code("")
+	if envelope.Error != nil {
+		code = envelope.Error.Code
+	}
 	data, err := json.Marshal(envelope)
 	if err != nil || len(data) > MaxMessageSize {
+		code = CodeInternal
 		data, _ = json.Marshal(responseEnvelope{
 			RequestID: envelope.RequestID,
 			Error:     &Error{Code: CodeInternal, Message: "internal error"},
 		})
 	}
-	_ = request.Respond(data)
+	if err := request.Respond(data); err != nil && code == "" {
+		code = CodeUnavailable
+	}
+	return code
 }

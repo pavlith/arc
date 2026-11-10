@@ -70,7 +70,8 @@ strategy in #10 before implementing it.
 M0 guardrails: canonical proof/audience/operation/caller/replay vectors, refresh
 reuse, one revoke path and denied self-delegation. M7 completes multi-workspace,
 personal-root, downstream intersection and full revocation combinations.
-Product Identity/Gate UI remains #9; standalone Core startup remains #15.
+Product Identity/Gate UI remains #9; [standalone Core startup](../services/core/README.md)
+uses operator-provisioned keys, signed policy and explicit migrations.
 
 ### 2.2 Resource ACL (P0)
 
@@ -274,7 +275,8 @@ actor/on_behalf_of provenance and bounded traced runs.
 - **R-02 (M0):** Independent Compose/systemd bootstrap for NATS, Core, Gate and
   owner storage. M0 requires fake-Agent contracts, not a live host executor.
   arc.runtime.manage is separate from workspace administration and defaults deny.
-  Current Compose covers infrastructure/migrations only; Core startup is #15.
+  Current Compose covers infrastructure/migrations only; the standalone Core
+  command uses strict local bootstrap without enabling Runtime management.
 - **R-03 (M0):** Versioned node-bound desired/observation protocol, invocation/
   proof, idempotency and fake negative tests; no Docker management UI requirement.
 - **R-04 (M6):** Initial trusted Linux/Docker node, approved templates and immutable
@@ -392,8 +394,8 @@ for the single verification policy. Missing code has no current readiness claim.
 
 #2–#7 preserve historical delivery acceptance, with current code mapped in their
 bodies. #8 needs current acceptance; #13 restores/extends Runtime. #9–#10 describe
-lost M1 work that must be reimplemented. #15 owns the missing Core command and
-secure startup, which prevents claiming a complete standalone platform install.
+lost M1 work that must be reimplemented. #15 adds the Core command and secure
+startup; product provisioning and full standalone platform acceptance remain separate.
 Current paths/limits live in component guides; status remains in Issue labels.
 
 Open decisions: M1 Kuayle import/personal Task model; M2 sharing/DAV scheduling/

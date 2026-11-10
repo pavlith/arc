@@ -8,9 +8,9 @@ Engineering materials use English; every change starts with an Issue.
 - [Development](docs/DEVELOPMENT.md): local setup, verification and issue-first delivery.
 
 One root Go module contains `sdk/`, Core modules and domain services. Existing
-executables are Gate, Task, Notify and the Linux infrastructure Agent in `cmd/`.
-Core currently runs inside integration hosts; its missing standalone executable
-is tracked in [#15](https://github.com/pavlith/arc/issues/15). Shared test tools live
+executables are Core, Gate, Task, Notify and the Linux infrastructure Agent in `cmd/`.
+[Standalone Core startup](services/core/README.md) requires explicit migrations,
+operator credentials and signed bootstrap policy. Shared test tools live
 in `test/`, deployment configuration and the explicit migrator in `deploy/`.
 
 The HTTPS Gate → Task/Core → JetStream → Notify proof path and private Runtime node

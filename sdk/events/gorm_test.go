@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -13,12 +14,15 @@ import (
 	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/database"
 	"github.com/pavlith/arc/sdk/events"
+	"github.com/pavlith/arc/sdk/rpc"
 	notifydb "github.com/pavlith/arc/services/notify/migrations"
 	taskv1 "github.com/pavlith/arc/services/task/api/v1"
+	"github.com/pavlith/arc/test/testlog"
 	"gorm.io/gorm"
 )
 
 func TestGormInboxConcurrentReplayConflictAndRollback(t *testing.T) {
+	logs := testlog.Capture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
 	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "notify.sqlite"))
@@ -48,11 +52,15 @@ func TestGormInboxConcurrentReplayConflictAndRollback(t *testing.T) {
 		Type: taskv1.CreatedName, Version: 1,
 		AggregateID: "00000000-0000-4000-8000-000000000003",
 		OccurredAt:  time.Now().UTC(), Payload: payload,
+		Traceparent: "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01",
 	}
 	raw, _ := json.Marshal(ev)
 	store := events.Store{DB: db}
 	var runs atomic.Int32
 	effect := func(ctx context.Context, tx *gorm.DB, ev events.Envelope) error {
+		if ev.Traceparent != "00-different" && rpc.Correlation(ctx).Traceparent != ev.Traceparent {
+			return errors.New("event handler lost trace context")
+		}
 		runs.Add(1)
 		return tx.Exec("INSERT INTO effects(event_id) VALUES(?)", ev.ID).Error
 	}
@@ -93,7 +101,7 @@ func TestGormInboxConcurrentReplayConflictAndRollback(t *testing.T) {
 			if err := tx.Exec("INSERT INTO effects(event_id) VALUES(?)", ev.ID).Error; err != nil {
 				return err
 			}
-			return errors.New("abort")
+			return errors.New("secret-marker")
 		}); err == nil {
 		t.Fatal("failed handler accepted")
 	}
@@ -102,5 +110,15 @@ func TestGormInboxConcurrentReplayConflictAndRollback(t *testing.T) {
 	}
 	if err := db.Table("effects").Count(&count).Error; err != nil || count != 2 {
 		t.Fatalf("retry effect count %d (%v)", count, err)
+	}
+	var traced, failed bool
+	for _, entry := range logs.Entries() {
+		if entry["msg"] == "arc event" && entry["kind"] == "consume" && entry["event_id"] != "" && entry["duration_ms"] != nil && entry["delivery_lag_ms"] != nil {
+			traced = traced || entry["traceparent"] == "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+			failed = failed || entry["error_code"] == string(rpc.CodeInternal)
+		}
+	}
+	if !traced || !failed || strings.Contains(string(logs.Bytes()), "secret-marker") || strings.Contains(string(logs.Bytes()), "00-different") {
+		t.Fatal("missing delivery/error correlation or unsafe diagnostics")
 	}
 }

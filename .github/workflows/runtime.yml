@@ -1,0 +1,48 @@
+name: Runtime baseline and correlated diagnostics
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - ".github/workflows/runtime.yml"
+      - "cmd/arc-agent/**"
+      - "services/agent/**"
+      - "services/core/**"
+      - "sdk/**"
+      - "test/**"
+      - "scripts/test-runtime.py"
+      - "compose.yaml"
+      - "Makefile"
+      - "go.mod"
+      - "go.sum"
+  pull_request:
+    branches: [dev]
+    paths:
+      - ".github/workflows/runtime.yml"
+      - "cmd/arc-agent/**"
+      - "services/agent/**"
+      - "services/core/**"
+      - "sdk/**"
+      - "test/**"
+      - "scripts/test-runtime.py"
+      - "compose.yaml"
+      - "Makefile"
+      - "go.mod"
+      - "go.sum"
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.3"
+          cache-dependency-path: go.sum
+      - run: go install github.com/nats-io/nats-server/v2@v2.15.1
+      - run: make runtime-smoke
+      - run: go vet ./sdk/agent ./services/agent/... ./services/core/modules/runtime

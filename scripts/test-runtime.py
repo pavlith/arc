@@ -66,7 +66,7 @@ def main():
                 agent_binary = scratch / "arc-agent"
                 subprocess.run(["go", "build", "-o", str(agent_binary), "./cmd/arc-agent"], cwd=root, check=True)
                 env = dict(os.environ, ARC_RUNTIME_NATS_URL=f"tls://localhost:{port}", ARC_RUNTIME_NATS_SECRETS=str(secrets), ARC_RUNTIME_AGENT_BINARY=str(agent_binary))
-                subprocess.run(["go", "test", "-race", "-count=1", "-run", "^TestRuntimeNodeRPC$", "./services/core/modules/runtime"], cwd=root, env=env, check=True)
+                subprocess.run(["go", "test", "-race", "-count=1", "-timeout=2m", "./sdk/agent", "./services/agent/...", "./services/core/modules/runtime"], cwd=root, env=env, check=True)
             finally:
                 process.terminate()
                 try:

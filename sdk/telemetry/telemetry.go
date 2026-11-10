@@ -38,7 +38,13 @@ func (s Slog) Observe(ctx context.Context, v Observation) {
 	if s.Logger == nil {
 		return
 	}
+	correlation := rpc.Correlation(ctx)
+	code := v.ErrorCode
+	if code != "" {
+		code = rpc.DiagnosticCode(&rpc.Error{Code: code})
+	}
 	s.Logger.InfoContext(ctx, "arc operation", "service", v.Service,
 		"module", v.Module, "operation", v.Operation, "kind", v.Kind,
-		"duration", v.Duration, "error_code", v.ErrorCode)
+		"request_id", correlation.RequestID, "traceparent", correlation.Traceparent,
+		"duration_ms", float64(v.Duration)/float64(time.Millisecond), "error_code", code)
 }

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"log"
+	"log/slog"
 	"net/netip"
 	"os"
 	"os/signal"
@@ -36,6 +37,7 @@ type config struct {
 }
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 	file := flag.String("config", "", "path to Gate JSON configuration")
 	flag.Parse()
 	if e := run(*file); e != nil {

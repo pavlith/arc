@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -79,7 +80,19 @@ func (s *Service) note(resource, code string) {
 
 // Step serializes the whole node, starts with online inventory and never infers
 // deletions from missing resources or executes a stored snapshot after an outage.
-func (s *Service) Step(ctx context.Context) error {
+func (s *Service) Step(ctx context.Context) (result error) {
+	ctx = rpc.StartCorrelation(ctx)
+	start := time.Now()
+	defer func() {
+		correlation := rpc.Correlation(ctx)
+		code := rpc.DiagnosticCode(result)
+		if errors.Is(result, ErrUnavailable) {
+			code = rpc.CodeUnavailable
+		}
+		slog.InfoContext(ctx, "arc reconcile", "operation", "runtime.reconcile", "node_id", s.node,
+			"request_id", correlation.RequestID, "traceparent", correlation.Traceparent,
+			"duration_ms", float64(time.Since(start))/float64(time.Millisecond), "error_code", code)
+	}()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := ctx.Err(); err != nil {

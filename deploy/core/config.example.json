@@ -1,0 +1,17 @@
+{
+  "sqlite_path": "/var/lib/arc/core/core.sqlite",
+  "nats": {
+    "URL": "tls://localhost:4222",
+    "Name": "arc-core",
+    "NKeySeedFile": "/etc/arc/core/nats.seed",
+    "TLSCAFile": "/etc/arc/trust/nats-ca.crt"
+  },
+  "identity_signing_kid": "core-identity-v1",
+  "identity_key_file": "/etc/arc/core/identity.seed",
+  "identity_key_expires_at": "2030-01-01T00:00:00Z",
+  "installation_approval_key_file": "/etc/arc/trust/operator.json",
+  "contract_bootstrap_files": ["/etc/arc/core/bootstrap.approval.json"],
+  "snapshot_kid": "core-routes-v1",
+  "snapshot_key_file": "/etc/arc/core/routes.seed",
+  "route_trust_key_file": "/etc/arc/core/route-trust.seed"
+}

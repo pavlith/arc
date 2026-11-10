@@ -63,8 +63,8 @@ removes those volumes. This infrastructure setup is not a complete product insta
 Outside Compose: `bash scripts/migrate.sh task /absolute/task.sqlite`. Create the
 owner directory first; run migrations before traffic with one migrator per file.
 See [database](../sdk/database/README.md) and [services](../services/README.md).
-Standalone Core provisioning is tracked in #15; no production bootstrap command
-should be inferred from historical Issue reports.
+[Standalone Core](../services/core/README.md) requires operator-provisioned keys,
+signed bootstrap policy and explicit migrations; product provisioning remains #9.
 
 ## Verification
 
@@ -77,8 +77,9 @@ should be inferred from historical Issue reports.
 | `make m0-03-smoke` | Also Access and negative ACL cases |
 | `make m0-04-smoke` | Also Fabric/contract boundaries |
 | `make m0-05-smoke` | Also HTTPS Gate, cookies/Bearer, CSRF/CORS and signed routes |
-| `make m0-06-smoke` | Above native suites plus separate Task/Notify processes and fake delivery |
-| `make runtime-smoke` | Private node RPC, fake driver and standalone Linux Agent lifecycle |
+| `make m0-06-smoke` | Above native suites plus separate Task/Notify processes, correlated RPC/event diagnostics and fake delivery |
+| `make runtime-smoke` | Race-tested Runtime/Agent guardrails, correlated private node RPC, fake driver and standalone Linux Agent lifecycle |
+| `make core-smoke` | Standalone Core, external migrations, signed login, policy denials, restart and SIGTERM/cancellation cleanup |
 
 `make verify` selects changes relative to `origin/dev` (fallback: `HEAD^`, then
 `HEAD`) and includes local/untracked files. Use
@@ -107,6 +108,32 @@ claims. Workflow changes require relevant syntax/behavior checks. Do not repeat
 successful unrelated checks. Deferred scenarios belong in the owning Issue with
 ID, preconditions and expected result. Full M7 recovery/load/client/browser and
 permission matrices are not implied by focused smoke success.
+
+## Correlated diagnostics
+
+Executable services use structured JSON logs. Join `arc rpc` records by
+`request_id` and `traceparent` across Gate-originated and nested SDK calls,
+including authorization and ACL checks. Agent reconciliation creates a root for
+each online round; `arc reconcile` uses the same identifiers as its Core calls.
+Diagnostics accept bounded ASCII request IDs and valid version 00 traceparent
+values; malformed values are omitted. Trace context is diagnostic metadata,
+not a verified actor, permission, replay key or new tracing transport.
+
+RPC and reconciliation records include `operation`, `duration_ms` and a fixed
+`error_code` (empty on success). `arc event` records include `event_id`,
+`traceparent`, `kind` (`publish` or `consume`) and `delivery_lag_ms`, measured
+from occurrence to broker publish result or inbox processing result. Event
+correlation uses trace and event IDs; the event envelope has no RPC request ID.
+A publish record reports the broker result, while consume reports the inbox
+transaction result, including safe redelivery. These records do not certify an
+external provider effect. No payloads, credentials, proof bytes, idempotency
+keys or raw internal errors are logged by these diagnostics.
+
+Run `make core-smoke`, `make runtime-smoke` and `make m0-06-smoke` for the
+standalone Core lifecycle, fake-Agent/runtime denials and correlated vertical
+path. Core startup does not enable Runtime management/node RPC; Runtime smoke
+uses a trusted test policy and fake host effects. Live drivers and complete
+health reporting remain #13; M7 is deferred.
 
 ## Agent workflow
 

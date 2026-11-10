@@ -208,7 +208,7 @@ func (s *Service) reconcile(ctx context.Context, id string) error {
 		return ErrUnavailable
 	}
 	sum := sha256.Sum256(fingerprint)
-	report.EventID = "report-" + hex.EncodeToString(sum[:])
+	report.EventID = "report-" + hex.EncodeToString(sum[:20])
 	if s.lastSent[id] == report.EventID {
 		return nil
 	}

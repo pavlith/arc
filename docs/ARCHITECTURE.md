@@ -327,6 +327,10 @@ Gate для каждого защищённого запроса вызывае�
 
 **Решено:** `arc-core/runtime` — **control plane** с desired state и административными политиками, **не** процесс с Docker socket. `arc-agent` — отдельный привилегированный **node executor**, связывающийся с Core через ограниченный NATS-протокол. Любой managed workload подчиняется approved `ServiceDefinition/ServiceContract` из Fabric; регистрацию RPC в Fabric нельзя заменять фактом запуска контейнера. Внутри Core используются Go-интерфейсы Identity/Access/Fabric/Runtime.
 
+**Расширение 2026-11-10:** Runtime становится самостоятельным модулем управления доверенной инфраструктурой, включая независимые VPS. Сохраняются NATS, Identity, Access и Gate; второй транспорт gRPC не вводится. Agent сам устанавливает исходящее TLS/NKey соединение по приватной сети; Docker/LXD API на внешнем интерфейсе не публикуются. Ресурсы `docker.container`, `lxd.instance`, `systemd.service` имеют отдельные драйверы и capabilities. Наличие типа в SDK не означает готовность драйвера. Multi-node inventory и явный target node не означают автоматический scheduler. Для Arc-сервисов по-прежнему обязателен Fabric; обычный systemd unit не обязан имитировать Arc ServiceInstance.
+
+**Фактическое состояние восстановления:** доступная `dev` основана на `a4b9ee4`; локальная работа, описанная в Issues #8–10, утрачена. Восстановленный `sdk/agent` содержит типизированные specs/templates, подпись snapshots и executor с fake-driver guardrails. `agent/journal` на Linux хранит high-water revisions и незавершённые intents, удерживая эксклюзивную OS-блокировку. Это библиотечный каркас: работающий Agent, защищённый NATS pull/report, Core inventory/operations, host drivers и Svelte UI ещё не интегрированы. Состояние работы ведётся в [Issue #13](https://github.com/pavlith/arc/issues/13); прошлые результаты тестов не подтверждают этот checkout.
+
 ### 7.1. Граница управления и модель данных
 
 | Объект | Назначение / источник истины |
@@ -348,6 +352,14 @@ Gate для каждого защищённого запроса вызывае�
 
 Здесь `ctl.runtime.v1.desired.get` — RPC Core (namespace `ctl.runtime.*`), а `ctl.runtime.v1.node.<node-id>.report` — узкосубъектный приём наблюдений. NATS permissions разрешают Agent `get` и `report` **только** от собственного узла, без прав управлять другими узлами или публиковать desired snapshots; Core единолично формирует desired state. Доступны также Core API `runtime.deployments.create/update/stop/delete/get`, `runtime.operations.get/list`, `runtime.nodes.list` — только из утверждённого контракта и с Arc-level ACL; никакого прямого публичного `/docker/*`. Все изменения используют invocation/proof и idempotency M0 (§3, §5). Для долгих операций возвращается `operation_id` (Gate `202`), а не удерживается RPC до завершения pull образа.
 
+#### Snapshot v1 и локальное исполнение
+
+`sdk/agent.Snapshot` связывает `version=1`, свежий `request_id` (16–128 символов), `operation_id`, `issued_at/expires_at` (не более 30 секунд) и typed `Spec`. Core подписывает RFC8785 JSON Ed25519 с domain separator `arc.runtime.snapshot.v1\n`; node проверяет подпись доверенным публичным ключом, точный node/request, срок, revision, allowlist template ID/revision и driver kind. Это дополнительная аттестация ответа, **не замена** invocation/proof и online ACL у будущих RPC endpoints. В текущем каркасе endpoint отсутствует. Неизвестные поля, включая host execution parameters, отвергаются даже с корректной подписью. В spec нет shell, env values, mounts или произвольной команды.
+
+Templates устанавливаются доверенным node operator вне desired payload: Docker использует immutable `@sha256:` image, LXD — локальный image fingerprint, systemd — точное имя заранее установленного unit. Для LXD/systemd replicas ограничены одной; bootstrap IDs и базовые units запрещены. Это предварительная валидация: драйвер дополнительно обязан проверить ownership, aliases/dependencies и host policy. Template не является достаточным разрешением на host effect без всех этих проверок.
+
+Executor записывает revision + digest spec + operation ID **до** driver effect. Меньшая revision или другое содержимое/operation при той же revision отвергаются. Завершённый повтор возвращает сохранённое observation. Незавершённый intent может повторяться только после нового online pull; драйвер обязан быть идемпотентным после crash между host effect и записью результата. Достижение desired host state не означает Fabric readiness. Lease ограничивает время driver context; драйвер проверяет cancellation между host API вызовами. Удаление сохраняет данные. Журнал не содержит credentials, env или logs, а ошибка чтения/записи запрещает исполнение.
+
 ### 7.3. Reconciliation, операции и аварии
 
 - **Core reconciler** под lease в Core SQLite/одним активным владельцем сравнивает desired state с последними доверенными observations и инициирует повторную сверку; **Agent reconciler** сериализует операции на конкретном узле, сохраняет локальный high-water mark revisions/operation IDs и выполняет их идемпотентно. Повтор сообщения/рестарт процесса не запускает второй идентичный rollout.
@@ -368,7 +380,7 @@ Agent единственный владеет Docker socket/эквивалент
 
 **M6 (исполняемый single-node runtime):** реальный Docker Arc Infrastructure Agent, approved templates и image digests, desired/observed reconcile, защищённый NATS transport, операции start/stop/restart/update/replicas/delete managed deployment, UI logs/health/status, volumes retained by default; не допускается выполнение произвольных shell/host команд. При интеграции проверяется один happy path и критические запреты; полная E2E-матрица 2→3 replicas, crash/restart, agent/Core/NATS offline+reconnect, duplicate/stale operation, spoof node/proof, privileged/host mount denial, несовместимые migrations и отсутствие секретов выполняется в M7.
 
-**Открыто после M6 baseline:** multi-node scheduler/placement, zero-downtime rolling upgrades, автоматический rollback, аппаратные квоты и безопасный execution для hostile multi-tenant code. Эти возможности не обещаются первой поставкой Runtime.
+**Расширение M6:** отдельные LXD/systemd drivers, inventory доверенных VPS и русский Svelte 5 UI используют ту же границу; готовность каждого подтверждается отдельно. **Открыто после M6 baseline:** multi-node scheduler/placement, zero-downtime rolling upgrades, автоматический rollback, аппаратные квоты и безопасный execution для hostile multi-tenant code. Эти возможности не обещаются первой поставкой Runtime.
 
 ## 8. Прикладные сервисы и API-инструменты
 
@@ -504,6 +516,7 @@ docs/{ARCHITECTURE,REQUIREMENTS}.md
 | O-02 | **Открыто (M2)** | Cross-workspace sharing, CalDAV scheduling, фактическая матрица совместимых клиентов |
 | O-03 | **Открыто (M3)** | WebDAV locking/ranges, версии, публичные upload links, периодическая проверка прав streaming |
 | O-04 | **Открыто (M4–M5)** | Лимиты Starlark, агентные approval classes, внешние секреты и sandbox для plugins |
+| R-10 | **Решено 2026-11-10; реализация #13** | Runtime — самостоятельный infrastructure control plane; независимые VPS, typed Docker/LXD/systemd resources, исходящий NATS TLS/NKey, Svelte 5 через Gate; без arbitrary shell и второго gRPC transport |
 | O-05 | **Открыто (после M6 baseline)** | Multi-node scheduling, zero-downtime rolling upgrades, автоматический rollback и sandbox для недоверенного кода |
 
 **Статус M0 v0.8:** контракты Identity, Access, Fabric/SDK/Gate и Runtime согласованы, противоречия ревизии закрыты; речь о проектной спецификации, не о завершённой реализации. Для перехода к M1 требуются реализация и минимальные guardrails M0; полная верификация переносится в M7. После проверки прототипом принятые решения получат статус **Решено** в этом же файле; новых ADR-файлов не требуется.

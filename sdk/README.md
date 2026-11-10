@@ -5,6 +5,7 @@ library **within** this module; it has no `go.mod` or `go.sum`.
 
 | Package | Role |
 | --- | --- |
+| `sdk/agent` | Typed infrastructure specs/templates, signed short-lived snapshots, serialized executor and driver/journal interfaces; no host API or NATS endpoints yet |
 | `sdk/bootstrap` | Common infrastructure config, independent process resources |
 | `sdk/transport` | Native NATS queue endpoints and Micro-compatible PING/INFO/STATS |
 | `sdk` | Approved service registration, readiness, lease checks, transport ownership |

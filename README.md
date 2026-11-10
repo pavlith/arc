@@ -10,6 +10,12 @@ Arc — русскоязычная self-hosted платформа для сов�
 
 Актуальная работа и её состояние ведутся только в GitHub Issues. Статус, приоритет и этап задаются метками; отдельные GitHub Projects, Notion и Markdown-backlog не используются.
 
+## Runtime и восстановление разработки
+
+Работа над инфраструктурным Runtime продолжается в [#13](https://github.com/pavlith/arc/issues/13). Локальные реализации из отчётов #8–10 утрачены; текущая `dev` пока не содержит Svelte UI и работающего host Agent.
+
+Восстановлены `sdk/agent` (typed Docker/LXD/systemd resources, signed snapshots, revision/replay validation, сериализованный executor) и Linux `agent/journal` (durable intents и exclusive writer). Host drivers, NATS Agent transport, Core inventory/operations и русский Svelte 5 UI через Gate требуют интеграции. Контракты и точная граница готовности: [архитектура §7](docs/ARCHITECTURE.md#7-runtime-control-и-arc-infrastructure-agent--контракт-m0m6), [требования §2.13](docs/REQUIREMENTS.md#213-runtime-control-и-arc-infrastructure-agent-p3-безопасный-каркас-в-p0).
+
 ## Разработка с Codex
 
 Краткие инструкции: `AGENTS.md`. Локальная конфигурация: `.codex/config.toml`; проектные skills: `.agents/skills/`. Настройка MCP, профилей и проверок: [Codex workflow](docs/CODEX.md). Изменения сначала попадают в ветку `dev`; `main` — стабильная ветка.

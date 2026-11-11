@@ -45,7 +45,7 @@ exactly-once guarantee. Fake delivery is an explicitly selected test fixture.
 
 ## Deployment and verification
 
-Run the Notify migrator before startup. The new migration removes duplicate `task_id` from stored notifications. Previously approved v1 manifests cannot be hot-swapped with this changed schema.
+Run the Notify migrator on a fresh owner database before startup. Its baseline stores only `resource_kind` / `resource_id`; it never creates or drops a duplicate `task_id` column. Old numbered migration history and previously approved v1 manifests cannot be reused in place.
 
 Every subscription identifies its
 resource kind explicitly (`task`, `page` or `file`); there is no implicit Task

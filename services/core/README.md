@@ -119,14 +119,14 @@ separate deliveries; command startup does not establish production readiness.
 
 ## Profile, preferences and workspace addresses
 
-Apply Core migration `000013_profile_settings` before starting this version. It
-preserves IDs/membership and initializes names from existing email local parts
-and workspace slugs from existing UUIDs. New provisioning/invited-registration
-requests may provide optional `name`. The self profile includes `name`,
+Run the current **fresh** Core baseline migrator before startup. Profile fields
+and workspace slugs are created directly; no numbered profile upgrade exists.
+Old Core SQLite data requires an explicit offline conversion (not provided).
+New provisioning/invited-registration requests may provide optional `name`. The self profile includes `name`,
 `display_name`, `revision`, nullable `avatar_url` and live `is_sysadmin` in addition
 to ID/email. Workspace member/group profiles include names and profile revision
 without the installation-admin flag. Avatar upload is a separate asset feature;
-this migration alone does not create avatar storage.
+profile fields alone do not configure avatar storage.
 
 Allow these exact Gate bootstrap operations, audience `identity/v1`, actor kind
 `bootstrap`, with their matching broker RPC subjects:

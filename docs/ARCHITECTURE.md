@@ -37,7 +37,7 @@ The diagram includes planned components; [service inventory](../services/README.
 | SDK | Transport, typed RPC/events, contract enforcement and lifecycle | No domain models or trust in client identity fields |
 | Domain service | Its objects, tables, migrations and policy enforcement | No SQL access to another owner |
 
-Core, Task, Files, Pages and Notify each use a separate local SQLite file through GORM. Core modules share one file and may join the same transaction. Gormigrate runs explicitly before traffic; startup AutoMigrate is forbidden. Mount only the owner's directory, including WAL/SHM. Gate has no database. Redis is not a required source of truth.
+Core, Task, Files, Pages and Notify each use a separate local SQLite file through GORM. Each owner has **one current baseline migration** with a distinct owner ID; old histories are rejected instead of silently imported or reinterpreted. Core modules share one file and may join transactions. Gormigrate runs explicitly before traffic; startup AutoMigrate is forbidden. Mount only the owner's directory, including WAL/SHM. Gate has no database. Redis is not a required source of truth.
 
 ## 3. Identity, service accounts and delegation
 
@@ -324,7 +324,7 @@ Core owns nodes, approved templates, typed resources/deployments, immutable revi
 
 `RegisterNode` binds a node permanently to one active `arc-agent` service account and capabilities; disabled nodes cannot be resurrected. Template revisions are immutable and revocation irreversible. Core approval does not install the node's independent local allowlist.
 
-`Apply` accepts revision zero/empty template digest, expected revision and idempotency key. Core assigns current template digest and next revision, committing resource/operation/revision/audit/outbox together. Resource node/kind binding is immutable; deletion leaves a tombstone. Actor-scoped replay rechecks authorization; changed payload conflicts. New revision cancels prior pending/running operations and preserves terminal history. Legacy arbitrary desired JSON is retained as storage only and never reaches a driver.
+`Apply` accepts revision zero/empty template digest, expected revision and idempotency key. Core assigns current template digest and next revision, committing resource/operation/revision/audit/outbox together. Resource node/kind binding is immutable; deletion leaves a tombstone. Actor-scoped replay rechecks authorization; changed payload conflicts. New revision cancels prior pending/running operations and preserves terminal history. The untyped desired-deployment API and its table have been removed; only approved typed Runtime resources can produce host execution snapshots.
 
 ### 7.2. Node protocol and snapshot execution
 
@@ -438,7 +438,7 @@ deploy/                    # example config, Dockerfiles, explicit migrator
 docs/                      # requirements, architecture and development
 ```
 
-`cmd/arc-core` uses the existing Core composition with strict owner-local bootstrap. Product Identity is available through approved Gate routes. The SvelteKit web app uses Svelte 5 and shadcn-svelte in `client/web/`. Its TypeScript Gate client lives in `client/ts/`. Do not create separate Go modules or restore legacy paths for compatibility.
+`cmd/arc-core` uses the existing Core composition with strict owner-local bootstrap. Product Identity is available through approved Gate routes. The SvelteKit web app uses Svelte 5 and shadcn-svelte in `client/web/`. Its TypeScript Gate client lives in `client/ts/`. Do not create separate Go modules or reintroduce retired APIs.
 
 ## 12. Decisions
 

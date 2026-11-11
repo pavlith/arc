@@ -12,7 +12,7 @@ Multiple Teams can share a root and therefore its access boundary. Independently
 private Teams require independently provisioned roots; a boolean on a Team never
 creates privacy or another permission engine.
 
-Task IDs, creators, timestamps, replay and outbox survive additive migrations. `task.work.*` is the sole public Task CRUD interface, governed by exact signed schemas. Descriptions are inert data and must be rendered safely.
+The fresh Task baseline stores stable IDs, creators, timestamps, replay and outbox. `task.work.*` is the sole public Task CRUD interface, governed by exact signed schemas. No old numbered Task migration path remains; descriptions are inert data rendered safely.
 
 Kuayle source is a behavior/interface reference, not a database migration source.
 There is no automatic external database import in this delivery. An explicit
@@ -123,7 +123,7 @@ most 32 edges from root to leaf. Reparenting checks the complete ancestor chain
 and subtree height in the command transaction, uses the child's revision and
 updated timestamp, and writes metadata-only audit/invalidation. Archive retains
 edges and never cascades; active children can detach from an archived parent.
-Legacy proof tasks require explicit Team adoption before hierarchy attachment.
+A task without a Team must be assigned to one before hierarchy attachment.
 
 ### Links
 

@@ -19,7 +19,7 @@ func TestServeUIAssets(t *testing.T) {
 			"_app/immutable/assets/app.abc.css": {Data: []byte("body {}")},
 			"_app/version.json":                 {Data: []byte(`{"version":"abc"}`)},
 			"_app/immutable/internal.json":      {Data: []byte("{}")},
-			"assets/app.js":                  {Data: []byte("export {}")},
+			"assets/app.js":                     {Data: []byte("export {}")},
 		},
 	})
 	if err != nil {

@@ -4,7 +4,7 @@ The Arc SDK owns only the SQLite connection settings and Gormigrate runner.
 Each service owns its own absolute SQLite file, tables, GORM models, and migration
 history. The service **does not** migrate on startup; deployment runs its
 migrator before starting consumers or accepting requests. Reapplying known
-migrations is safe.
+migrations is safe for the **same baseline**. Each owner has one unique `000001_<owner>_baseline` ID; old numbered histories are rejected, even if tables look similar. No in-place data upgrade is provided. Back up live databases and perform a separately designed offline conversion rather than deleting schema history.
 
 ```go
 db, err := database.Open(ctx, "/var/lib/arc/task/task.sqlite")

@@ -629,7 +629,7 @@ test('review regression: command backdrop dismisses from the bottom of the viewp
 	await expect(search).not.toBeVisible();
 });
 
-test('review regression: saved legacy team icons render and remain selectable', async ({ page }) => {
+test('review regression: brand team icons render and remain selectable', async ({ page }) => {
 	const state = await mockWorkspace(page, 'owner', 'Github');
 	await page.goto(`/test/settings/teams/${teamId}`);
 	const picker = page.getByRole('button', { name: /Choose icon or emoji/ });

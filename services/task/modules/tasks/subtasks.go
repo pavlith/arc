@@ -23,7 +23,7 @@ func (s *Service) setParent(ctx context.Context, tx *gorm.DB, q taskv1.ParentCha
 	if current.Revision != q.Revision || !current.UpdatedAt.Equal(q.ExpectedUpdatedAt) {
 		return empty, catalogConflict()
 	}
-	// Adopt a legacy task into a Team before attaching it to a hierarchy.
+	// Require a Team before attaching a work item to a hierarchy.
 	if current.TeamID == "" {
 		return empty, invalidWork()
 	}

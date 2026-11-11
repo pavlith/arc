@@ -21,7 +21,7 @@ func TestParseUbuntuFacts(t *testing.T) {
 	if _, err := memoryTotal("MemTotal: invalid kB\n"); err == nil {
 		t.Fatal("invalid memory accepted")
 	}
-	if _, err := memoryTotal("MemTotal: "+strings.Repeat("9", 100)+" kB\n"); err == nil {
+	if _, err := memoryTotal("MemTotal: " + strings.Repeat("9", 100) + " kB\n"); err == nil {
 		t.Fatal("overflow accepted")
 	}
 }

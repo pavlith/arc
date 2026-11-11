@@ -44,7 +44,7 @@ func (s *Module) StreamDownload(ctx context.Context, ref filesv1.FileRef, dst io
 		"id=? AND workspace_id=? AND acl_root_id=? AND state='ready'",
 		ref.FileID, ref.WorkspaceID, ref.RootID).Take(&row).Error
 	if err != nil {
-		return empty, dbFileError(err)
+		return empty, normalizeFileError(err)
 	}
 	reader, err := s.Storage.Open(ctx, row.BlobKey)
 	if err != nil {

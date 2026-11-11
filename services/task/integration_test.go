@@ -49,6 +49,7 @@ import (
 
 // The fixture's uncertain provider shares the configured webhook intent channel.
 type webhookFake struct{ *delivery.FakeProvider }
+
 func (*webhookFake) Channel() string { return "webhook" }
 
 func key(v byte) ed25519.PrivateKey { return ed25519.NewKeyFromSeed(bytes.Repeat([]byte{v}, 32)) }

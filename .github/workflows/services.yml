@@ -40,7 +40,7 @@ jobs:
       - name: Verify formatting, vet and build
         run: |
           files=$(gofmt -l sdk services cmd test deploy/migrate)
-          if [ -n "$files" ]; then printf 'Unformatted Go source:\\n%s\\n' "$files"; exit 1; fi
+          if [ -n "$files" ]; then printf 'Unformatted Go source:\n%s\n' "$files"; exit 1; fi
           go vet ./...
           go build ./cmd/...
           bash -n scripts/test-m0-02.sh scripts/test-m0-05.sh scripts/migrate.sh

@@ -67,7 +67,7 @@ func (s *Module) StreamDownload(ctx context.Context, ref filesv1.FileRef, dst io
 			return empty, err
 		}
 		want := int64(len(data))
-		if left := row.Size-sent; left < want {
+		if left := row.Size - sent; left < want {
 			want = left
 		}
 		n, err := io.ReadFull(reader, data[:int(want)])

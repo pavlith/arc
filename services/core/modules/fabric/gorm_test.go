@@ -208,3 +208,36 @@ func TestSQLiteFabricRuntimeBootstrapStaysClosed(t *testing.T) {
 		})
 	}
 }
+
+func TestRuntimeNodeBootstrapPolicyClosedAllowlist(t *testing.T) {
+	for _, operation := range []string{agent.OperationInventory, agent.OperationPull, agent.OperationReport, agent.OperationProfilePlan} {
+		rule := access.Rule{
+			Audience: agent.NodeAudience, Operation: operation,
+			ActorKinds: []string{"service"},
+		}
+		if !runtimeNodeRule(rule) {
+			t.Fatalf("approved node operation denied: %s", operation)
+		}
+		rule.Actions = []string{"system.host.apply"}
+		if runtimeNodeRule(rule) {
+			t.Fatal("host mutation capability accepted in node bootstrap")
+		}
+	}
+	for _, operation := range []string{
+		"runtime.v1.node.exec", "runtime.v1.node.profile.apply",
+		"runtime.v1.node.shell", "runtime.v1.node.package.install",
+	} {
+		if runtimeNodeRule(access.Rule{
+			Audience: agent.NodeAudience, Operation: operation,
+			ActorKinds: []string{"service"},
+		}) {
+			t.Fatalf("unexpected privileged operation accepted: %s", operation)
+		}
+	}
+	if runtimeNodeRule(access.Rule{
+		Audience: agent.NodeAudience, Operation: agent.OperationProfilePlan,
+		ActorKinds: []string{"user"},
+	}) {
+		t.Fatal("user identity accepted as a Runtime node")
+	}
+}

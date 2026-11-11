@@ -1,23 +1,10 @@
-# Arc documentation
+# Arc docs
 
-| Document | Purpose |
-|---|---|
-| [Requirements](REQUIREMENTS.md) | Product scope, stable requirement IDs and milestone acceptance |
-| [Architecture](ARCHITECTURE.md) | Trust boundaries, protocol/storage contracts and decisions |
-| [Development](DEVELOPMENT.md) | Setup, checks and issue-first delivery |
-| [Sequence before GitHub](shortplan.md) | Agreed service boundaries and implementation dependencies before the optional connector |
-| [Codex](CODEX.md) | Repository agent configuration, skills and optional integrations |
+- [Requirements](REQUIREMENTS.md): requirement IDs, scope, acceptance.
+- [Architecture](ARCHITECTURE.md): security invariants, ownership and protocols.
+- [Development](DEVELOPMENT.md): environment, verification and delivery.
+- [Codex](CODEX.md) and [AGENTS](../AGENTS.md): selective agent context.
+- [Product sequence](shortplan.md): integration dependencies; GitHub Issues own actual status.
+- Domain contracts: [Task](TASK-MODEL.md), [Realtime](REALTIME.md), [Files](FILES.md), [References](RESOURCE-REFERENCES.md), [Pages](PAGES.md), [Notify](NOTIFY.md), [Agent roadmap](AGENT-HOST-ROADMAP.md).
 
-For a narrow task, use the context map in [AGENTS.md](../AGENTS.md#context-routing-read-the-smallest-relevant-section)
-to find the relevant normative sections. Setup and verification commands live in
-Development; component guides add only component-specific details.
-
-Component instructions stay beside their implementation:
-
-- [SDK](../sdk/README.md), [transport](../sdk/transport/README.md), [database](../sdk/database/README.md).
-- [Services](../services/README.md), [Core startup](../services/core/README.md), [Linux Agent](../services/agent/README.md).
-- [Shared test infrastructure](../test/README.md).
-
-[GitHub Issues](https://github.com/pavlith/arc/issues) own actionable work and labels
-own its status. Documents distinguish implemented behavior from planned contracts;
-they do not duplicate Issue backlogs or historical acceptance reports.
+Execution-specific instructions remain next to `sdk/`, `services/`, `client/`, `test/` and `deploy/`. Read only the section required by the active Issue. No secondary Markdown backlog or historical delivery transcript.

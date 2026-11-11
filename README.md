@@ -1,32 +1,17 @@
 # Arc
 
-Arc is a self-hosted team collaboration platform, currently building its M0 foundation.
-Work and status live in [GitHub Issues](https://github.com/pavlith/arc/issues).
-Engineering materials use English; every change starts with an Issue.
+Self-hosted collaboration platform: Core Identity/Access/Fabric, HTTPS Gate, Task, Notify, Files, Pages and infrastructure Agent, with a SvelteKit browser client. Go code is one root module; SQLite databases and migrations are owned independently by each service.
 
-- [Documentation](docs/README.md): requirements, architecture and component guides.
-- [Development](docs/DEVELOPMENT.md): local setup, verification and issue-first delivery.
+- [Docs](docs/README.md) · [Architecture](docs/ARCHITECTURE.md) · [Development](docs/DEVELOPMENT.md) · [Issues](https://github.com/pavlith/arc/issues)
+- `main`: active development and source of truth. `dev`: retained historical reference.
+- Backend delivery is not product acceptance or production deployment; track unfinished UI and verification in Issues.
 
-One root Go module contains `sdk/`, Core modules and domain services. Existing
-executables are Core, Gate, Task, Notify and the Linux infrastructure Agent in `cmd/`.
-[Standalone Core startup](services/core/README.md) requires explicit migrations,
-operator credentials and signed bootstrap policy. Shared test tools live
-in `test/`, deployment configuration and the explicit migrator in `deploy/`.
-
-The HTTPS Gate → Task/Core → JetStream → Notify proof path and private Runtime node
-protocol have focused guardrails. The first Svelte workspace and Task flow uses
-the Gate browser session. The npm workspaces are [client/web](client/web) for the
-SvelteKit app and [client/ts](client/ts) for the TypeScript HTTP client. See
-[service capabilities](services/README.md).
-Historical Issue reports do not establish code absent from this checkout.
-
-Development requires Go 1.27+ and a C compiler for SQLite/CGO. Network checks also
-need Python 3 and the `nats-server` version pinned in `compose.yaml`.
+Requirements: Go 1.27+, C compiler/CGO for SQLite; network tests use Python 3 and the pinned `nats-server`. UI workspaces are `client/web` (`ui`) and `client/ts` (`@arc/client`).
 
 ```sh
-make verify
-make m0-06-smoke
+bash scripts/verify-changed.sh --base HEAD
+npm --prefix client ci
+npm --prefix client run check --workspace ui
 ```
 
-[Local infrastructure](docs/DEVELOPMENT.md#local-environment) additionally supports
-Docker Compose. M7 recovery, compatibility and load verification remains deferred.
+Security-sensitive work requires the [focused guardrails](docs/DEVELOPMENT.md#verification); scheduled/manual CI runs the full Go regression. No automated production setup or secrets are provided.

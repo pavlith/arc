@@ -1,42 +1,16 @@
-# sv
+# Arc web client
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+Svelte 5 / SvelteKit browser UI (`ui` workspace). Calls Arc Gate over its approved same-origin APIs via `@arc/client` in `../ts`. Browser cookie/CSRF authorization is separate from CLI Bearer credentials; server ACL always decides access.
 
-## Creating a project
-
-If you're seeing this, you've probably already done this step. Congrats!
+From the repository root:
 
 ```sh
-# create a new project
-npx sv create my-app
+npm --prefix client ci
+npm --prefix client run check --workspace ui
+npm --prefix client run build --workspace ui
+npm --prefix client run dev --workspace ui
 ```
 
-To recreate this project with the same configuration:
+`client/package-lock.json` is the npm-workspace lock; `client/web/package-lock.json` is retained for the standalone web Docker build. Keep both consistent when changing dependencies.
 
-```sh
-# recreate this project
-npx sv@0.12.8 create --template minimal --types ts --no-install UI
-```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```sh
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
-```
-
-## Building
-
-To create a production version of your app:
-
-```sh
-npm run build
-```
-
-You can preview the production build with `npm run preview`.
-
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+See [product sequence](../../docs/shortplan.md), [Gate architecture](../../docs/ARCHITECTURE.md#6-gate-and-protocol-adapters), and [client/ts](../ts/README.md). Product UI expansion remains separately authorized.

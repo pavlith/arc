@@ -1,0 +1,292 @@
+{
+  "manifest_version": 1,
+  "service": {
+    "name": "files",
+    "build_version": "0.1.0",
+    "api_major": 1
+  },
+  "resources": [
+    {
+      "type": "files.workspace",
+      "actions": [
+        "files.read",
+        "files.create",
+        "files.write",
+        "files.delete",
+        "files.share",
+        "access.grants.manage"
+      ],
+      "share_action": "files.share",
+      "create_action": "files.create",
+      "delete_action": "files.delete",
+      "allow_inheritance": false
+    }
+  ],
+  "operations": [
+    {
+      "id": "files.folders.create",
+      "subject": "rpc.files.v1.folders.create",
+      "kind": "command",
+      "request_schema": "schemas/folder-create.json",
+      "response_schema": "schemas/folder.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "files.workspace",
+        "action": "files.create",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/files/workspaces/{workspace_id}/roots/{acl_root_id}/folders",
+        "success_status": 201,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "files.folders.get",
+      "subject": "rpc.files.v1.folders.get",
+      "kind": "query",
+      "request_schema": "schemas/folder-ref.json",
+      "response_schema": "schemas/folder.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "files.workspace",
+        "action": "files.read",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/files/workspaces/{workspace_id}/roots/{acl_root_id}/folders/{folder_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "folder_id",
+            "field": "folder_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "files.folders.list",
+      "subject": "rpc.files.v1.folders.list",
+      "kind": "query",
+      "request_schema": "schemas/folder-list.json",
+      "response_schema": "schemas/folders.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "files.workspace",
+        "action": "files.read",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/files/workspaces/{workspace_id}/roots/{acl_root_id}/folders",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "parent_id",
+            "field": "parent_id",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "limit",
+            "field": "limit",
+            "type": "integer"
+          },
+          {
+            "source": "query",
+            "name": "cursor",
+            "field": "cursor",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "files.folders.rename",
+      "subject": "rpc.files.v1.folders.rename",
+      "kind": "command",
+      "request_schema": "schemas/folder-rename.json",
+      "response_schema": "schemas/folder.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "files.workspace",
+        "action": "files.write",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "PATCH",
+        "path": "/api/v1/files/workspaces/{workspace_id}/roots/{acl_root_id}/folders/{folder_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "folder_id",
+            "field": "folder_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "files.folders.move",
+      "subject": "rpc.files.v1.folders.move",
+      "kind": "command",
+      "request_schema": "schemas/folder-move.json",
+      "response_schema": "schemas/folder.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "files.workspace",
+        "action": "files.write",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/files/workspaces/{workspace_id}/roots/{acl_root_id}/folders/{folder_id}/move",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "folder_id",
+            "field": "folder_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "files.folders.archive",
+      "subject": "rpc.files.v1.folders.archive",
+      "kind": "command",
+      "request_schema": "schemas/folder-archive.json",
+      "response_schema": "schemas/folder.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "files.workspace",
+        "action": "files.delete",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "DELETE",
+        "path": "/api/v1/files/workspaces/{workspace_id}/roots/{acl_root_id}/folders/{folder_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "folder_id",
+            "field": "folder_id",
+            "type": "string"
+          }
+        ]
+      }
+    }
+  ],
+  "events": [
+    {
+      "name": "files.catalog.changed",
+      "subject": "evt.files.catalog.changed.v1",
+      "schema": "schemas/catalog-event.json"
+    }
+  ]
+}

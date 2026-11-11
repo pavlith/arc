@@ -281,6 +281,12 @@ Protected handler pipeline: verify invocation/proof → validate schema → reso
 
 ## 6. Gate and protocol adapters
 
+The initial shared WebSocket invalidation protocol, ownership boundaries and
+fail-closed conditions are specified in [REALTIME.md](REALTIME.md), tracked by
+[#27](https://github.com/pavlith/arc/issues/27). This is a planned Gate adapter,
+not an existing public API. No separate realtime database or public NATS ingress
+is introduced.
+
 Gate is a standalone HTTP process without a database. HTTPS is direct or behind explicitly trusted proxy CIDRs; forwarded headers are accepted only from trusted peers, resolving client IP from the right of the proxy chain. Configure header/read/write/idle deadlines, graceful shutdown, 200 KiB HTTP bodies within the 256 KiB RPC envelope, bounded per-IP rates and explicit HTTPS CORS origins. `/healthz` is liveness; `/readyz` reflects accepted routes and reconciliation.
 
 Browser auth uses POST `/api/v1/arc/auth/login`, `/refresh`, `/logout` and GET `/api/v1/arc/auth/session`. Login requires allowed Origin and returns session metadata and CSRF data. Session and refresh credentials are Secure/HttpOnly/SameSite=Lax `__Host-` cookies. The CSRF cookie/header must match and Identity checks its hash for mutations. Browser sessions issue no Bearer token. CLI clients use POST `/api/v1/arc/cli/token`, `/refresh` and `/logout` without Origin or cookies. CLI token families rotate independently of browser families. Bearer uses Core `Verifier.Access` with `aud=gate` and live session. Mixing Bearer and session cookie is rejected.

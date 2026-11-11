@@ -8,6 +8,7 @@ type Root struct {
 	WorkspaceID string `gorm:"column:workspace_id;not null"`
 	State       string `gorm:"column:state;not null"`
 }
+
 func (Root) TableName() string { return "roots" }
 
 type Folder struct {
@@ -21,6 +22,7 @@ type Folder struct {
 	UpdatedAt   time.Time  `gorm:"column:updated_at;not null"`
 	ArchivedAt  *time.Time `gorm:"column:archived_at"`
 }
+
 func (Folder) TableName() string { return "folders" }
 
 type Audit struct {
@@ -35,4 +37,5 @@ type Audit struct {
 	Traceparent string    `gorm:"column:traceparent;not null"`
 	CreatedAt   time.Time `gorm:"column:created_at;not null"`
 }
+
 func (Audit) TableName() string { return "audit" }

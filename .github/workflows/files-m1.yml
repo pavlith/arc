@@ -1,0 +1,72 @@
+name: M1 Files backend build (independent of UI)
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - ".github/workflows/files-m1.yml"
+      - "services/files/**"
+      - "cmd/arc-files/**"
+      - "deploy/migrate/**"
+      - "go.mod"
+      - "go.sum"
+  pull_request:
+    branches: [dev]
+    paths:
+      - ".github/workflows/files-m1.yml"
+      - "services/files/**"
+      - "cmd/arc-files/**"
+      - "deploy/migrate/**"
+      - "go.mod"
+      - "go.sum"
+
+permissions:
+  contents: read
+
+jobs:
+  files:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.3"
+          cache-dependency-path: go.sum
+      - name: Check Files Go formatting
+        run: |
+          files=$(gofmt -l services/files cmd/arc-files deploy/migrate)
+          if [ -n "$files" ]; then
+            printf 'Unformatted Files source:\n%s\n' "$files"
+            gofmt -d services/files cmd/arc-files deploy/migrate
+            exit 1
+          fi
+      - name: Compile Files service and migrator
+        run: |
+          go build ./services/files/... ./cmd/arc-files ./deploy/migrate
+          go vet ./services/files/... ./cmd/arc-files
+      - name: Validate installed Files artifact
+        run: |
+          cat > /tmp/arc-files-artifact.go <<'EOF'
+          package main
+          import (
+            "fmt"
+            "os"
+            "github.com/pavlith/arc/sdk/contract"
+            v1 "github.com/pavlith/arc/services/files/api/v1"
+          )
+          func main() {
+            c, e := contract.Compile(v1.Artifact())
+            if e != nil || len(c.Manifest.Operations) != 6 {
+              fmt.Fprintln(os.Stderr, "invalid Files signed contract:", e)
+              os.Exit(1)
+            }
+            fmt.Println("Files artifact validated, digest:", c.Digest)
+          }
+          EOF
+          go run /tmp/arc-files-artifact.go
+      - name: Validate standalone migration replay
+        run: |
+          f=$(mktemp -d)/files.sqlite
+          go run ./deploy/migrate -service files -db "$f"
+          go run ./deploy/migrate -service files -db "$f"

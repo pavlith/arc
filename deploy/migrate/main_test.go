@@ -9,7 +9,7 @@ import (
 )
 
 func TestOwnerMigrations(t *testing.T) {
-	for _, owner := range []string{"core", "task", "notify"} {
+	for _, owner := range []string{"core", "task", "notify", "files"} {
 		t.Run(owner, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), owner+".sqlite")
 			if err := run(context.Background(), owner, path); err != nil {
@@ -32,6 +32,9 @@ func TestOwnerMigrations(t *testing.T) {
 			}
 			if owner == "core" {
 				table = "identity_users"
+			}
+			if owner == "files" {
+				table = "folders"
 			}
 			if !db.Migrator().HasTable(table) {
 				t.Fatalf("missing owner table %q", table)
@@ -60,5 +63,8 @@ func TestRejectCrossServiceDatabaseReuse(t *testing.T) {
 	}
 	if err := run(context.Background(), "notify", path); err == nil {
 		t.Fatal("notify migrator accepted a Core-owned database")
+	}
+	if err := run(context.Background(), "files", path); err == nil {
+		t.Fatal("files migrator accepted a Core-owned database")
 	}
 }

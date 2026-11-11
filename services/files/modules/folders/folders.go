@@ -48,7 +48,7 @@ func dbError(err error) error {
 func toFolder(v models.Folder) filesv1.Folder {
 	out := filesv1.Folder{
 		Scope: filesv1.Scope{WorkspaceID: v.WorkspaceID, RootID: v.RootID},
-		ID: v.ID, Name: v.Name, Revision: v.Revision, Archived: v.ArchivedAt != nil,
+		ID:    v.ID, Name: v.Name, Revision: v.Revision, Archived: v.ArchivedAt != nil,
 		CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt,
 	}
 	if v.ParentID != nil {
@@ -119,7 +119,7 @@ func (s *Service) list(ctx context.Context, q filesv1.FolderListRequest) (filesv
 		query = query.Where("parent_id=?", q.ParentID)
 	}
 	var rows []models.Folder
-	if err := query.Order("id").Limit(q.Limit+1).Find(&rows).Error; err != nil {
+	if err := query.Order("id").Limit(q.Limit + 1).Find(&rows).Error; err != nil {
 		return result, unavailable(err)
 	}
 	if len(rows) > q.Limit {
@@ -148,7 +148,7 @@ func (s *Service) rename(ctx context.Context, tx *gorm.DB, q filesv1.FolderRenam
 	res := tx.WithContext(ctx).Model(&models.Folder{}).
 		Where("id=? AND workspace_id=? AND acl_root_id=? AND revision=? AND archived_at IS NULL",
 			row.ID, q.WorkspaceID, q.RootID, q.Revision).
-		Updates(map[string]any{"name": name, "revision": q.Revision+1, "updated_at": now})
+		Updates(map[string]any{"name": name, "revision": q.Revision + 1, "updated_at": now})
 	if err := dbError(res.Error); err != nil {
 		return filesv1.Folder{}, err
 	}
@@ -196,7 +196,7 @@ func (s *Service) move(ctx context.Context, tx *gorm.DB, q filesv1.FolderMoveReq
 	res := tx.WithContext(ctx).Model(&models.Folder{}).
 		Where("id=? AND workspace_id=? AND acl_root_id=? AND revision=? AND archived_at IS NULL",
 			row.ID, q.WorkspaceID, q.RootID, q.Revision).
-		Updates(map[string]any{"parent_id": parentPointer(q.ParentID), "revision": q.Revision+1, "updated_at": now})
+		Updates(map[string]any{"parent_id": parentPointer(q.ParentID), "revision": q.Revision + 1, "updated_at": now})
 	if err := dbError(res.Error); err != nil {
 		return filesv1.Folder{}, err
 	}
@@ -235,7 +235,7 @@ func (s *Service) archive(ctx context.Context, tx *gorm.DB, q filesv1.FolderArch
 	res := tx.WithContext(ctx).Model(&models.Folder{}).
 		Where("id=? AND workspace_id=? AND acl_root_id=? AND revision=? AND archived_at IS NULL",
 			row.ID, q.WorkspaceID, q.RootID, q.Revision).
-		Updates(map[string]any{"archived_at": now, "revision": q.Revision+1, "updated_at": now})
+		Updates(map[string]any{"archived_at": now, "revision": q.Revision + 1, "updated_at": now})
 	if err := dbError(res.Error); err != nil {
 		return filesv1.Folder{}, err
 	}

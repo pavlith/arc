@@ -23,7 +23,7 @@ type Service struct {
 	GormDB   *gorm.DB
 	Identity identity.Client
 	Contract *contract.Compiled
-	Check func(context.Context, string, string) error
+	Check    func(context.Context, string, string) error
 }
 
 // NewID is a cryptographically random RFC 4122 v4 UUID.

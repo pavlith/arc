@@ -16,11 +16,11 @@ import (
 )
 
 type Module struct {
-	GormDB *gorm.DB
-	Contract *contract.Compiled
-	Registry sdk.Registry
+	GormDB       *gorm.DB
+	Contract     *contract.Compiled
+	Registry     sdk.Registry
 	Registration sdk.Registration
-	Connection func() *nats.Conn
+	Connection   func() *nats.Conn
 }
 
 func (*Module) ID() string { return "outbox" }

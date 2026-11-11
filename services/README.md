@@ -5,6 +5,7 @@
 | `core/` | `cmd/arc-core`, owner SQLite, private RPC and signed approval for Identity profile, workspace lifecycle and invitations, member/group management and administrator provisioning | Runtime policy and adapter #13 |
 | `gate/` | `cmd/arc-gate`, browser cookies, CLI tokens, signed domain routes, Identity routes and optional UI assets | WS/DAV adapters (shared realtime protocol in docs/REALTIME.md) |
 | `task/` | `cmd/arc-task`, scoped Teams/workflow, shared work items, projects/labels, comments/history, subtasks/links, atomic bulk updates, saved-view APIs and atomic replay/outbox | Triage, UI adaptation and live template acceptance #10 |
+| `files/` | `cmd/arc-files`, independent SQLite, signed folder CRUD/move/archive, live root ACL, audit and atomic metadata outbox | File uploads/download streaming and live deployment acceptance #29 |
 | `notify/` | `cmd/arc-notify`, personal Inbox/subscriptions and persisted fake outbound intents | Realtime and real channels #9/#12 |
 | `agent/` | `cmd/arc-agent`, private node RPC, durable journal, restricted systemd and Docker drivers | Admin/Gate/UI, live Docker acceptance, LXD and Core reconcile #13 |
 
@@ -21,21 +22,23 @@ CGO, file permissions, transactions and backups.
 
 Task/Notify require NATS/JetStream, a provisioned Core/Gate, registered service
 accounts and signed approved installations. Example configs:
-[Task](../deploy/task/config.example.json), [Notify](../deploy/notify/config.example.json).
+[Files](../deploy/files/config.example.json), [Task](../deploy/task/config.example.json), [Notify](../deploy/notify/config.example.json).
 These commands are not a complete platform installer:
 
 ```sh
 bash scripts/migrate.sh task /absolute/task.sqlite
 bash scripts/migrate.sh notify /absolute/notify.sqlite
+bash scripts/migrate.sh files /absolute/files.sqlite
 go run ./cmd/arc-task -config /path/to/task.json
 go run ./cmd/arc-notify -config /path/to/notify.json
+go run ./cmd/arc-files -config /path/to/files.json
 ```
 
 Each process receives its own config, absolute database path/data directory and
 NATS credentials. Service Ed25519 seed is 32 raw bytes with mode 0600; Core public
 key is a JSON base64 string. Never pass Core/operator private keys to a domain
 service or mount another owner's database. `deploy/docker/Dockerfile.domain`
-accepts `SERVICE=task|notify`.
+accepts `SERVICE=task|notify|files`.
 
 Task artifact: `task/api/v1/contract/`; Notify: `notify/api/v1/contract/`.
 `fabric.Core.Approve` requires operator signature and exact identity/deployment.

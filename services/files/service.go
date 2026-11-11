@@ -21,15 +21,15 @@ import (
 var ErrInvalid = errors.New("files: invalid service dependencies")
 
 type Config struct {
-	GormDB *gorm.DB
-	Runtime sdk.AppConfig
-	Identity identity.Client
+	GormDB    *gorm.DB
+	Runtime   sdk.AppConfig
+	Identity  identity.Client
 	CoreTrust ed25519.PublicKey
 }
 
 type Service struct {
-	App *service.App
-	Folders *folders.Service
+	App       *service.App
+	Folders   *folders.Service
 	Publisher *outbox.Module
 }
 

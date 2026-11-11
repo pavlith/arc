@@ -1,8 +1,7 @@
 # Files service — initial implementation contract
 
 Tracking: [#29](https://github.com/pavlith/arc/issues/29). Stage 3 of
-[shortplan](shortplan.md). **Design only**: no public Files API or byte
-stream is deployed by this document.
+[shortplan](shortplan.md). **Implementation in dev:** signed Files 0.1.0 folder metadata CRUD, scoped move/archive, root lifecycle methods, owner SQLite migration, audit, replay and outbox are committed. No file-upload or download streaming has been implemented or deployed.
 
 ## Ownership and authorization
 
@@ -92,3 +91,31 @@ expired session during streaming, grant revocation during download, hash
 mismatch, cancellation, orphan cleanup, migration replay and bounded memory
 for a 1 GiB transfer. Preserve errors without leaking target existence.
 A successful code build or migration is not live acceptance.
+
+## Delivered first slice (Files 0.1.0)
+
+The signed artifact `services/files/api/v1/contract/` exposes six folder operations under
+`/api/v1/files/workspaces/{workspace_id}/roots/{acl_root_id}/folders`:
+POST create, GET list (`limit=1..100` + ID cursor), GET item, PATCH rename,
+POST `/{folder_id}/move`, DELETE archive. Commands require a stable
+`Idempotency-Key`; rename, move and archive require the current revision.
+An empty `parent_id` means the root; archival of a nonempty folder is rejected.
+Folder IDs cannot be moved across roots or used to bypass a live Access check.
+Mutations write owner-local audit plus metadata-only catalog outbox atomically.
+
+The owner must run `bash scripts/migrate.sh files /absolute/files.sqlite` before
+launching `go run ./cmd/arc-files -config /path/to/files.json`. Example config:
+`deploy/files/config.example.json`. No migration runs on service startup.
+The only declared event is `evt.files.catalog.changed.v1`; JetStream stream,
+NKey publisher ACL and signed Fabric service installation must be provisioned
+explicitly. The resource type is `files.workspace`, with actions
+`files.read`, `files.create`, `files.write`, `files.delete`,
+`files.share`, and `access.grants.manage`. The domain root must be reserved,
+prepared with a signed Files provider receipt, activated in Access, and then
+activated in Files before browser requests can succeed.
+
+**Still open:** personal sections, file metadata operations, byte storage,
+initiate/complete/abort, private streaming Gate routes, quotas, orphan cleanup,
+production NATS grants and two-user acceptance. The existing Files SQL tables
+for ready bytes/uploads are reserved for this next implementation step; they
+do not imply that those endpoints are exposed.

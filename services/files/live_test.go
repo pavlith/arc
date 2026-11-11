@@ -517,7 +517,7 @@ authorization {users: [
 	}
 	taskPolicy.Rules = append(taskPolicy.Rules, access.Rule{Caller: taskAccount, Audience: "access/v1", Operation: "access.v1.check", ActorKinds: []string{"user"}, Actions: tr.Actions, DownstreamFrom: taskSources, DownstreamActions: taskDown})
 	for _, op := range []string{"resources.reserve", "resources.activate", "grants.add", "grants.revoke"} {
-		src := "task/v1:" + taskv1.CreateID
+		src := "task/v1:" + taskv1.WorkCreate.ID
 		acts := []string{"task.create"}
 		if strings.HasPrefix(op, "grants.") {
 			src = "task/v1:" + taskv1.AdminID
@@ -545,7 +545,7 @@ authorization {users: [
 	must(taskApp.Start(ctx))
 	defer taskApp.Stop()
 	taskAccess := func(op string) context.Context {
-		source := taskv1.CreateID
+		source := taskv1.WorkCreate.ID
 		if strings.HasPrefix(op, "grants.") {
 			source = taskv1.AdminID
 		}

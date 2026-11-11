@@ -2,18 +2,6 @@
 // task 0.9.0; input fingerprint 2bd4e7ab7d9f8dd4b42f43742a0f13ddff27a0184474289655510b85b2cdb270
 import { callRoute, type Transport, type CallOptions, type CommandOptions } from './transport.js';
 
-export type TaskEdit = { "workspace_id": string; "acl_root_id": string; "task_id": string; "title": string; "expected_updated_at": string };
-
-export type TaskTask = { "id": string; "workspace_id": string; "acl_root_id": string; "title": string; "status": "open"; "created_by": string; "created_at": string; "updated_at": string };
-
-export type TaskCreate = { "workspace_id": string; "acl_root_id": string; "title": string };
-
-export type TaskGet = { "workspace_id": string; "acl_root_id": string; "task_id": string };
-
-export type TaskList = { "workspace_id": string; "acl_root_id": string; "limit": number };
-
-export type TaskTasks = { "task": Array<{ "id": string; "workspace_id": string; "acl_root_id": string; "title": string; "status": "open"; "created_by": string; "created_at": string; "updated_at": string }> };
-
 export type TaskGrant = { "workspace_id": string; "acl_root_id": string; "action": "task.read" | "task.create"; "principal_kind": "role" | "user" | "group"; "principal_id": string; "grant_id"?: never } | { "workspace_id": string; "acl_root_id": string; "action"?: "task.read" | "task.create"; "principal_kind"?: "role" | "user" | "group"; "principal_id"?: string; "grant_id": string };
 
 export type TaskGranted = { "resource_id"?: string; "grant_id"?: string; "state"?: string; "policy_revision": number };
@@ -55,6 +43,8 @@ export type TaskWork = { "id": string; "workspace_id": string; "acl_root_id": st
 export type TaskWorkUpdate = { "workspace_id": string; "acl_root_id": string; "title": string; "team_id": string; "status_id"?: string; "description"?: string; "priority"?: number; "due_date"?: string; "sort_order"?: number; "assignee_ids"?: Array<string>; "task_id": string; "revision": number; "expected_updated_at": string; "project_id"?: string; "label_ids"?: Array<string> };
 
 export type TaskWorkArchive = { "workspace_id": string; "acl_root_id": string; "task_id": string; "revision": number; "expected_updated_at": string };
+
+export type TaskGet = { "workspace_id": string; "acl_root_id": string; "task_id": string };
 
 export type TaskWorkList = { "workspace_id": string; "acl_root_id": string; "cursor"?: string; "limit": number; "team_id"?: string; "status_id"?: string; "assignee_id"?: string; "priority"?: number; "search"?: string; "project_id"?: string; "label_id"?: string; "parent_id"?: string; "top_level"?: boolean };
 
@@ -166,14 +156,6 @@ export type TaskResourceSummary = { "ref": { "kind": "file" | "task" | "page"; "
 
 export function createTaskAPI(transport: Transport) {
   return {
-  "tasks": {
-    "edit": (input: TaskEdit, options: CommandOptions) => callRoute<TaskEdit, TaskTask>(transport, {"method":"PATCH","path":"/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/tasks/{task_id}","bindings":[{"source":"path","name":"workspace_id","field":"workspace_id","type":"string"},{"source":"path","name":"acl_root_id","field":"acl_root_id","type":"string"},{"source":"path","name":"task_id","field":"task_id","type":"string"}]}, input, options),
-    "get": (input: TaskGet, options?: CallOptions) => callRoute<TaskGet, TaskTask>(transport, {"method":"GET","path":"/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/tasks/{task_id}","bindings":[{"source":"path","name":"workspace_id","field":"workspace_id","type":"string"},{"source":"path","name":"acl_root_id","field":"acl_root_id","type":"string"},{"source":"path","name":"task_id","field":"task_id","type":"string"}]}, input, options),
-    "list": (input: TaskList, options?: CallOptions) => callRoute<TaskList, TaskTasks>(transport, {"method":"GET","path":"/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/tasks","bindings":[{"source":"path","name":"workspace_id","field":"workspace_id","type":"string"},{"source":"path","name":"acl_root_id","field":"acl_root_id","type":"string"},{"source":"query","name":"limit","field":"limit","type":"integer"}]}, input, options)
-  },
-  "task": {
-    "create": (input: TaskCreate, options: CommandOptions) => callRoute<TaskCreate, TaskTask>(transport, {"method":"POST","path":"/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/tasks","bindings":[{"source":"path","name":"workspace_id","field":"workspace_id","type":"string"},{"source":"path","name":"acl_root_id","field":"acl_root_id","type":"string"}]}, input, options)
-  },
   "roots": {
     "grants": Object.assign((input: TaskGrant, options: CommandOptions) => callRoute<TaskGrant, TaskGranted>(transport, {"method":"POST","path":"/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/grants","bindings":[{"source":"path","name":"workspace_id","field":"workspace_id","type":"string"},{"source":"path","name":"acl_root_id","field":"acl_root_id","type":"string"}]}, input, options), {
       "list": (input: TaskGrantsList, options?: CallOptions) => callRoute<TaskGrantsList, TaskGrants>(transport, {"method":"GET","path":"/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/grants","bindings":[{"source":"path","name":"workspace_id","field":"workspace_id","type":"string"},{"source":"path","name":"acl_root_id","field":"acl_root_id","type":"string"},{"source":"query","name":"limit","field":"limit","type":"integer"},{"source":"query","name":"cursor","field":"cursor","type":"string"}]}, input, options)

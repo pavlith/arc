@@ -18,25 +18,13 @@ type Scope struct {
 	WorkspaceID string `json:"workspace_id"`
 	RootID      string `json:"acl_root_id"`
 }
-type CreateRequest struct {
+type BaseCreate struct {
 	Scope
 	Title string `json:"title"`
 }
 type GetRequest struct {
 	Scope
 	TaskID string `json:"task_id"`
-}
-type EditRequest struct {
-	GetRequest
-	Title             string    `json:"title"`
-	ExpectedUpdatedAt time.Time `json:"expected_updated_at"`
-}
-type ListRequest struct {
-	Scope
-	Limit int `json:"limit"`
-}
-type ListResponse struct {
-	Tasks []Task `json:"task"`
 }
 type CreatedEvent struct {
 	Scope

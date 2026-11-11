@@ -83,23 +83,11 @@ func (s *Service) Register(r *module.Registry) error {
 		return err
 	}
 
-	if err := module.BindCommand(r, taskv1.Create, policy, store, s.createGORM); err != nil {
-		return err
-	}
-	if err := module.BindCommand(r, taskv1.Edit, policy, store, s.editGORM); err != nil {
-		return err
-	}
 	if err := module.BindCommand(r, taskv1.Admin, policy, store, s.grantsGORM); err != nil {
 		return err
 	}
 
-	if err := module.BindQuery(r, taskv1.Get, policy, s.get); err != nil {
-		return err
-	}
-	if err := module.BindQuery(r, taskv1.ListGrants, policy, s.listGrants); err != nil {
-		return err
-	}
-	return module.BindQuery(r, taskv1.List, policy, s.list)
+	return module.BindQuery(r, taskv1.ListGrants, policy, s.listGrants)
 }
 
 // Authorize verifies the actual task/root/workspace relation before Access.Check.
@@ -109,13 +97,6 @@ func (s *Service) Authorize(ctx context.Context, root, action string) error {
 		return err
 	}
 	return s.attachmentPolicy(ctx)
-}
-
-func (s *Service) get(ctx context.Context, q GetRequest) (Task, error) {
-	return s.getGORM(ctx, q)
-}
-func (s *Service) list(ctx context.Context, q ListRequest) (ListResponse, error) {
-	return s.listGORM(ctx, q)
 }
 
 // PrepareRoot commits the domain binding before issuing its activation receipt.

@@ -49,46 +49,12 @@ func (s *Service) createGORM(ctx context.Context, tx *gorm.DB, q CreateRequest) 
 		return Task{}, unavailable(err)
 	}
 	if err := tx.WithContext(ctx).Create(&models.Audit{
-		TaskID: row.ID, Actor: row.CreatedBy, Operation: Create,
+		TaskID: row.ID, Actor: row.CreatedBy, Operation: taskv1.WorkCreate.ID,
 		RequestID: meta.RequestID, Traceparent: meta.Traceparent,
 		CreatedAt: now,
 	}).Error; err != nil {
 		return Task{}, unavailable(err)
 	}
-	return toTask(row), nil
-}
-
-func (s *Service) editGORM(ctx context.Context, tx *gorm.DB, q taskv1.EditRequest) (Task, error) {
-	cl, _ := rpc.VerifiedClaims(ctx)
-	meta, _ := rpc.Metadata(ctx)
-	title := strings.TrimSpace(q.Title)
-	if title == "" || q.ExpectedUpdatedAt.IsZero() {
-		return Task{}, &rpc.Error{Code: rpc.CodeValidation, Message: "title and expected update time are required"}
-	}
-	db := tx.WithContext(ctx)
-	var row models.Task
-	result := db.Where("id=? AND workspace_id=? AND acl_root_id=? AND created_by=?", q.TaskID, q.WorkspaceID, q.RootID, strings.TrimPrefix(cl.Subject, "user:")).Take(&row)
-	if result.Error == gorm.ErrRecordNotFound {
-		return Task{}, &rpc.Error{Code: rpc.CodeNotFound, Message: "task not found"}
-	}
-	if result.Error != nil {
-		return Task{}, unavailable(result.Error)
-	}
-	if !row.UpdatedAt.Equal(q.ExpectedUpdatedAt) {
-		return Task{}, &rpc.Error{Code: rpc.CodeConflict, Message: "task has changed"}
-	}
-	now := time.Now().UTC()
-	if !now.After(row.UpdatedAt) {
-		now = row.UpdatedAt.Add(time.Nanosecond)
-	}
-	if err := db.Model(&row).Updates(map[string]any{"title": title, "updated_at": now}).Error; err != nil {
-		return Task{}, unavailable(err)
-	}
-	if err := db.Create(&models.Audit{TaskID: row.ID, Actor: row.CreatedBy, Operation: taskv1.EditID,
-		RequestID: meta.RequestID, Traceparent: meta.Traceparent, CreatedAt: now}).Error; err != nil {
-		return Task{}, unavailable(err)
-	}
-	row.Title, row.UpdatedAt = title, now
 	return toTask(row), nil
 }
 
@@ -100,37 +66,6 @@ func (s *Service) grantsGORM(ctx context.Context, tx *gorm.DB, q GrantCommand) (
 		ResourceID: result.ResourceID, GrantID: result.GrantID,
 		State: result.State, Revision: result.Revision,
 	}, err
-}
-
-func (s *Service) getGORM(ctx context.Context, q GetRequest) (Task, error) {
-	var row models.Task
-	result := s.GormDB.WithContext(ctx).
-		Where("id=? AND workspace_id=? AND acl_root_id=?", q.TaskID, q.WorkspaceID, q.RootID).
-		Take(&row)
-	if result.Error == gorm.ErrRecordNotFound {
-		return Task{}, &rpc.Error{Code: rpc.CodeNotFound, Message: "task not found"}
-	}
-	if result.Error != nil {
-		return Task{}, unavailable(result.Error)
-	}
-	return toTask(row), nil
-}
-
-func (s *Service) listGORM(ctx context.Context, q ListRequest) (ListResponse, error) {
-	cl, _ := rpc.VerifiedClaims(ctx)
-	var rows []models.Task
-	result := s.GormDB.WithContext(ctx).
-		Where("workspace_id=? AND acl_root_id=? AND created_by=?", q.WorkspaceID, q.RootID, strings.TrimPrefix(cl.Subject, "user:")).
-		Where("NOT EXISTS(SELECT 1 FROM task_details d JOIN teams tm ON tm.id=d.team_id WHERE d.task_id=tasks.id AND (d.archived_at IS NOT NULL OR tm.archived_at IS NOT NULL))").
-		Order("created_at, id").Limit(q.Limit).Find(&rows)
-	if result.Error != nil {
-		return ListResponse{}, unavailable(result.Error)
-	}
-	out := ListResponse{Tasks: make([]Task, 0, len(rows))}
-	for _, row := range rows {
-		out.Tasks = append(out.Tasks, toTask(row))
-	}
-	return out, nil
 }
 
 func (s *Service) authorizeGORM(ctx context.Context, root, action string) error {
@@ -150,14 +85,10 @@ func (s *Service) authorizeGORM(ctx context.Context, root, action string) error 
 	}
 	query := "SELECT EXISTS(SELECT 1 FROM roots WHERE acl_root_id=? AND workspace_id=? AND state='active')"
 	args := []any{root, q.WorkspaceID}
-	if cl.Operation == Get || cl.Operation == taskv1.EditID || cl.Operation == taskv1.WorkGet.ID || cl.Operation == taskv1.WorkUpdate.ID || cl.Operation == taskv1.WorkArchive.ID || cl.Operation == taskv1.WorkHistory.ID || strings.HasPrefix(cl.Operation, "task.comments.") {
+	if cl.Operation == taskv1.WorkGet.ID || cl.Operation == taskv1.WorkUpdate.ID || cl.Operation == taskv1.WorkArchive.ID || cl.Operation == taskv1.WorkHistory.ID || strings.HasPrefix(cl.Operation, "task.comments.") {
 		query = `SELECT EXISTS(SELECT 1 FROM tasks t JOIN roots r USING(acl_root_id,workspace_id)
 			WHERE t.acl_root_id=? AND t.workspace_id=? AND t.id=? AND r.state='active'`
 		args = append(args, q.TaskID)
-		if cl.Operation == taskv1.EditID {
-			query += " AND t.created_by=?"
-			args = append(args, strings.TrimPrefix(cl.Subject, "user:"))
-		}
 		query += " AND NOT EXISTS(SELECT 1 FROM task_details d JOIN teams tm ON tm.id=d.team_id WHERE d.task_id=t.id AND (d.archived_at IS NOT NULL OR tm.archived_at IS NOT NULL))"
 		query += ")"
 	}

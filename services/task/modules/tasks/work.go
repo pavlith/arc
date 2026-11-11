@@ -152,7 +152,7 @@ func (s *Service) createWork(ctx context.Context, tx *gorm.DB, q taskv1.WorkCrea
 	if err := s.validateAssignees(ctx, q.Scope, q.AssigneeIDs); err != nil {
 		return taskv1.WorkItem{}, err
 	}
-	base, err := s.createGORM(ctx, tx, taskv1.CreateRequest{Scope: q.Scope, Title: strings.TrimSpace(q.Title)})
+	base, err := s.createGORM(ctx, tx, taskv1.BaseCreate{Scope: q.Scope, Title: strings.TrimSpace(q.Title)})
 	if err != nil {
 		return taskv1.WorkItem{}, err
 	}

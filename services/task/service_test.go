@@ -16,7 +16,7 @@ func TestTaskApprovedArtifactAndTypedBindings(t *testing.T) {
 	if c.Manifest.Service.Name != "task" || c.Manifest.Service.APIMajor != 1 {
 		t.Fatal("unexpected Tasks Fabric identity", c.Manifest.Service)
 	}
-	operations := []string{taskv1.Create.ID, taskv1.Get.ID, taskv1.List.ID, taskv1.Edit.ID, taskv1.Admin.ID, taskv1.ListGrants.ID,
+	operations := []string{taskv1.Admin.ID, taskv1.ListGrants.ID,
 		taskv1.TeamCreate.ID, taskv1.TeamUpdate.ID, taskv1.TeamArchive.ID, taskv1.TeamGet.ID, taskv1.TeamList.ID,
 		taskv1.StatusCreate.ID, taskv1.StatusUpdate.ID, taskv1.StatusDelete.ID, taskv1.StatusList.ID}
 	operations = append(operations, taskv1.WorkBulkUpdate.ID, taskv1.WorkLinkChange.ID, taskv1.WorkLinks.ID, taskv1.WorkSetParent.ID, taskv1.WorkCreate.ID, taskv1.WorkUpdate.ID, taskv1.WorkArchive.ID, taskv1.WorkGet.ID, taskv1.WorkList.ID)
@@ -33,6 +33,11 @@ func TestTaskApprovedArtifactAndTypedBindings(t *testing.T) {
 	for _, op := range operations {
 		if _, err := c.Operation(op); err != nil {
 			t.Fatal(err)
+		}
+	}
+	for _, retired := range []string{"task.task.create", "task.tasks.get", "task.tasks.edit", "task.tasks.list"} {
+		if _, err := c.Operation(retired); err == nil {
+			t.Fatal("retired proof operation remains approved:", retired)
 		}
 	}
 	if c.Manifest.Events[0].Subject != taskv1.CreatedSubject {

@@ -15,7 +15,7 @@ import (
 
 func TestOneBaselinePerOwnerRejectsOldHistory(t *testing.T) {
 	for _, owner := range []struct {
-		name string
+		name       string
 		migrations []*gormigrate.Migration
 	}{
 		{"core", coremigrations.SQLite()},

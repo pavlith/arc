@@ -137,11 +137,16 @@ health reporting remain #13; M7 is deferred.
 
 ## Browser and CLI setup
 
-Build `ui/` with `npm --prefix ui ci` and `npm --prefix ui run build`. Set Gate's
-`ui_directory` to the absolute path to `ui/dist` and open the configured HTTPS
-origin. Gate serves `/` and the built JavaScript/CSS under `/assets/`. All UI
-calls use the same origin and browser cookies. The UI reads the CSRF cookie for
-mutations and sends an idempotency key for Identity and Task commands.
+Install the npm workspaces with `npm --prefix client ci` and build the
+SvelteKit app with `npm --prefix client run build --workspace @arc/web`.
+Set Gate's `ui_directory` to the absolute path to `client/web/dist` and open the
+configured HTTPS origin. Gate serves the static page at `/`, its JavaScript and
+CSS under `/_app/immutable/` and the SvelteKit version at `/_app/version.json`.
+Gate's CSP allows the route announcer's fixed style by hash. Check browser
+startup and CSP when upgrading SvelteKit.
+The web app imports `@arc/client` from `client/ts` for same-origin requests with
+browser cookies. The client reads the CSRF cookie for mutations and the web app
+sends an idempotency key for Identity and Task commands.
 
 Apply Core migrations before starting the updated Core. The session-channel
 migration keeps existing sessions as `legacy`. New browser sessions cannot issue

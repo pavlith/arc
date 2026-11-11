@@ -1,0 +1,6 @@
+{
+  "name": "arc-clients",
+  "private": true,
+  "packageManager": "npm@11.20.0",
+  "workspaces": ["web", "ts"]
+}

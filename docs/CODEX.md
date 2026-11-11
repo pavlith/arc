@@ -33,7 +33,7 @@ respect the user's model/profile choice.
 | `arc-verify` | Proportional checks and honest deferred coverage |
 | `shadcn-svelte` | Vendored upstream component APIs, CLI, forms, imports and styling |
 
-Load only relevant skills. Use Arc UI guidance for the Svelte package in `ui/`.
+Load only relevant skills. Use Arc UI guidance for the Svelte package in `client/web/`.
 Check for `components.json` before applying upstream component guidance. Keep UI
 initialization in its Issue scope. `skills-lock.json` pins the vendored source.
 

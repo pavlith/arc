@@ -6,7 +6,7 @@ on:
     paths:
       - ".github/workflows/m0-05.yml"
       - ".github/actions/install-ui/**"
-      - "ui/**"
+      - "client/**"
       - "sdk/**"
       - "cmd/**"
       - "deploy/**"
@@ -23,7 +23,7 @@ on:
     paths:
       - ".github/workflows/m0-05.yml"
       - ".github/actions/install-ui/**"
-      - "ui/**"
+      - "client/**"
       - "sdk/**"
       - "cmd/**"
       - "deploy/**"

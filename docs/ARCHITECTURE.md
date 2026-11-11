@@ -405,7 +405,7 @@ deploy/                    # example config, Dockerfiles, explicit migrator
 docs/                      # requirements, architecture and development
 ```
 
-`cmd/arc-core` uses the existing Core composition with strict owner-local bootstrap. Product Identity is available through approved Gate routes. The first Svelte 5 UI lives in `ui/`. Do not create separate Go modules or restore legacy paths for compatibility.
+`cmd/arc-core` uses the existing Core composition with strict owner-local bootstrap. Product Identity is available through approved Gate routes. The SvelteKit web app uses Svelte 5 and shadcn-svelte in `client/web/`. Its TypeScript Gate client lives in `client/ts/`. Do not create separate Go modules or restore legacy paths for compatibility.
 
 ## 12. Decision register
 

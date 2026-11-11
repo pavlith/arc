@@ -37,5 +37,5 @@ jobs:
       - run: bash -n scripts/verify-changed.sh
       - run: bash scripts/verify-changed.sh --base HEAD
       - name: Exercise verifier before app code is introduced
-        if: ${{ hashFiles('**/go.mod', 'ui/package.json') == '' }}
+        if: ${{ hashFiles('**/go.mod', 'client/package.json') == '' }}
         run: bash scripts/verify-changed.sh --all

@@ -43,10 +43,10 @@ if [[ ${#changed[@]} -eq 0 ]]; then
 fi
 
 declare -A modules=()
-ui_changed=false
+client_changed=false
 migrations_changed=false
 for file in "${changed[@]}"; do
-  if [[ $file == ui/* ]]; then ui_changed=true; fi
+  if [[ $file == client/* ]]; then client_changed=true; fi
   if [[ $file == migrations/* || $file == */migrations/* ]]; then migrations_changed=true; fi
   case "$file" in
     *.go|go.mod|go.sum)
@@ -72,19 +72,12 @@ else
   echo "Go: no changed, implemented module"
 fi
 
-if $ui_changed && [[ -f ui/package.json ]]; then
-  [[ -d ui/node_modules ]] || { echo "UI dependencies missing: install before verification" >&2; exit 1; }
-  if [[ -f ui/pnpm-lock.yaml ]]; then
-    command -v pnpm >/dev/null || { echo "pnpm required" >&2; exit 1; }
-    pnpm --dir ui run check --if-present
-    pnpm --dir ui run build --if-present
-  else
-    command -v npm >/dev/null || { echo "npm required" >&2; exit 1; }
-    npm --prefix ui run check --if-present
-    npm --prefix ui run build --if-present
-  fi
+if $client_changed && [[ -f client/package.json ]]; then
+  [[ -d client/node_modules ]] || { echo "Client dependencies missing: npm --prefix client ci" >&2; exit 1; }
+  npm --prefix client run check --workspace @arc/web
+  npm --prefix client run build --workspace @arc/web
 else
-  echo "UI: no changed, implemented UI package"
+  echo "Client: no changed client package"
 fi
 
 if $migrations_changed; then

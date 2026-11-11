@@ -15,7 +15,9 @@ in `test/`, deployment configuration and the explicit migrator in `deploy/`.
 
 The HTTPS Gate → Task/Core → JetStream → Notify proof path and private Runtime node
 protocol have focused guardrails. The first Svelte workspace and Task flow uses
-the Gate browser session. See [service capabilities](services/README.md).
+the Gate browser session. The npm workspaces are [client/web](client/web) for the
+SvelteKit app and [client/ts](client/ts) for the TypeScript HTTP client. See
+[service capabilities](services/README.md).
 Historical Issue reports do not establish code absent from this checkout.
 
 Development requires Go 1.27+ and a C compiler for SQLite/CGO. Network checks also

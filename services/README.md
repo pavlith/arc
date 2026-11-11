@@ -8,7 +8,7 @@
 | `notify/` | `cmd/arc-notify`, internal inbox/notification and persisted fake outbound intents | User inbox/subscriptions, realtime and real channels #9/#12 |
 | `agent/` | `cmd/arc-agent`, private node RPC, durable journal, restricted systemd and Docker drivers | Admin/Gate/UI, live Docker acceptance, LXD and Core reconcile #13 |
 
-The first Svelte workspace and Task view is in `ui/`. Historical reports of
+The first Svelte workspace and Task view is in `client/web/`. Historical reports of
 unavailable implementations do not extend this table. [Core startup](core/README.md) uses strict local configuration,
 explicit migrations and signed policy. Every new implementation starts with its Issue.
 

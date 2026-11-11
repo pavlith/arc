@@ -33,7 +33,7 @@ func (c *nodeConnection) Close() {
 	}
 }
 
-func openNodeClient(ctx context.Context, cfg FileConfig) (session *nodeConnection, err error) {
+func openNodeClient(ctx context.Context, cfg FileConfig) (*nodeConnection, error) {
 	seed, err := readOwned(cfg.KeyFile, true, ed25519.SeedSize)
 	if err != nil || len(seed) != ed25519.SeedSize {
 		return nil, ErrInvalid
@@ -42,17 +42,18 @@ func openNodeClient(ctx context.Context, cfg FileConfig) (session *nodeConnectio
 	for i := range seed {
 		seed[i] = 0
 	}
-	session = &nodeConnection{key: key}
+	link := &nodeConnection{key: key}
+	ready := false
 	defer func() {
-		if err != nil {
-			session.Close()
+		if !ready {
+			link.Close()
 		}
 	}()
 	public, err := readOwned(cfg.CoreSnapshotKeyFile, false, 4096)
 	if err != nil {
 		return nil, ErrInvalid
 	}
-	if json.Unmarshal(public, &session.coreKey) != nil || len(session.coreKey) != ed25519.PublicKeySize {
+	if json.Unmarshal(public, &link.coreKey) != nil || len(link.coreKey) != ed25519.PublicKeySize {
 		return nil, ErrInvalid
 	}
 	cfg.NATS.Name = "arc-agent-" + cfg.NodeID
@@ -64,20 +65,21 @@ func openNodeClient(ctx context.Context, cfg FileConfig) (session *nodeConnectio
 	for i := range brokerSeed {
 		brokerSeed[i] = 0
 	}
-	session.connection, err = sdk.Connect(ctx, cfg.NATS)
+	link.connection, err = sdk.Connect(ctx, cfg.NATS)
 	if err != nil {
 		return nil, ErrUnavailable
 	}
-	rpcClient, err := rpc.NewClient(session.connection)
+	rpcClient, err := rpc.NewClient(link.connection)
 	if err != nil {
 		return nil, ErrUnavailable
 	}
-	session.provider, err = contract.NewNodeClient(rpcClient, cfg.NodeID,
+	link.provider, err = contract.NewNodeClient(rpcClient, cfg.NodeID,
 		Credentials(identity.Client{
 			RPC: rpcClient, ServiceID: cfg.ServiceID, Kid: cfg.Kid, PrivateKey: key,
 		}))
 	if err != nil {
 		return nil, ErrInvalid
 	}
-	return session, nil
+	ready = true
+	return link, nil
 }

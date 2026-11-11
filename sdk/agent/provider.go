@@ -37,6 +37,14 @@ const (
 	Cancelled  OperationStatus = "cancelled"
 )
 
+// ReportJournal holds a receipt before sending it to Core. A crash must not
+// turn an uncertain acknowledgement into a new operation/event identifier.
+type ReportJournal interface {
+	LoadPending(context.Context, string) (Report, bool, error)
+	SavePending(context.Context, string, Report) error
+	DeletePending(context.Context, string) error
+}
+
 // Report carries bounded host metadata. It never contains logs, credentials or
 // arbitrary driver error text. Observations do not assert Fabric readiness.
 type Report struct {

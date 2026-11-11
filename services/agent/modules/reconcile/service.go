@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -38,7 +39,8 @@ type Service struct {
 	runtime  *runtime.Module
 	interval time.Duration
 	observe  func(string, string)
-	pending  map[string]contract.Report
+	reports  contract.ReportJournal
+	lastSent map[string]string
 	mu       sync.Mutex
 }
 
@@ -53,6 +55,10 @@ func New(cfg Config) (*Service, error) {
 	if interval < time.Second || interval > time.Minute {
 		return nil, ErrInvalid
 	}
+	reports, ok := cfg.Journal.(contract.ReportJournal)
+	if !ok {
+		return nil, ErrInvalid
+	}
 	execution, err := runtime.New(runtime.Config{
 		NodeID: cfg.NodeID, CoreKey: cfg.CoreKey, Templates: cfg.Templates,
 		Journal: cfg.Journal, Drivers: cfg.Drivers,
@@ -60,7 +66,7 @@ func New(cfg Config) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{node: cfg.NodeID, provider: cfg.Provider, runtime: execution, interval: interval, observe: cfg.Observe, pending: map[string]contract.Report{}}, nil
+	return &Service{node: cfg.NodeID, provider: cfg.Provider, runtime: execution, interval: interval, observe: cfg.Observe, reports: reports, lastSent: map[string]string{}}, nil
 }
 func nonce(prefix string) (string, error) {
 	var b [16]byte
@@ -132,14 +138,27 @@ func (s *Service) Step(ctx context.Context) (result error) {
 	return ErrUnavailable
 }
 func (s *Service) reconcile(ctx context.Context, id string) error {
-	if report, ok := s.pending[id]; ok {
-		err := s.provider.Report(ctx, report)
+	// A receipt was persisted before its first send. Retry the same event ID
+	// after reconnect or process restart; never replay an unverified host effect.
+	pending, exists, err := s.reports.LoadPending(ctx, id)
+	if err != nil {
+		s.note(id, "JOURNAL_UNAVAILABLE")
+		return ErrUnavailable
+	}
+	if exists {
+		err := s.provider.Report(ctx, pending)
 		if err != nil && rpc.ErrorCode(err) != rpc.CodeConflict {
 			s.note(id, "REPORT_UNAVAILABLE")
 			return ErrUnavailable
 		}
-		delete(s.pending, id)
+		if err := s.reports.DeletePending(ctx, id); err != nil {
+			return ErrUnavailable
+		}
+		if err == nil {
+			s.lastSent[id] = pending.EventID
+		}
 	}
+
 	request, err := nonce("pull-")
 	if err != nil {
 		return err
@@ -164,8 +183,6 @@ func (s *Service) reconcile(ctx context.Context, id string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	// Never turn proof, stale revision, journal or ownership uncertainty into a
-	// destructive retry. Core receives only bounded failure metadata.
 	status := contract.Succeeded
 	code := ""
 	if execErr != nil {
@@ -173,30 +190,43 @@ func (s *Service) reconcile(ctx context.Context, id string) error {
 			s.note(id, "INVALID_SNAPSHOT")
 			return ErrUnavailable
 		}
-		status = contract.Failed
-		code = "DRIVER_FAILED"
-		if errors.Is(execErr, security.ErrDenied) {
-			code = "POLICY_DENIED"
-		}
-		if errors.Is(execErr, security.ErrUnavailable) {
+		// Host timeouts, offline engines and partial rollouts stay retryable.
+		// A new online signed pull is required before every subsequent effect.
+		if !errors.Is(execErr, security.ErrDenied) {
 			s.note(id, "EXECUTOR_UNAVAILABLE")
 			return ErrUnavailable
 		}
+		status = contract.Failed
+		code = "POLICY_DENIED"
 		obs = contract.Observation{ResourceID: id, NodeID: s.node, Revision: snapshot.Spec.Revision, State: snapshot.Spec.State}
 	}
-	event, err := nonce("report-")
+	report := contract.Report{OperationID: snapshot.OperationID, SpecDigest: contract.SpecDigest(snapshot.Spec), Status: status, ErrorCode: code, Observation: obs}
+	// Stable event IDs suppress duplicate Core effects after Agent crashes.
+	// No fresh report is generated for identical observed state.
+	fingerprint, err := json.Marshal(report)
 	if err != nil {
-		return err
+		return ErrUnavailable
 	}
-	report := contract.Report{EventID: event, OperationID: snapshot.OperationID, SpecDigest: contract.SpecDigest(snapshot.Spec), Status: status, ErrorCode: code, Observation: obs}
-	s.pending[id] = report
+	sum := sha256.Sum256(fingerprint)
+	report.EventID = "report-" + hex.EncodeToString(sum[:20])
+	if s.lastSent[id] == report.EventID {
+		return nil
+	}
+	if err := s.reports.SavePending(ctx, id, report); err != nil {
+		s.note(id, "JOURNAL_UNAVAILABLE")
+		return ErrUnavailable
+	}
 	if err := s.provider.Report(ctx, report); err != nil {
 		s.note(id, "REPORT_UNAVAILABLE")
 		return ErrUnavailable
 	}
-	delete(s.pending, id)
+	if err := s.reports.DeletePending(ctx, id); err != nil {
+		s.note(id, "JOURNAL_UNAVAILABLE")
+		return ErrUnavailable
+	}
+	s.lastSent[id] = report.EventID
 	if execErr != nil {
-		s.note(id, "DRIVER_FAILED")
+		s.note(id, "POLICY_DENIED")
 		return ErrUnavailable
 	}
 	return nil

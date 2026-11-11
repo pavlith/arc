@@ -35,6 +35,10 @@ func (f *fake) Apply(_ context.Context, s agent.Spec, _ agent.Template) (agent.O
 	}
 	return agent.Observation{ResourceID: s.ID, NodeID: s.NodeID, Revision: s.Revision, State: s.State, Running: s.Replicas}, nil
 }
+func (f *fake) Inspect(_ context.Context, s agent.Spec, _ agent.Template) (agent.Observation, error) {
+	return agent.Observation{ResourceID: s.ID, NodeID: s.NodeID, Revision: s.Revision, State: s.State, Running: s.Replicas}, nil
+}
+
 func fixture(t *testing.T) (agent.Snapshot, agent.Template, ed25519.PublicKey, ed25519.PrivateKey) {
 	t.Helper()
 	pub, key, err := ed25519.GenerateKey(rand.Reader)

@@ -13,6 +13,7 @@ import (
 
 	"github.com/pavlith/arc/services/agent"
 	"github.com/pavlith/arc/services/agent/modules/apt"
+	"github.com/pavlith/arc/services/agent/modules/enrollment"
 	"github.com/pavlith/arc/services/agent/modules/host"
 )
 
@@ -24,7 +25,26 @@ func main() {
 	aptPlan := flag.String("apt-plan", "", "simulate package installation (comma-separated names, no changes)")
 	previewProfile := flag.String("preview-profile", "", "preview a Core-approved profile by ID (read-only)")
 	profileRevision := flag.Int64("profile-revision", 0, "approved profile revision for preview")
+	enrollmentKeygen := flag.String("enrollment-keygen", "", "create a private Ed25519 service seed (no NATS connection)")
 	flag.Parse()
+	if *enrollmentKeygen != "" {
+		if *hostInfo || *checkConfig || *aptPlan != "" || *previewProfile != "" {
+			slog.Error("key generation cannot be combined with other commands")
+			os.Exit(2)
+		}
+		public, err := enrollment.CreateKeyFile(*enrollmentKeygen)
+		if err != nil {
+			slog.Error("secure enrollment seed creation failed")
+			os.Exit(1)
+		}
+		if err := json.NewEncoder(os.Stdout).Encode(struct {
+			PublicKey string `json:"public_key"`
+		}{PublicKey: public}); err != nil {
+			slog.Error("public key output failed")
+			os.Exit(1)
+		}
+		return
+	}
 	if *previewProfile != "" {
 		if *profileRevision < 1 || *hostInfo || *checkConfig || *aptPlan != "" {
 			slog.Error("invalid profile preview options")

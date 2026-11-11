@@ -1,0 +1,63 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "name": {
+      "type": "string",
+      "maxLength": 128,
+      "minLength": 1
+    },
+    "key": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9]{1,11}$"
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 12000
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^(#[0-9a-fA-F]{6})?$"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "archived": {
+      "type": "boolean"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "acl_root_id",
+    "id",
+    "name",
+    "key",
+    "description",
+    "color",
+    "revision",
+    "archived",
+    "created_at",
+    "updated_at"
+  ],
+  "additionalProperties": false
+}

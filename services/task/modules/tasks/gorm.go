@@ -141,6 +141,7 @@ func (s *Service) authorizeGORM(ctx context.Context, root, action string) error 
 	var q struct {
 		Scope
 		TaskID string `json:"task_id"`
+		TeamID string `json:"team_id"`
 	}
 	if json.Unmarshal(meta.Payload, &q) != nil || root != q.RootID ||
 		q.WorkspaceID == "" || cl.WorkspaceID != q.WorkspaceID {
@@ -164,6 +165,11 @@ func (s *Service) authorizeGORM(ctx context.Context, root, action string) error 
 	}
 	if !exists {
 		return security.ErrDenied
+	}
+	if q.TeamID != "" {
+		if _, err := catalogTeam(ctx, s.GormDB, taskv1.TeamScope{Scope: q.Scope, TeamID: q.TeamID}); err != nil {
+			return err
+		}
 	}
 	return s.Check(ctx, root, action)
 }

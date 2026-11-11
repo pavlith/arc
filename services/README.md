@@ -96,6 +96,56 @@ This requires signed replacement approvals and updated Task/Notify deployment;
 see [development](../docs/DEVELOPMENT.md#browser-and-cli-setup). Deploy the updated
 Core first so it accepts the root-bound revoke request.
 
+## Task Team and workflow APIs
+
+Task 0.1.0 adds business Teams and workflow statuses inside existing active Task
+roots. Apply Task migration `000002_teams` explicitly before starting the new
+binary. Existing tasks, IDs, audit/replay and pending outbox rows are retained.
+Team membership/privacy is not implied by the Team record: the root's ACL is the
+access boundary. Independently private Teams need independent roots.
+
+All paths below are relative to
+`/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}`:
+
+| Method/path | Behavior |
+|---|---|
+| POST `/teams` | Create a Team and six default workflow statuses atomically |
+| GET `/teams?limit=100&cursor=<uuid>` | List active Teams; `limit` is required; follow `next_cursor` |
+| GET `/teams/{team_id}` | Read one active Team |
+| PATCH `/teams/{team_id}` | Replace name/description/color using current `revision`; key is immutable |
+| POST `/teams/{team_id}/archive` | Archive using current `revision`; retain Team and statuses |
+| GET `/teams/{team_id}/statuses` | List active statuses by position/ID |
+| POST `/teams/{team_id}/statuses` | Create a status, optionally make it the default |
+| PATCH `/teams/{team_id}/statuses/{status_id}` | Update status fields using current `revision` |
+| POST `/teams/{team_id}/statuses/{status_id}/archive` | Archive a nondefault status using current `revision` |
+
+Team create accepts `name`, uppercase `key` (2–12 ASCII letters/digits, starting
+with a letter), optional `description` and optional `color` (empty or `#RRGGBB`).
+Keys are unique per workspace, including archived Teams. Team mutations require
+`access.grants.manage`; reads require `task.read`. Path-bound scope/IDs must not
+also occur in the body. All writes require stable `Idempotency-Key`; browser
+mutations require Origin/CSRF. Responses include ID, scope, timestamps, revision
+and archived flag. Archived Teams deny subsequent Team/workflow commands and
+replay; there is no implicit unarchive.
+
+Status fields are `name`, `category`, `color`, `position` and `is_default`. Categories
+are `backlog`, `todo`, `in_progress`, `in_review`, `done`, `cancelled`. There are at
+most 100 active statuses per Team and exactly one default. Setting another
+default increments the former default's revision; refresh the list after changes.
+A default cannot be archived or directly unset. Updates replace the full mutable
+status representation, including `is_default`.
+
+Every mutation commits domain state, product audit, replay result and an
+`evt.task.catalog.changed.v1` identifier/revision hint together. The hint contains
+no content; a subscriber must reauthorize a subsequent fetch. Approve exact
+`task.teams.*`/`task.statuses.*` operation IDs and their downstream Access `check`
+actions through the normal signed installation workflow. Add the new event
+subject to Task's broker publish permissions and the applicable JetStream stream.
+Replace the Task artifact/routes and update Notify's producer digest; Notify's
+task-created event schema and subscription subject are unchanged.
+
+The model/import/personal-task decision is in [Task product model](../docs/TASK-MODEL.md).
+
 ## Runtime
 
 Core Control requires explicit live `RuntimeControlPolicy` and a snapshot signing

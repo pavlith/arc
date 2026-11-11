@@ -1,0 +1,92 @@
+{
+  "type": "object",
+  "properties": {
+    "statuses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "acl_root_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "team_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "category": {
+            "enum": [
+              "backlog",
+              "todo",
+              "in_progress",
+              "in_review",
+              "done",
+              "cancelled"
+            ]
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^(#[0-9a-fA-F]{6})?$"
+          },
+          "position": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000
+          },
+          "is_default": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "acl_root_id",
+          "team_id",
+          "name",
+          "category",
+          "color",
+          "position",
+          "is_default",
+          "id",
+          "revision",
+          "archived",
+          "created_at",
+          "updated_at"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 100
+    }
+  },
+  "required": [
+    "statuses"
+  ],
+  "additionalProperties": false
+}

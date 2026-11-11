@@ -53,6 +53,9 @@ func (s *Service) Register(r *module.Registry) error {
 	policy := module.Policy{Resource: s.Authorize}
 
 	store := events.Store{DB: s.GormDB}
+	if err := s.bindTeams(r, policy, store); err != nil {
+		return err
+	}
 	if err := module.BindCommand(r, taskv1.Create, policy, store, s.createGORM); err != nil {
 		return err
 	}

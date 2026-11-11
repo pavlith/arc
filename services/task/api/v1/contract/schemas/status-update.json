@@ -1,0 +1,62 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "team_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "name": {
+      "type": "string",
+      "maxLength": 128,
+      "minLength": 1
+    },
+    "category": {
+      "enum": [
+        "backlog",
+        "todo",
+        "in_progress",
+        "in_review",
+        "done",
+        "cancelled"
+      ]
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^(#[0-9a-fA-F]{6})?$"
+    },
+    "position": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000
+    },
+    "is_default": {
+      "type": "boolean"
+    },
+    "status_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "required": [
+    "workspace_id",
+    "acl_root_id",
+    "team_id",
+    "status_id",
+    "name",
+    "category",
+    "revision"
+  ],
+  "additionalProperties": false
+}

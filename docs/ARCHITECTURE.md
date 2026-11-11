@@ -552,7 +552,7 @@ These IDs identify architecture decisions, not similarly numbered delivery Issue
 | M0-10 | Operation-bound invocation, audited ACL self-grant, signed snapshots and no external exactly-once claim |
 | T-01 | Build-phase Integrated; full hardening in M7; production requires Verified |
 | R-10 | Typed Docker/LXD/systemd infrastructure on trusted nodes over NATS; no arbitrary shell or second gRPC transport |
-| O-01 | M1 Kuayle adaptation/data import and personal Task strategy remain to be defined |
+| O-01 | M1 adaptation preserves Arc IDs/data and workspace/root ACL; automatic import and personal Task roots are separate extensions; see [Task product model](TASK-MODEL.md) |
 | O-02 | M2 cross-workspace sharing, scheduling and DAV client matrix |
 | O-03 | M3 WebDAV locking/versioning/upload links and stream reauthorization |
 | O-04 | M4–M5 Starlark limits, approval classes, connector secrets and plugin sandbox |

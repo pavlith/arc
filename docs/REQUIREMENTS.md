@@ -403,7 +403,9 @@ lost M1 work that must be reimplemented. #15 adds the Core command and secure
 startup; product provisioning and full standalone platform acceptance remain separate.
 Current paths/limits live in component guides; status remains in Issue labels.
 
-Open decisions: M1 Kuayle import/personal Task model; M2 sharing/DAV scheduling/
+The M1 Kuayle adaptation and personal Task boundary are defined in
+[Task product model](TASK-MODEL.md); automatic import and personal Task roots are
+separate extensions. Open decisions: M2 sharing/DAV scheduling/
 client matrix; M3 WebDAV locking/versioning/stream revoke; M4–M5 Starlark limits,
 approval classes/connector secrets; beyond M6 placement/rollback/zero-downtime.
 Preserve operation-bound invocation, explicit ACL self-grant audit, signed routes,

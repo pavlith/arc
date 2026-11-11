@@ -12,6 +12,35 @@ import (
 func (g *Gate) auth(w http.ResponseWriter, r *http.Request, id, client string) {
 	endpoint := r.URL.Path
 	ctx := r.Context()
+	if endpoint == "/api/v1/arc/auth/recover" && r.Method == http.MethodPost {
+		if !g.origins[r.Header.Get("Origin")] {
+			writeError(w, id, fault(rpc.CodePermissionDenied))
+			return
+		}
+		if !g.rate(client, "recovery", g.cfg.LoginsPerMinute) {
+			writeError(w, id, fault(rpc.CodeRateLimited))
+			return
+		}
+		obj, err := readObject(r)
+		if err != nil {
+			g.inputError(w, id, err)
+			return
+		}
+		raw, _ := json.Marshal(obj)
+		var q identity.RecoverRequest
+		if contract.Strict(raw, &q) != nil || q.Email == "" || q.Code == "" || q.Password == "" {
+			writeError(w, id, fault(rpc.CodeValidation))
+			return
+		}
+		result, err := g.cfg.Backend.Recover(ctx, q)
+		if err != nil {
+			writeError(w, id, err)
+			return
+		}
+		g.clearCookies(w)
+		writeJSON(w, http.StatusOK, result)
+		return
+	}
 	if endpoint == "/api/v1/arc/auth/register-invited" && r.Method == http.MethodPost {
 		if !g.origins[r.Header.Get("Origin")] {
 			writeError(w, id, fault(rpc.CodePermissionDenied))
@@ -112,9 +141,7 @@ func (g *Gate) auth(w http.ResponseWriter, r *http.Request, id, client string) {
 				writeError(w, id, e)
 				return
 			}
-			for _, name := range []string{"__Host-arc_session", csrfCookie, refreshCookie} {
-				http.SetCookie(w, &http.Cookie{Name: name, Path: "/", Secure: true, HttpOnly: name != csrfCookie, SameSite: http.SameSiteLaxMode, MaxAge: -1, Expires: time.Unix(1, 0)})
-			}
+			g.clearCookies(w)
 			w.WriteHeader(204)
 			return
 		}
@@ -133,6 +160,11 @@ func (g *Gate) auth(w http.ResponseWriter, r *http.Request, id, client string) {
 		return
 	}
 	writeError(w, id, fault(rpc.CodeNotFound))
+}
+func (g *Gate) clearCookies(w http.ResponseWriter) {
+	for _, name := range []string{"__Host-arc_session", csrfCookie, refreshCookie} {
+		http.SetCookie(w, &http.Cookie{Name: name, Path: "/", Secure: true, HttpOnly: name != csrfCookie, SameSite: http.SameSiteLaxMode, MaxAge: -1, Expires: time.Unix(1, 0)})
+	}
 }
 func (g *Gate) cookies(w http.ResponseWriter, r identity.LoginResult, initial bool) {
 	if initial {

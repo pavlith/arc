@@ -20,29 +20,32 @@ type identityRoute struct {
 // The reserved Identity namespace maps only these methods to private RPC.
 // Core checks the operator-signed bootstrap approval for the exact operation.
 var identityRoutes = map[string]identityRoute{
-	"profile":               {read: true},
-	"workspaces/list":       {read: true, query: []string{"after"}},
-	"workspaces/create":     {},
-	"workspaces/archive":    {},
-	"workspaces/get":        {read: true, query: []string{"workspace_id"}},
-	"workspaces/update":     {},
-	"workspaces/leave":      {},
-	"users/provision":       {},
-	"invitations/create":    {},
-	"invitations/revoke":    {},
-	"invitations/accept":    {},
-	"invitations/list":      {read: true, query: []string{"workspace_id", "after"}},
-	"members/list":          {read: true, query: []string{"workspace_id", "after"}},
-	"members/set":           {},
-	"members/remove":        {},
-	"groups/list":           {read: true, query: []string{"workspace_id", "after"}},
-	"task_roots/list":       {read: true, query: []string{"workspace_id", "after"}},
-	"groups/create":         {},
-	"groups/update":         {},
-	"groups/delete":         {},
-	"groups/members/list":   {read: true, query: []string{"workspace_id", "group_id", "after"}},
-	"groups/members/add":    {},
-	"groups/members/remove": {},
+	"profile":                 {read: true},
+	"account/sessions/list":   {read: true, query: []string{"after"}},
+	"account/sessions/revoke": {},
+	"account/password/change": {},
+	"workspaces/list":         {read: true, query: []string{"after"}},
+	"workspaces/create":       {},
+	"workspaces/archive":      {},
+	"workspaces/get":          {read: true, query: []string{"workspace_id"}},
+	"workspaces/update":       {},
+	"workspaces/leave":        {},
+	"users/provision":         {},
+	"invitations/create":      {},
+	"invitations/revoke":      {},
+	"invitations/accept":      {},
+	"invitations/list":        {read: true, query: []string{"workspace_id", "after"}},
+	"members/list":            {read: true, query: []string{"workspace_id", "after"}},
+	"members/set":             {},
+	"members/remove":          {},
+	"groups/list":             {read: true, query: []string{"workspace_id", "after"}},
+	"task_roots/list":         {read: true, query: []string{"workspace_id", "after"}},
+	"groups/create":           {},
+	"groups/update":           {},
+	"groups/delete":           {},
+	"groups/members/list":     {read: true, query: []string{"workspace_id", "group_id", "after"}},
+	"groups/members/add":      {},
+	"groups/members/remove":   {},
 }
 
 type productIdentityBackend interface {
@@ -112,6 +115,9 @@ func (g *Gate) productIdentity(w http.ResponseWriter, r *http.Request, id string
 	if err != nil {
 		writeError(w, id, err)
 		return
+	}
+	if name == "account/password/change" {
+		g.clearCookies(w)
 	}
 	writeJSON(w, http.StatusOK, data)
 }

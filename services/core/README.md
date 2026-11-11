@@ -74,6 +74,17 @@ Workspace invitation history additionally requires the exact bootstrap operation
 `bootstrap`, and its corresponding RPC broker permission. Core rechecks the
 browser session and live workspace owner/admin role on every read.
 
+Account management uses exact Gate bootstrap operations
+`identity.v1.product.account.sessions.list`,
+`identity.v1.product.account.sessions.revoke` and
+`identity.v1.product.account.password.change`; recovery uses
+`identity.v1.users.recover`. Each needs audience `identity/v1`, actor kind
+`bootstrap`, and its corresponding broker RPC permission. These approvals enable
+the API; Core still checks the live browser session, ownership/current password,
+or one-time recovery code as appropriate. Password change and recovery revoke
+all account sessions. Recovery returns the replacement code once and does not
+create a session. See [Gate account APIs](../../docs/ARCHITECTURE.md#6-gate-and-protocol-adapters).
+
 Readiness is reported after all module subscriptions and broker permissions have
 been checked. SIGINT/SIGTERM unsubscribe Fabric control and module handlers,
 stop the SDK transport and close the database. A failed start also closes owned

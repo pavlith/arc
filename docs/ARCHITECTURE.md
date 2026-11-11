@@ -303,7 +303,32 @@ means the issuer is disabled or no longer an owner/admin. Accepted/revoked state
 take precedence over expiry and issuer state. Tokens and token hashes are never
 returned; archived workspace access is denied.
 
-Each protected request validates session online, exchanges a target invocation, and signs a fresh Gate proof. The recipient repeats invocation, domain binding and ACL checks. Preserve request ID, traceparent, deadline and original idempotency key. Missing responder → 503, deadline → 504, authority outage → fail closed. Snapshots do not cache authorization. Public auth exposes no recovery, installation or Runtime administration.
+Account APIs use the same Gate-only product namespace and live browser
+session/CSRF checks:
+
+| Method and path under `/api/v1/arc/identity/` | Input | Behavior |
+|---|---|---|
+| GET `account/sessions/list` | Optional `after` UUID | At most 100 own live sessions ordered by ID, including channel and creation/expiry times; no secrets or hashes |
+| POST `account/sessions/revoke` | `id` | Revoke one own session and its refresh families, including the current session; normal command replay applies while the calling session remains live |
+| POST `account/password/change` | `current_password`, `new_password` | Verify the current password, change it and revoke all own sessions/refresh families; clear browser cookies |
+
+Account POSTs require Origin, CSRF and `Idempotency-Key` like other product
+commands. Password changes use a one-shot credential protocol: neither passwords
+nor responses enter persistent command replay storage, and the revoked session
+cannot repeat a successful change. Each operation requires its exact signed
+`identity.v1.product.account.*` bootstrap approval for Gate.
+
+POST `/api/v1/arc/auth/recover` accepts `email`, `code` and `password` without an
+existing session, with an allowed Origin and per-client/Core rate limits. The
+exact signed `identity.v1.users.recover` approval is required. Core verifies the
+one-time recovery code, rotates its hash, replaces the password and revokes all
+account sessions/refresh families atomically. The response returns the next code
+as `code` once, with `Cache-Control: no-store`; Gate clears auth cookies and does
+not log the user in. Incorrect email/code pairs have the same authentication
+error. A lost success response cannot recover the next code by replaying the old
+one. Email delivery and a recovery UI remain separate work.
+
+Each protected request validates session online, exchanges a target invocation, and signs a fresh Gate proof. The recipient repeats invocation, domain binding and ACL checks. Preserve request ID, traceparent, deadline and original idempotency key. Missing responder → 503, deadline → 504, authority outage → fail closed. Snapshots do not cache authorization. Public auth exposes no installation or Runtime administration.
 
 WS and DAV are planned adapters behind Gate, with the same resource checks. CalDAV requires iCalendar, recurrence/timezone, ETag/sync tokens and distinct free/busy rights; scheduling follows client compatibility work. CardDAV preserves vCard extension fields. WebDAV requires approved method/client coverage and private HTTP/object streaming. Public shares use scoped revocable tokens; DAV credentials and browser sessions are distinct. Remote DAV sources belong to Connectors, not server adapters.
 

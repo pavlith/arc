@@ -306,6 +306,7 @@ func bindProductWrite[Q interface{ workspaceID() string }, R any](s *sdk.Service
 
 func (c *Core) bindProduct(s *sdk.Service) error {
 	registrations := []func() error{
+		func() error { return c.bindAccount(s) },
 		func() error { return c.bindProductWorkspaceCreate(s) },
 		func() error { return c.bindProductWorkspaceArchive(s) },
 		func() error { return bindProductWrite(s, c, "invitations.create", true, c.createInvitation) },

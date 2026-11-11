@@ -20,6 +20,7 @@ type Backend interface {
 	Fetch(context.Context) (fabric.SignedSnapshot, security.JWKS, error)
 	Login(context.Context, identity.LoginRequest) (identity.LoginResult, error)
 	RegisterInvited(context.Context, identity.RegisterInvitedRequest) (identity.RegisterInvitedResult, error)
+	Recover(context.Context, identity.RecoverRequest) (identity.RecoveryResult, error)
 	Authenticate(context.Context, identity.Authentication) (identity.Session, error)
 	Refresh(context.Context, identity.RefreshRequest) (identity.LoginResult, error)
 	Logout(context.Context, identity.SessionRequest) error
@@ -54,6 +55,9 @@ func (r *Remote) Login(ctx context.Context, q identity.LoginRequest) (identity.L
 }
 func (r *Remote) RegisterInvited(ctx context.Context, q identity.RegisterInvitedRequest) (identity.RegisterInvitedResult, error) {
 	return identity.Call[identity.RegisterInvitedRequest, identity.RegisterInvitedResult](ctx, r.Client, "identity.v1.sessions.register_invited", q)
+}
+func (r *Remote) Recover(ctx context.Context, q identity.RecoverRequest) (identity.RecoveryResult, error) {
+	return identity.Call[identity.RecoverRequest, identity.RecoveryResult](ctx, r.Client, "identity.v1.users.recover", q)
 }
 func (r *Remote) Authenticate(ctx context.Context, q identity.Authentication) (identity.Session, error) {
 	return identity.Call[identity.Authentication, identity.Session](ctx, r.Client, "identity.v1.sessions.validate", q)

@@ -14,10 +14,10 @@ import (
 )
 
 type previewIssuer struct {
-	key ed25519.PrivateKey
-	profile agent.NodeProfile
+	key       ed25519.PrivateKey
+	profile   agent.NodeProfile
 	wrongNode bool
-	issued int
+	issued    int
 }
 
 func (p *previewIssuer) PullProfile(_ context.Context, req agent.ProfilePlanRequest) (agent.SignedProfilePlan, error) {
@@ -46,7 +46,7 @@ func TestPreviewApprovedProfileEnforcesCoreTrustAndOnlySimulates(t *testing.T) {
 		profile: agent.NodeProfile{
 			ID: "standard", Revision: 1, Ubuntu: []string{"24.04"},
 			Packages: []agent.PackagePin{{Name: "curl", Version: "8.5.0-2ubuntu10.6"}},
-			Updates: agent.UpdatePolicy{Security: "manual", Packages: "manual", Reboot: "manual"},
+			Updates:  agent.UpdatePolicy{Security: "manual", Packages: "manual", Reboot: "manual"},
 		},
 	}
 	facts := agent.HostFacts{

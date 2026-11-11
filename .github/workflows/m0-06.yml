@@ -11,6 +11,8 @@ on:
       - "scripts/test-m0-06.sh"
       - "test/task-notify-credentials/**"
       - "go.mod"
+      - "!services/**/*.md"
+      - "!sdk/**/*.md"
       - "go.sum"
   pull_request:
     branches: [main]
@@ -22,6 +24,8 @@ on:
       - "scripts/test-m0-06.sh"
       - "test/task-notify-credentials/**"
       - "go.mod"
+      - "!services/**/*.md"
+      - "!sdk/**/*.md"
       - "go.sum"
 permissions:
   contents: read

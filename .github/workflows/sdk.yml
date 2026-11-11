@@ -5,11 +5,13 @@ on:
     branches: [main]
     paths:
       - "sdk/**"
+      - "!sdk/**/*.md"
       - ".github/workflows/sdk.yml"
   pull_request:
     branches: [main]
     paths:
       - "sdk/**"
+      - "!sdk/**/*.md"
       - ".github/workflows/sdk.yml"
 
 permissions:

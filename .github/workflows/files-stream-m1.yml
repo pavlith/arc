@@ -12,6 +12,8 @@ on:
       - "sdk/security/**"
       - "sdk/rpc/**"
       - "go.mod"
+      - "!services/**/*.md"
+      - "!sdk/**/*.md"
       - "go.sum"
   pull_request:
     branches: [main]
@@ -24,6 +26,8 @@ on:
       - "sdk/security/**"
       - "sdk/rpc/**"
       - "go.mod"
+      - "!services/**/*.md"
+      - "!sdk/**/*.md"
       - "go.sum"
 permissions:
   contents: read

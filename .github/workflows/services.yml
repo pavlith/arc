@@ -5,10 +5,15 @@ on:
     branches: [main]
     paths:
       - "sdk/**"
+      - "!sdk/**/*.md"
       - "services/**"
+      - "!services/**/*.md"
       - "cmd/**"
+      - "!cmd/**/*.md"
       - "deploy/**"
+      - "!deploy/**/*.md"
       - "test/**"
+      - "!test/**/*.md"
       - "go.mod"
       - "go.sum"
       - ".github/workflows/services.yml"
@@ -16,10 +21,15 @@ on:
     branches: [main]
     paths:
       - "sdk/**"
+      - "!sdk/**/*.md"
       - "services/**"
+      - "!services/**/*.md"
       - "cmd/**"
+      - "!cmd/**/*.md"
       - "deploy/**"
+      - "!deploy/**/*.md"
       - "test/**"
+      - "!test/**/*.md"
       - "go.mod"
       - "go.sum"
       - ".github/workflows/services.yml"

@@ -4,12 +4,14 @@ on:
     branches: [main]
     paths:
       - "client/**"
+      - "!client/**/*.md"
       - ".github/actions/install-ui/**"
       - ".github/workflows/client.yml"
   pull_request:
     branches: [main]
     paths:
       - "client/**"
+      - "!client/**/*.md"
       - ".github/actions/install-ui/**"
       - ".github/workflows/client.yml"
 permissions:

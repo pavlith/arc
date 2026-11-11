@@ -15,6 +15,8 @@ on:
       - "scripts/test-m0-05.sh"
       - "test/bootstrap/**"
       - "go.mod"
+      - "!services/**/*.md"
+      - "!sdk/**/*.md"
       - "go.sum"
   pull_request:
     branches: [main]
@@ -30,6 +32,8 @@ on:
       - "scripts/test-m0-05.sh"
       - "test/bootstrap/**"
       - "go.mod"
+      - "!services/**/*.md"
+      - "!sdk/**/*.md"
       - "go.sum"
 permissions:
   contents: read

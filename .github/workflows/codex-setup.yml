@@ -10,6 +10,9 @@ on:
       - ".codex/**"
       - "scripts/**"
       - "docs/**"
+      - "services/**/README.md"
+      - "sdk/**/README.md"
+      - "client/**/README.md"
       - ".github/workflows/codex-setup.yml"
   pull_request:
     branches: [main]
@@ -19,6 +22,9 @@ on:
       - ".codex/**"
       - "scripts/**"
       - "docs/**"
+      - "services/**/README.md"
+      - "sdk/**/README.md"
+      - "client/**/README.md"
       - ".github/workflows/codex-setup.yml"
 
 permissions:

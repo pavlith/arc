@@ -9,6 +9,7 @@ import (
 type File struct {
 	Scope
 	ID        string    `json:"id"`
+	Archived  bool      `json:"archived,omitempty"`
 	FolderID  string    `json:"folder_id,omitempty"`
 	Filename  string    `json:"filename"`
 	MIME      string    `json:"mime"`
@@ -25,8 +26,34 @@ type FileRef struct {
 	FileID string `json:"file_id"`
 }
 
+type FileRenameRequest struct {
+	FileRef
+	Filename string `json:"filename"`
+	Revision int64  `json:"revision"`
+}
+
+type FileMoveRequest struct {
+	FileRef
+	FolderID string `json:"folder_id,omitempty"`
+	Revision int64  `json:"revision"`
+}
+
+type FileArchiveRequest struct {
+	FileRef
+	Revision int64 `json:"revision"`
+}
+
 type FileListRequest struct {
 	Scope
+	FolderID string `json:"folder_id,omitempty"`
+	Cursor   string `json:"cursor,omitempty"`
+	Limit    int    `json:"limit"`
+}
+
+// FileSearchRequest searches ready files in the root, optionally in one folder.
+type FileSearchRequest struct {
+	Scope
+	Query    string `json:"query"`
 	FolderID string `json:"folder_id,omitempty"`
 	Cursor   string `json:"cursor,omitempty"`
 	Limit    int    `json:"limit"`
@@ -69,6 +96,10 @@ var (
 	UploadGet      = module.Query[UploadRef, Upload]{ID: "files.uploads.get"}
 	UploadAbort    = module.Command[UploadRef, Upload]{ID: "files.uploads.abort"}
 	UploadComplete = module.Command[UploadRef, File]{ID: "files.uploads.complete"}
+	FileRename     = module.Command[FileRenameRequest, File]{ID: "files.files.rename"}
+	FileMove       = module.Command[FileMoveRequest, File]{ID: "files.files.move"}
+	FileArchive    = module.Command[FileArchiveRequest, File]{ID: "files.files.archive"}
 	FileGet        = module.Query[FileRef, File]{ID: "files.files.get"}
+	FileSearch     = module.Query[FileSearchRequest, FilesResult]{ID: "files.files.search"}
 	FileList       = module.Query[FileListRequest, FilesResult]{ID: "files.files.list"}
 )

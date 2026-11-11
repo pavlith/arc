@@ -56,12 +56,25 @@ func (s *Module) Register(r *module.Registry) error {
 	if err := module.BindCommand(r, filesv1.UploadComplete, policy, store, s.complete); err != nil {
 		return err
 	}
+	if err := module.BindCommand(r, filesv1.FileRename, policy, store, s.renameFile); err != nil {
+		return err
+	}
+	if err := module.BindCommand(r, filesv1.FileMove, policy, store, s.moveFile); err != nil {
+		return err
+	}
+	if err := module.BindCommand(r, filesv1.FileArchive, policy, store, s.archiveFile); err != nil {
+		return err
+	}
 	if err := module.BindQuery(r, filesv1.FileGet, policy, s.getFile); err != nil {
 		return err
 	}
 	if err := module.BindQuery(r, filesv1.FileList, policy, s.listFiles); err != nil {
 		return err
 	}
+	if err := module.BindQuery(r, filesv1.FileSearch, policy, s.searchFiles); err != nil {
+		return err
+	}
+
 	// These subjects carry only signed metadata, never file bytes.
 	// Private HTTP handlers use the same Core-verified operations.
 	if err := module.BindCommand(r, filesv1.PrivateChunk, policy, store, s.noPrivateChunk); err != nil {
@@ -130,7 +143,7 @@ func uploadDTO(v models.Upload) filesv1.Upload {
 func fileDTO(v models.File) filesv1.File {
 	return filesv1.File{
 		Scope: filesv1.Scope{WorkspaceID: v.WorkspaceID, RootID: v.RootID},
-		ID:    v.ID, FolderID: fromPointer(v.FolderID), Filename: v.Filename,
+		ID:    v.ID, Archived: v.State == "archived", FolderID: fromPointer(v.FolderID), Filename: v.Filename,
 		MIME: v.MIME, Size: v.Size, SHA256: v.SHA256, ETag: "\"" + v.SHA256 + "\"",
 		Revision: v.Revision, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt,
 	}

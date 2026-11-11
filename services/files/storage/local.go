@@ -385,6 +385,39 @@ func (s *Local) RewindPending(ctx context.Context, uploadID string, committed in
 // modification time predates before. The directory is read in bounded batches;
 // no storage mutex is held while visit consults SQLite or removes objects.
 func (s *Local) ScanOldPending(ctx context.Context, before time.Time, visit func(string) error) error {
+	return s.scanOld(ctx, "pending", ".part", before, visit)
+}
+
+// ScanOldObjects enumerates promoted blobs for owner-side reconciliation.
+// The caller must check its database before removing any candidate.
+func (s *Local) ScanOldObjects(ctx context.Context, before time.Time, visit func(string) error) error {
+	return s.scanOld(ctx, "objects", ".blob", before, visit)
+}
+
+// RemoveObject is an internal reclamation primitive, never a public delete API.
+// Callers must first establish that no catalog row references the blob.
+func (s *Local) RemoveObject(ctx context.Context, key string) error {
+	if err := s.check(ctx, key); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	name := objectPath(key)
+	if _, err := s.root.Lstat(name); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("%w: stat object: %v", ErrMissing, err)
+	}
+	if err := s.regular(name); err != nil {
+		return err
+	}
+	if err := s.root.Remove(name); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("%w: remove object: %v", ErrMissing, err)
+	}
+	return nil
+}
+
+func (s *Local) scanOld(ctx context.Context, directory, suffix string, before time.Time, visit func(string) error) error {
 	if s == nil || ctx == nil || visit == nil || before.IsZero() {
 		return ErrInvalid
 	}
@@ -393,10 +426,10 @@ func (s *Local) ScanOldPending(ctx context.Context, before time.Time, visit func
 		s.mu.Unlock()
 		return ErrInvalid
 	}
-	dir, err := s.root.Open("pending")
+	dir, err := s.root.Open(directory)
 	s.mu.Unlock()
 	if err != nil {
-		return fmt.Errorf("%w: pending directory: %v", ErrMissing, err)
+		return fmt.Errorf("%w: storage directory: %v", ErrMissing, err)
 	}
 	defer dir.Close()
 	for {
@@ -405,20 +438,20 @@ func (s *Local) ScanOldPending(ctx context.Context, before time.Time, visit func
 		}
 		entries, err := dir.ReadDir(64)
 		if err != nil && !errors.Is(err, io.EOF) {
-			return fmt.Errorf("%w: scan pending: %v", ErrMissing, err)
+			return fmt.Errorf("%w: scan storage: %v", ErrMissing, err)
 		}
 		for _, entry := range entries {
 			name := entry.Name()
-			if !entry.Type().IsRegular() || !strings.HasSuffix(name, ".part") {
+			if !entry.Type().IsRegular() || !strings.HasSuffix(name, suffix) {
 				continue
 			}
-			key := strings.TrimSuffix(name, ".part")
+			key := strings.TrimSuffix(name, suffix)
 			if !validKey(key) {
 				continue
 			}
 			info, statErr := entry.Info()
 			if statErr != nil {
-				return fmt.Errorf("%w: stat pending: %v", ErrMissing, statErr)
+				return fmt.Errorf("%w: stat storage: %v", ErrMissing, statErr)
 			}
 			if !info.ModTime().Before(before) {
 				continue

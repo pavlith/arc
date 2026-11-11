@@ -66,6 +66,9 @@ func (s *Module) StreamDownload(ctx context.Context, ref filesv1.FileRef, dst io
 		if err := s.Authorize(ctx, ref.RootID, "files.read"); err != nil {
 			return empty, err
 		}
+		if err := s.checkReady(ctx, ref); err != nil {
+			return empty, err
+		}
 		want := int64(len(data))
 		if left := row.Size - sent; left < want {
 			want = left
@@ -90,6 +93,9 @@ func (s *Module) StreamDownload(ctx context.Context, ref filesv1.FileRef, dst io
 	if err := s.Authorize(ctx, ref.RootID, "files.read"); err != nil {
 		return empty, err
 	}
+	if err := s.checkReady(ctx, ref); err != nil {
+		return empty, err
+	}
 	return fileDTO(row), nil
 }
 
@@ -110,4 +116,19 @@ func (s *Module) PrepareDownload(ctx context.Context, ref filesv1.FileRef) (file
 		return filesv1.File{}, err
 	}
 	return s.getFile(ctx, ref)
+}
+
+// checkReady prevents a previously opened descriptor from bypassing archive.
+func (s *Module) checkReady(ctx context.Context, ref filesv1.FileRef) error {
+	var ready bool
+	if err := s.DB.WithContext(ctx).Raw(
+		"SELECT EXISTS(SELECT 1 FROM files WHERE id=? AND workspace_id=? AND acl_root_id=? AND state='ready')",
+		ref.FileID, ref.WorkspaceID, ref.RootID,
+	).Row().Scan(&ready); err != nil {
+		return unavailable(err)
+	}
+	if !ready {
+		return missing()
+	}
+	return nil
 }

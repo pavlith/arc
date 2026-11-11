@@ -476,6 +476,25 @@ M6: integrated single-node Docker lifecycle, approved templates, desired/observe
 
 Resource links grant no access to targets. Search and previews recheck resource ACL. Existing Task/Notify are proof services, not the full Kuayle migration. Task create/get/list uses verified workspace roots; lists are limited to 100 own tasks. Reserve/domain receipt/activate establishes roots.
 
+Files' initial local byte backend has exactly one process owning its database
+and storage directory. Orphan reconciliation requires the owner database's
+single connection: promoted bytes are deleted only after the completion
+transaction commits or rolls back, a successful lookup finds no catalog
+reference in any state, and the object is older than 26 hours. A different
+connection limit disables this pass with an error. Referenced bytes are never
+collected by crash recovery; retention is a separate policy. See
+[Files](FILES.md#abandoned-promoted-objects).
+
+Files catalog rename/move/archive operations require a current revision and
+transactional replay/audit/outbox. Moves remain inside the bound root;
+archive hides metadata and stops downloads at their next ready-state check
+without deleting retained bytes. Metadata uses revision CAS; byte ETags remain
+content hashes. The exact routes and actions are specified in
+[Files catalog mutations](FILES.md#file-catalog-mutations-files-040).
+Filename search uses the same live read policy and ready-file/root constraints;
+its literal matching and bounded pagination are specified in
+[Files name search](FILES.md#file-name-search-files-050).
+
 `task.roots.grants` is exposed as POST
 `/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/grants`. Adding requires
 `action` (`task.read` or `task.create`), `principal_kind` (`user`, `role` or `group`)

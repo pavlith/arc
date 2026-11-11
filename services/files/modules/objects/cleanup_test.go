@@ -81,7 +81,7 @@ func TestDurableCleanupAndOrphanProtection(t *testing.T) {
 		t.Fatalf("live upload deleted solely because of old mtime: %v", err)
 	}
 	if err := db.Model(&models.Upload{}).Where("id=?", upload.ID).
-		Update("expires_at", time.Now().Add(-time.Hour)).Error; err != nil {
+		Update("expires_at", time.Now().UTC().Add(-time.Hour)).Error; err != nil {
 		t.Fatal(err)
 	}
 	n, err = s.Cleanup(ctx, 100)
@@ -102,4 +102,97 @@ func TestDurableCleanupAndOrphanProtection(t *testing.T) {
 	if err != nil || n != 0 {
 		t.Fatalf("cleanup replay count=%d err=%v", n, err)
 	}
+}
+
+func TestPromotedOrphanReconciliation(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "files.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close(db)
+	if err := database.Migrate(ctx, db, migrations.SQLite()); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO roots(acl_root_id,workspace_id,state) VALUES(?,?,'active')", root, workspace).Error; err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), "private")
+	store, err := storage.OpenLocal(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	s := &Module{DB: db, Storage: store}
+	const orphan = "00000000-0000-4000-8000-00000000f001"
+	const referenced = "00000000-0000-4000-8000-00000000f002"
+	const recent = "00000000-0000-4000-8000-00000000f003"
+	for _, key := range []string{orphan, referenced, recent} {
+		if err := store.Prepare(ctx, key); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.Promote(ctx, key, key, 0, ""); err != nil {
+			t.Fatal(err)
+		}
+		if key != recent {
+			old := time.Now().Add(-48 * time.Hour)
+			if err := os.Chtimes(filepath.Join(dir, "objects", key+".blob"), old, old); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	now := time.Now().UTC()
+	if err := db.Create(&models.File{ID: referenced, WorkspaceID: workspace, RootID: root,
+		Filename: "keep.bin", MIME: "application/octet-stream", BlobKey: referenced,
+		SHA256:   "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		Revision: 1, State: "ready", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	n, err := s.PruneOrphanObjects(ctx)
+	if err != nil || n != 1 {
+		t.Fatalf("prune count=%d err=%v", n, err)
+	}
+	if _, err := store.Open(ctx, orphan); !errors.Is(err, storage.ErrMissing) {
+		t.Fatalf("orphan retained: %v", err)
+	}
+	for _, key := range []string{referenced, recent} {
+		f, err := store.Open(ctx, key)
+		if err != nil {
+			t.Fatalf("protected object removed: %s: %v", key, err)
+		}
+		f.Close()
+	}
+	if n, err := s.PruneOrphanObjects(ctx); err != nil || n != 0 {
+		t.Fatalf("replay count=%d err=%v", n, err)
+	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool.SetMaxOpenConns(2)
+	if _, err := s.PruneOrphanObjects(ctx); err == nil {
+		t.Fatal("unsafe connection pool accepted")
+	}
+	pool.SetMaxOpenConns(1)
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, err := s.PruneOrphanObjects(cancelled); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancellation ignored: %v", err)
+	}
+	// An unavailable database must never be interpreted as an absent reference.
+	old := time.Now().Add(-48 * time.Hour)
+	if err := os.Chtimes(filepath.Join(dir, "objects", recent+".blob"), old, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrator().DropTable(&models.File{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.PruneOrphanObjects(ctx); err == nil {
+		t.Fatal("database failure accepted")
+	}
+	f, err := store.Open(ctx, recent)
+	if err != nil {
+		t.Fatalf("deleted on database failure: %v", err)
+	}
+	f.Close()
 }

@@ -1,0 +1,34 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "file_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "filename": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "required": [
+    "workspace_id",
+    "acl_root_id",
+    "file_id",
+    "filename",
+    "revision"
+  ],
+  "additionalProperties": false
+}

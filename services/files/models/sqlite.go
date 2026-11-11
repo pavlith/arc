@@ -43,19 +43,20 @@ func (Audit) TableName() string { return "audit" }
 // File and Upload are persisted in Files' own database; blob keys never cross
 // the HTTP or RPC metadata boundary.
 type File struct {
-	ID          string    `gorm:"column:id;primaryKey"`
-	WorkspaceID string    `gorm:"column:workspace_id;not null"`
-	RootID      string    `gorm:"column:acl_root_id;not null"`
-	FolderID    *string   `gorm:"column:folder_id"`
-	Filename    string    `gorm:"column:filename;not null"`
-	MIME        string    `gorm:"column:mime;not null"`
-	Size        int64     `gorm:"column:size;not null"`
-	SHA256      string    `gorm:"column:sha256;not null"`
-	BlobKey     string    `gorm:"column:blob_key;not null"`
-	Revision    int64     `gorm:"column:revision;not null"`
-	State       string    `gorm:"column:state;not null"`
-	CreatedAt   time.Time `gorm:"column:created_at;not null"`
-	UpdatedAt   time.Time `gorm:"column:updated_at;not null"`
+	ArchivedAt  *time.Time `gorm:"column:archived_at"`
+	ID          string     `gorm:"column:id;primaryKey"`
+	WorkspaceID string     `gorm:"column:workspace_id;not null"`
+	RootID      string     `gorm:"column:acl_root_id;not null"`
+	FolderID    *string    `gorm:"column:folder_id"`
+	Filename    string     `gorm:"column:filename;not null"`
+	MIME        string     `gorm:"column:mime;not null"`
+	Size        int64      `gorm:"column:size;not null"`
+	SHA256      string     `gorm:"column:sha256;not null"`
+	BlobKey     string     `gorm:"column:blob_key;not null"`
+	Revision    int64      `gorm:"column:revision;not null"`
+	State       string     `gorm:"column:state;not null"`
+	CreatedAt   time.Time  `gorm:"column:created_at;not null"`
+	UpdatedAt   time.Time  `gorm:"column:updated_at;not null"`
 }
 
 func (File) TableName() string { return "files" }

@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "service": {
     "name": "files",
-    "build_version": "0.3.0",
+    "build_version": "0.5.0",
     "api_major": 1
   },
   "resources": [
@@ -575,6 +575,192 @@
       "timeout_ms": 5000,
       "http": {
         "expose": false
+      }
+    },
+    {
+      "id": "files.files.rename",
+      "subject": "rpc.files.v1.files.rename",
+      "kind": "command",
+      "request_schema": "schemas/file-rename.json",
+      "response_schema": "schemas/file.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "files.workspace",
+        "action": "files.write",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "PATCH",
+        "path": "/api/v1/files/workspaces/{workspace_id}/roots/{acl_root_id}/files/{file_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "file_id",
+            "field": "file_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "files.files.move",
+      "subject": "rpc.files.v1.files.move",
+      "kind": "command",
+      "request_schema": "schemas/file-move.json",
+      "response_schema": "schemas/file.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "files.workspace",
+        "action": "files.write",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/files/workspaces/{workspace_id}/roots/{acl_root_id}/files/{file_id}/move",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "file_id",
+            "field": "file_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "files.files.archive",
+      "subject": "rpc.files.v1.files.archive",
+      "kind": "command",
+      "request_schema": "schemas/file-archive.json",
+      "response_schema": "schemas/file.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "files.workspace",
+        "action": "files.delete",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "DELETE",
+        "path": "/api/v1/files/workspaces/{workspace_id}/roots/{acl_root_id}/files/{file_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "file_id",
+            "field": "file_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "files.files.search",
+      "subject": "rpc.files.v1.files.search",
+      "kind": "query",
+      "request_schema": "schemas/file-search.json",
+      "response_schema": "schemas/files.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "files.workspace",
+        "action": "files.read",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/files/workspaces/{workspace_id}/roots/{acl_root_id}/search",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "folder_id",
+            "field": "folder_id",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "limit",
+            "field": "limit",
+            "type": "integer"
+          },
+          {
+            "source": "query",
+            "name": "cursor",
+            "field": "cursor",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "query",
+            "field": "query",
+            "type": "string"
+          }
+        ]
       }
     }
   ],

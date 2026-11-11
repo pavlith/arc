@@ -88,6 +88,13 @@ func (s *Module) RunCleanup(ctx context.Context) error {
 			}
 			return err
 		}
+		if _, err := s.PruneOrphanObjects(ctx); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return err
+		}
+
 		select {
 		case <-ctx.Done():
 			return nil
@@ -119,6 +126,41 @@ func (s *Module) PruneOrphanPending(ctx context.Context) (int, error) {
 			return nil
 		}
 		if err := s.Storage.Abort(ctx, id); err != nil {
+			return unavailable(err)
+		}
+		removed++
+		return nil
+	})
+	return removed, err
+}
+
+// PruneOrphanObjects reclaims failed promotions only. Any catalog reference,
+// regardless of state, protects the bytes; retention/deletion is separate.
+// Files exclusively owns the database and byte root. The database's single
+// connection serializes this lookup behind any upload-completion transaction,
+// so a promotion cannot be mistaken for an orphan before its commit finishes.
+func (s *Module) PruneOrphanObjects(ctx context.Context) (int, error) {
+	if ctx == nil || s == nil || s.DB == nil || s.Storage == nil {
+		return 0, security.ErrUnavailable
+	}
+	pool, err := s.DB.DB()
+	if err != nil || pool.Stats().MaxOpenConnections != 1 {
+		return 0, security.ErrUnavailable
+	}
+	s.chunkMu.Lock()
+	defer s.chunkMu.Unlock()
+	var removed int
+	err = s.Storage.ScanOldObjects(ctx, time.Now().Add(-26*time.Hour), func(key string) error {
+		var referenced bool
+		if err := s.DB.WithContext(ctx).Raw(
+			"SELECT EXISTS(SELECT 1 FROM files WHERE blob_key=?)", key,
+		).Row().Scan(&referenced); err != nil {
+			return unavailable(err)
+		}
+		if referenced {
+			return nil
+		}
+		if err := s.Storage.RemoveObject(ctx, key); err != nil {
 			return unavailable(err)
 		}
 		removed++

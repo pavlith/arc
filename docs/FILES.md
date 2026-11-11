@@ -1,7 +1,7 @@
 # Files service — initial implementation contract
 
 Tracking: [#29](https://github.com/pavlith/arc/issues/29). Stage 3 of
-[shortplan](shortplan.md). **Implementation in dev:** signed Files 0.3.0 has 12 public folder/upload/file metadata operations and 2 hidden private byte operations, scoped root lifecycle, owner SQLite migrations, audit/replay/outbox, SQL/disk-synchronized chunk append, cleanup and repeated ACL checks during streaming. **Private streaming is opt-in** and routed through Gate using Core-verified Ed25519 proof and mTLS. Deployment and two-user acceptance remain open.
+[shortplan](shortplan.md). **Implementation in dev:** signed Files 0.5.0 has 16 public folder/upload/file metadata operations and 2 hidden private byte operations, scoped root lifecycle, owner SQLite migrations, audit/replay/outbox, SQL/disk-synchronized chunk append, cleanup and repeated ACL checks during streaming. **Private streaming is opt-in** and routed through Gate using Core-verified Ed25519 proof and mTLS. Deployment and two-user acceptance remain open.
 
 ## Ownership and authorization
 
@@ -114,7 +114,7 @@ explicitly. The resource type is `files.workspace`, with actions
 prepared with a signed Files provider receipt, activated in Access, and then
 activated in Files before browser requests can succeed.
 
-**Still open:** personal file sections, file rename/move/archive/search, full tenant-level quotas, orphaned promoted-object garbage collection, production NATS grants, private CA/cert provisioning, operator-approved service installations and two-user/two-workspace live upload/download acceptance. The opt-in private streaming code does not imply successful production deployment.
+**Still open:** personal file sections, full tenant-level quotas, production NATS grants, private CA/cert provisioning, operator-approved service installations and two-user/two-workspace live upload/download acceptance. The opt-in private streaming code does not imply successful production deployment.
 
 ## Local byte adapter (internal, not an upload API)
 
@@ -175,7 +175,7 @@ sessions, deletes their temporary bytes (and those of aborted sessions), and
 records completion. It retries interrupted cleanup safely, rather than
 removing the file inside a potentially rolled-back SQL command. This handles
 known SQL upload rows. Orphan files lacking an upload row and abandoned
-promoted objects still require their own retention-based reconciliation.
+promoted objects are handled by the reconciliation pass below.
 
 ### Abandoned temporary inodes
 
@@ -184,8 +184,7 @@ and removes UUID-named temp files older than **26 hours** only when SQLite
 has no active/pending-cleanup upload referencing them. This covers a process
 crash between creating an inode and committing an upload row. A disk failure
 while deleting is surfaced, not treated as successful cleanup. Committed blobs
-must be retained: automatic garbage collection of promoted objects without
-SQL metadata still needs its own safe reference/retention protocol.
+are protected by the promoted-object reconciliation pass below.
 
 ## Bounded private read primitive
 
@@ -245,3 +244,65 @@ network loss/retry under load, process failures, Access revocation during a
 long download and upload, operator install/uninstall, and cleanup of promoted
 blobs that fail metadata commit. The domain unit tests use a local fixture
 identity authority and do **not** replace live Core cryptographic acceptance.
+
+## Abandoned promoted objects
+
+The cleanup worker also scans UUID-named `.blob` objects in bounded directory
+batches. It removes objects older than 26 hours only after a successful Files
+SQLite lookup confirms that **no file row in any state** references the blob key.
+Recent objects and all referenced objects are retained; this is crash recovery,
+not deletion of archived files or a file retention policy. Database failures
+stop the pass without deleting the candidate, and disk failures are surfaced.
+
+This relies on the initial deployment model: exactly one Files process owns
+its SQLite database and local byte directory. The single database connection
+serializes reference lookups behind completion transactions, including SQL
+rollback after promotion. Sharing the byte directory between independent
+processes or changing the database connection limit requires a new coordination
+contract before enabling this worker. No public endpoint or signed operation
+changes; existing cleanup also reclaims leftover pending links.
+
+## File catalog mutations (Files 0.4.0)
+
+The approved metadata contract adds PATCH `.../files/{file_id}` (rename),
+POST `.../files/{file_id}/move` and DELETE `.../files/{file_id}` (archive).
+Commands require an idempotency key and current positive `revision`.
+Rename/move require `files.write`; archive requires `files.delete`.
+Every operation binds the current workspace/root and requires live Access.
+Rename reuses upload filename validation; duplicate file display names remain
+allowed. Move accepts an active folder in the same root; omitted `folder_id`
+means the root. Cross-root moves and archived target folders are rejected.
+
+Successful mutations increment the metadata revision and atomically commit
+owner-local audit and a metadata-only catalog invalidation. A stale revision
+is a conflict. Content hashes and byte ETags stay unchanged across metadata
+updates; callers use `revision` for metadata CAS. Archive returns `archived:
+true`, hides the file from GET/list/download, and retains its blob and catalog
+row for a future retention policy. Subsequent mutations cannot revive it.
+Downloads recheck ready state before each 256 KiB block and at completion;
+archiving terminates the transfer at its next state check. An in-flight block
+may already have been written. Rename/move do not interrupt a download or
+change headers already sent. No schema migration is needed: the initial file
+table already includes archive state and timestamp.
+
+New operations require operator-approved installation of the new complete
+artifact and refreshed Gate routes. This source change does not authorize
+production signing or deployment.
+
+## File name search (Files 0.5.0)
+
+GET `.../workspaces/{workspace_id}/roots/{acl_root_id}/search` maps to
+`files.files.search` and requires live `files.read` on the bound root.
+Required `query` is a trimmed, nonempty UTF-8 string of at most 256 characters.
+Matching is a case-sensitive literal substring of the filename; `%`, `_` and
+backslashes have no wildcard meaning. This initial search does not read file
+contents, perform Unicode case folding, or expose other roots.
+
+Without `folder_id`, search covers all ready files within the current root.
+An explicit folder selects only its direct files and must be active in that
+same root. Archived files are excluded. `limit` is 1–100; the exclusive UUID
+`cursor` and `next_cursor` use ascending file IDs as in list. Results are live,
+not a snapshot: callers retain the same query/folder while paging and refetch
+after invalidations. The response is the existing bounded `FilesResult` shape.
+No full-text index, schema migration or browser UI is introduced. Deploying
+0.5.0 requires approving its new complete artifact and refreshing Gate routes.

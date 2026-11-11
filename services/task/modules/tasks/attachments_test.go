@@ -73,6 +73,10 @@ func TestAttachmentCASRevokeDetachAndOutboxRollback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	local, err := s.previewReference(ctx, v1.ReferencePreview{GetRequest: v1.GetRequest{Scope: scope, TaskID: work.ID}, Target: resource.Ref{Kind: "task", WorkspaceID: scope.WorkspaceID, RootID: scope.RootID, ID: work.ID}})
+	if err != nil || local.Title != work.Title {
+		t.Fatalf("native Task preview required a broker loop: %+v %v", local, err)
+	}
 	q := v1.AttachmentChange{GetRequest: v1.GetRequest{Scope: scope, TaskID: work.ID}, Revision: work.Revision, ExpectedUpdatedAt: work.UpdatedAt, File: resource.Ref{Kind: "file", WorkspaceID: scope.WorkspaceID, RootID: "30000000-0000-4000-8000-000000000003", ID: "30000000-0000-4000-8000-000000000004"}}
 	call := func(key string) (v1.AttachmentResult, error) {
 		ctx := verified(v1.AttachmentChangeOp.ID, key, q)

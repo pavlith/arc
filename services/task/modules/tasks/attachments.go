@@ -103,6 +103,26 @@ func (s *Service) previewReference(ctx context.Context, q v1.ReferencePreview) (
 	if _, err := workItem(ctx, s.GormDB, q.GetRequest); err != nil {
 		return resource.Summary{}, err
 	}
+	if q.Target.Kind == "task" {
+		if !q.Target.Valid() || q.Target.WorkspaceID != q.WorkspaceID {
+			return resource.Summary{}, security.ErrDenied
+		}
+		var active bool
+		if err := s.GormDB.WithContext(ctx).Raw("SELECT EXISTS(SELECT 1 FROM roots WHERE acl_root_id=? AND workspace_id=? AND state='active')", q.Target.RootID, q.Target.WorkspaceID).Row().Scan(&active); err != nil {
+			return resource.Summary{}, catalogError(err)
+		}
+		if !active || s.Check == nil {
+			return resource.Summary{}, security.ErrDenied
+		}
+		if err := s.Check(ctx, q.Target.RootID, "task.read"); err != nil {
+			return resource.Summary{}, err
+		}
+		target, err := workItem(ctx, s.GormDB, v1.GetRequest{Scope: v1.Scope{WorkspaceID: q.Target.WorkspaceID, RootID: q.Target.RootID}, TaskID: q.Target.ID})
+		if err != nil {
+			return resource.Summary{}, err
+		}
+		return resource.Summary{Ref: q.Target, Title: target.Title, Revision: target.Revision}, nil
+	}
 	if s.Resolve == nil {
 		return resource.Summary{}, security.ErrUnavailable
 	}

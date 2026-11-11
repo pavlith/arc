@@ -186,7 +186,7 @@ func runtimeNodeRule(rule access.Rule) bool {
 		return false
 	}
 	switch rule.Operation {
-	case agent.OperationInventory, agent.OperationPull, agent.OperationReport:
+	case agent.OperationInventory, agent.OperationPull, agent.OperationReport, agent.OperationProfilePlan:
 		return true
 	}
 	return false

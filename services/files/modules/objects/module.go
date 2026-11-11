@@ -4,10 +4,8 @@ package objects
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
-	"net/http"
 	"regexp"
 	"strings"
 	"time"
@@ -167,6 +165,21 @@ func (s *Module) initiate(ctx context.Context, tx *gorm.DB, q filesv1.UploadInit
 		return filesv1.Upload{}, security.ErrUnauthenticated
 	}
 	now := time.Now().UTC()
+	// Bound outstanding reservations until the tenant quota backend is
+	// available. This is actor-scoped and counts only unexpired pending rows.
+	var reservation struct {
+		Count int64
+		Bytes int64
+	}
+	if err := tx.WithContext(ctx).Model(&models.Upload{}).
+		Select("count(*) AS count, coalesce(sum(expected_size),0) AS bytes").
+		Where("actor_id=? AND state='pending' AND expires_at>?", subject, now).
+		Scan(&reservation).Error; err != nil {
+		return filesv1.Upload{}, unavailable(err)
+	}
+	if reservation.Count >= 10 || q.ExpectedSize > 2*storage.MaxObjectSize-reservation.Bytes {
+		return filesv1.Upload{}, conflict()
+	}
 	id := folders.NewID()
 	v := models.Upload{
 		ID: id, WorkspaceID: q.WorkspaceID, RootID: q.RootID,
@@ -344,8 +357,3 @@ func (s *Module) listFiles(ctx context.Context, q filesv1.FileListRequest) (file
 	return out, nil
 }
 
-// Binary sniffing and target download are intentionally not exposed yet;
-// the private HTTP adapter must provide live Access checks and enforce
-// download cancellation before any arbitrary content leaves Files.
-var _ = http.DetectContentType
-var _ = sha256.Size

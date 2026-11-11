@@ -146,3 +146,11 @@ fails after local promotion, reconciliation must remove the unreferenced blob.
 This is not a complete HTTP upload service: private chunk write and download
 routes through Gate, session revalidation, cleanup and stream cancellation are
 still required before public use. No production installation is implied.
+
+### Pending upload reservation guardrail
+
+Until tenant-level quotas are implemented, the Files metadata owner caps each
+actor to 10 unexpired pending upload sessions and 2 GiB reserved bytes. This
+is a strict temporary protection, not a complete tenant quota or cleanup
+subsystem. The service must not be exposed for arbitrary byte transfer until
+expiry, cross-owner quotas, and the private Gate stream authorization are live.

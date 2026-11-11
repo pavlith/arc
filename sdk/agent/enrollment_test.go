@@ -28,7 +28,13 @@ func TestEnrollmentClaimProofOfPossession(t *testing.T) {
 		edit func(*agent.EnrollmentClaim)
 	}{
 		{"different offer", func(c *agent.EnrollmentClaim) { c.OfferID = "enroll-offer-two" }},
-		{"modified token", func(c *agent.EnrollmentClaim) { c.Token = c.Token[:42] + "A" }},
+		{"modified token", func(c *agent.EnrollmentClaim) {
+			last := "A"
+			if c.Token[42:] == "A" {
+				last = "B"
+			}
+			c.Token = c.Token[:42] + last
+		}},
 		{"forged signature", func(c *agent.EnrollmentClaim) { c.Signature = "bad" }},
 		{"malformed base64", func(c *agent.EnrollmentClaim) { c.Token = "broken" }},
 	} {

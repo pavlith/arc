@@ -217,7 +217,7 @@ func (s *Service) archive(ctx context.Context, tx *gorm.DB, q filesv1.FolderArch
 	if row.Revision != q.Revision {
 		return filesv1.Folder{}, conflict()
 	}
-	var children, files int64
+	var children, files, pending int64
 	if err := tx.WithContext(ctx).Model(&models.Folder{}).
 		Where("parent_id=? AND workspace_id=? AND acl_root_id=? AND archived_at IS NULL",
 			row.ID, q.WorkspaceID, q.RootID).Count(&children).Error; err != nil {
@@ -228,7 +228,12 @@ func (s *Service) archive(ctx context.Context, tx *gorm.DB, q filesv1.FolderArch
 		row.ID, q.WorkspaceID, q.RootID).Count(&files).Error; err != nil {
 		return filesv1.Folder{}, unavailable(err)
 	}
-	if children != 0 || files != 0 {
+	if err := tx.WithContext(ctx).Table("uploads").Where(
+		"folder_id=? AND workspace_id=? AND acl_root_id=? AND state='pending'",
+		row.ID, q.WorkspaceID, q.RootID).Count(&pending).Error; err != nil {
+		return filesv1.Folder{}, unavailable(err)
+	}
+	if children != 0 || files != 0 || pending != 0 {
 		return filesv1.Folder{}, conflict()
 	}
 	now := time.Now().UTC()

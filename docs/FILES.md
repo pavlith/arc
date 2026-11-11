@@ -119,3 +119,16 @@ initiate/complete/abort, private streaming Gate routes, quotas, orphan cleanup,
 production NATS grants and two-user acceptance. The existing Files SQL tables
 for ready bytes/uploads are reserved for this next implementation step; they
 do not imply that those endpoints are exposed.
+
+## Local byte adapter (internal, not an upload API)
+
+`services/files/storage` implements an opt-in private `os.Root` local disk
+backend. It rejects caller-controlled paths and non-UUID keys, requires
+private storage directories, enforces 8 MiB maximum append chunks and
+1 GiB maximum objects, checks exact offsets, rolls back partial writes,
+and promotes verified SHA-256 bytes without replacing existing blobs.
+Preparation, append, promote, read and abort are **internal primitives**.
+They cannot be called by browsers or untrusted RPC clients. Root-scoped
+Identity/Access checks, SQL upload sessions, authorization on chunk and
+download streaming, and expiry/orphan reconciliation must be wired before
+these bytes can be exposed through Gate.

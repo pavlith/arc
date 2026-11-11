@@ -24,7 +24,7 @@ type Node struct {
 	ServiceAccountID string       `json:"service_account_id"`
 	Capabilities     []agent.Kind `json:"capabilities"`
 	Active           bool         `json:"active"`
-	LastSeenAt       *time.Time   `json:"last_seen_at,omitempty"`
+	LastSeenAt       *time.Time       `json:"last_seen_at,omitempty"`
 	Host             *agent.HostFacts `json:"host,omitempty"`
 }
 

@@ -47,6 +47,10 @@ import (
 	"gorm.io/gorm"
 )
 
+// The fixture's uncertain provider shares the configured webhook intent channel.
+type webhookFake struct{ *delivery.FakeProvider }
+func (*webhookFake) Channel() string { return "webhook" }
+
 func key(v byte) ed25519.PrivateKey { return ed25519.NewKeyFromSeed(bytes.Repeat([]byte{v}, 32)) }
 func signed(k ed25519.PrivateKey, v any) (json.RawMessage, []byte) {
 	b, _ := json.Marshal(v)
@@ -925,11 +929,15 @@ func TestM006(t *testing.T) {
 		// Stop the automatic worker before exercising an uncertain provider timeout.
 		// Rows are already durable and the adapter is independently restartable.
 		stopNotify()
-		fake := &delivery.FakeProvider{Fail: true}
-		notify := &delivery.Service{GormDB: notifyDB}
+		fake := &webhookFake{FakeProvider: &delivery.FakeProvider{Fail: true}}
+		clock := time.Now().UTC()
+		notify := &delivery.Service{GormDB: notifyDB, Now: func() time.Time { return clock }}
 		_, e = ndb.Exec(`UPDATE delivery_intents SET delivered_at=NULL`)
 		must(e)
 		_, _ = notify.Deliver(ctx, fake)
+		// A transient error schedules bounded backoff; advance fixture time
+		// without sleeping or weakening the production retry contract.
+		clock = clock.Add(10 * time.Second)
 		_, e = notify.Deliver(ctx, fake)
 		must(e)
 		if len(fake.Calls) < 2 {

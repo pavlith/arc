@@ -1,0 +1,88 @@
+<script lang="ts">
+	import * as Command from '$lib/components/ui/command/index.js';
+	import * as Popover from '$lib/components/ui/popover/index.js';
+	import type { Snippet } from 'svelte';
+
+	let {
+		open = $bindable(false),
+		placeholder = 'Search...',
+		emptyMessage = 'No results.',
+		width = 'w-48',
+		align = 'start' as 'start' | 'center' | 'end',
+		showSearch = true,
+		filter = true,
+		shortcutKey,
+		trigger,
+		children,
+		footer,
+	}: {
+		open?: boolean;
+		placeholder?: string;
+		emptyMessage?: string;
+		width?: string;
+		align?: 'start' | 'center' | 'end';
+		showSearch?: boolean;
+		/** false: the caller filters its items from the search text it is given. */
+		filter?: boolean;
+		shortcutKey?: string;
+		trigger: Snippet<[Record<string, unknown>]>;
+		children: Snippet<[string]>;
+		/** Shown under the list, for a status line or an action about the list. */
+		footer?: Snippet;
+	} = $props();
+
+	let searchValue = $state('');
+	let inputRef = $state<HTMLInputElement | null>(null);
+
+	$effect(() => {
+		if (open && showSearch) {
+			requestAnimationFrame(() => inputRef?.focus());
+		}
+		if (!open) {
+			searchValue = '';
+		}
+	});
+</script>
+
+<Popover.Root bind:open>
+	<Popover.Trigger>
+		{#snippet child({ props })}
+			{@render trigger(props)}
+		{/snippet}
+	</Popover.Trigger>
+	<Popover.Content class="{width} p-1.5" {align}>
+		<Command.Root class="flex size-full flex-col overflow-hidden" shouldFilter={showSearch && filter}>
+			{#if showSearch}
+				<div class="flex items-center gap-2 px-1.5 pb-1.5">
+					<Command.Input
+						data-slot="command-input"
+						class="w-full bg-transparent text-sm text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)]"
+						bind:ref={inputRef}
+						bind:value={searchValue}
+						{placeholder}
+					/>
+					{#if shortcutKey}
+						<kbd class="shrink-0 rounded border border-[var(--app-border)] bg-[var(--color-bg-tertiary)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-tertiary)]">
+							{shortcutKey}
+						</kbd>
+					{/if}
+				</div>
+				<div class="h-px bg-[var(--app-border)] -mx-1.5 mb-1"></div>
+			{:else if shortcutKey}
+				<div class="flex justify-end px-1.5 pb-1">
+					<kbd class="shrink-0 rounded border border-[var(--app-border)] bg-[var(--color-bg-tertiary)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-tertiary)]">
+						{shortcutKey}
+					</kbd>
+				</div>
+			{/if}
+			<Command.List class="no-scrollbar max-h-72 scroll-py-1 outline-none overflow-x-hidden overflow-y-auto space-y-0.5">
+				<Command.Empty class="py-4 text-center text-xs text-[var(--color-text-tertiary)]">{emptyMessage}</Command.Empty>
+				{@render children(searchValue)}
+			</Command.List>
+			{#if footer}
+				<div class="h-px bg-[var(--app-border)] -mx-1.5 mt-1"></div>
+				{@render footer()}
+			{/if}
+		</Command.Root>
+	</Popover.Content>
+</Popover.Root>

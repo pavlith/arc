@@ -1,0 +1,729 @@
+<script lang="ts">
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { untrack } from 'svelte';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import { Button } from '$lib/components/ui/button';
+	import * as Popover from '$lib/components/ui/popover';
+	import { Switch } from '$lib/components/ui/switch';
+	import type { Team } from '$lib/types/team';
+	import type { Project } from '$lib/types/project';
+	import type { Label } from '$lib/types/label';
+	import { labelAppliesTo } from '$lib/features/labels/label-scope';
+	import type { WorkspaceMember } from '$lib/types/workspace';
+	import type { Cycle } from '$lib/types/cycle';
+	import type { Issue, IssueStatus, IssuePriority } from '$lib/types/issue';
+	import { getPriorityLabel } from '$lib/types/issue';
+	import type { IssueTemplate } from '$lib/types/issue';
+	import { teamStatusesState } from './team-statuses.state.svelte';
+	import { getIssueCreateDefaults } from './create-defaults';
+	import type { StatusCategory } from '$lib/types/team-status';
+	import RichEditor from '$lib/components/shared/RichEditor.svelte';
+	import { Checkbox } from '$lib/components/ui/checkbox';
+	import IssueStatusIcon from './IssueStatusIcon.svelte';
+	import IssuePriorityIcon from './IssuePriorityIcon.svelte';
+	import { issuesState } from './issues.state.svelte';
+	import DatePickerPopover from '$lib/components/shared/DatePickerPopover.svelte';
+	import { StatusSelector, PrioritySelector, AssigneeSelector, LabelSelector, ProjectSelector, CycleSelector, TeamSelector } from './selectors';
+	import { listTemplates } from '$lib/api/issue-templates';
+	import { expandDraftIssueDescription } from '$lib/api/issues';
+	import { reworkDescriptionSelection } from './description-rework';
+	import { m, getLocale, setLocale } from '$lib/features/i18n/messages';
+	import {
+		User,
+		Tag,
+		FolderKanban,
+		FileText,
+		ImagePlus,
+		Maximize2,
+		Minimize2,
+		Paperclip,
+		X
+	} from '@lucide/svelte';
+
+	let {
+		open = $bindable(false),
+		slug = '',
+		teams,
+		projects = [],
+		labels = [],
+		members = [],
+		cycles = [],
+		defaultTeamId,
+		defaultStatus,
+		defaultStatusId,
+		defaultPriority,
+		defaultAssigneeId,
+		defaultProjectId,
+		defaultAssigneeIds,
+		defaultLabelIds,
+		defaultDueDate,
+		defaultCycleId,
+		defaultTitle,
+		parentIssue = null,
+		onlabelcreated,
+		onbulkcreate,
+		onsubmit
+	}: {
+		open: boolean;
+		slug?: string;
+		teams: Team[];
+		projects?: Project[];
+		labels?: Label[];
+		members?: WorkspaceMember[];
+		cycles?: Cycle[];
+		defaultTeamId?: string;
+		defaultStatus?: IssueStatus;
+		defaultStatusId?: string;
+		defaultPriority?: IssuePriority;
+		defaultAssigneeId?: string;
+		defaultProjectId?: string | null;
+		defaultAssigneeIds?: string[];
+		defaultLabelIds?: string[];
+		defaultDueDate?: string | null;
+		defaultCycleId?: string | null;
+		defaultTitle?: string;
+		parentIssue?: Issue | null;
+		onlabelcreated?: (label: Label) => void;
+		onbulkcreate?: (titles: string[]) => void;
+		onsubmit: (req: {
+			title: string;
+			description?: string;
+			status?: IssueStatus;
+			status_id?: string;
+			priority: IssuePriority;
+			team_id: string;
+			project_id?: string;
+			assignee_id?: string;
+			assignee_ids?: string[];
+			label_ids?: string[];
+			parent_id?: string;
+			due_date?: string;
+			cycle_id?: string;
+		}) => void;
+	} = $props();
+
+	let title = $state('');
+	let description = $state('');
+	let statusId = $state<string>('');
+	let priority = $state<IssuePriority>(0);
+	let teamId = $state('');
+	let projectId = $state<string | null>(null);
+	let assigneeIds = $state<string[]>([]);
+	let labelIds = $state<string[]>([]);
+	let dueDate = $state<string | null>(null);
+	let cycleId = $state<string | null>(null);
+	let createMore = $state(false);
+	// Like the dock's fullscreen toggle, the expanded size lasts while the page is open.
+	let expanded = $state(false);
+	let statusLoadVersion = 0;
+	let statusFallbackId: string | undefined;
+	let statusTeamBeforeOpen = '';
+	let wasOpen = false;
+
+	let templates = $state<IssueTemplate[]>([]);
+	let selectedTemplate = $state<IssueTemplate | null>(null);
+	let templateOpen = $state(false);
+	let descriptionVersion = $state(0);
+
+	let statusOpen = $state(false);
+	let priorityOpen = $state(false);
+	let teamOpen = $state(false);
+	let projectOpen = $state(false);
+	let assigneeOpen = $state(false);
+	let labelsOpen = $state(false);
+	let cycleOpen = $state(false);
+
+	let descriptionEditor = $state<{
+		insertFiles: (files: File[]) => void;
+		focusStart: () => void;
+		isCaretOnFirstLine: () => boolean;
+	} | null>(null);
+	const uploadUrl = $derived(slug && teamId ? `/api/workspaces/${slug}/upload?team_id=${teamId}` : undefined);
+	// Uploads started in the description editor that have not been inserted yet.
+	let pendingUploads = $state(0);
+
+	function validTeam(id: string | undefined): string | undefined {
+		if (!id) return undefined;
+		return teams.some((t) => t.id === id) ? id : undefined;
+	}
+
+	function validStatus(id: string | undefined): string | undefined {
+		if (!id) return undefined;
+		return teamStatusesState.statusById.has(id) ? id : undefined;
+	}
+
+	function validProject(id: string | null | undefined): string | null {
+		if (!id) return null;
+		return projects.some((p) => p.id === id) ? id : null;
+	}
+
+	function validCycle(id: string | null | undefined): string | null {
+		if (!id) return null;
+		return cycles?.some((c) => c.id === id) ? id : null;
+	}
+
+	function validMemberIds(ids: string[] | undefined): string[] {
+		if (!ids) return [];
+		const memberIds = new Set(members.map((m) => m.user_id));
+		return ids.filter((id) => memberIds.has(id));
+	}
+
+	function validLabelIds(ids: string[] | undefined): string[] {
+		if (!ids) return [];
+		const availableLabelIds = new Set(labels.map((l) => l.id));
+		return ids.filter((id) => availableLabelIds.has(id));
+	}
+
+	function applyDefaultStatus(preferredStatusId?: string, preferredCategory: StatusCategory = 'backlog', preserveCurrentOnMissing = false) {
+		const nextStatusId =
+			validStatus(preferredStatusId) ?? teamStatusesState.defaultForCategory(preferredCategory)?.id;
+		if (nextStatusId) {
+			statusId = nextStatusId;
+			return;
+		}
+		if (preserveCurrentOnMissing && statusId) return;
+		statusId =
+			validStatus(statusFallbackId) ??
+			teamStatusesState.defaultForCategory('backlog')?.id ??
+			'';
+	}
+
+	function loadStatusesForTeam(nextTeamId: string, preferredStatusId?: string, preferredCategory?: StatusCategory, preserveCurrentOnMissing = false) {
+		const version = ++statusLoadVersion;
+		const apply = () => {
+			if (!open || teamId !== nextTeamId || version !== statusLoadVersion) return;
+			applyDefaultStatus(preferredStatusId, preferredCategory, preserveCurrentOnMissing);
+		};
+		if (!slug || !nextTeamId) {
+			apply();
+			return;
+		}
+
+		teamStatusesState.load(slug, nextTeamId).then(apply);
+	}
+
+	function resetForm() {
+		const savedDefaults = getIssueCreateDefaults(slug);
+		title = defaultTitle ?? '';
+		description = '';
+		descriptionVersion++;
+		pendingUploads = 0;
+		selectedTemplate = null;
+		priority = defaultPriority ?? savedDefaults.priority ?? 0;
+		teamId = validTeam(defaultTeamId) ?? validTeam(savedDefaults.teamId) ?? teams[0]?.id ?? '';
+		statusId = '';
+		statusFallbackId = defaultStatusId ?? savedDefaults.statusId;
+		loadStatusesForTeam(teamId, statusFallbackId);
+		projectId = defaultProjectId !== undefined ? validProject(defaultProjectId) : validProject(savedDefaults.projectId);
+		assigneeIds = defaultAssigneeIds ? validMemberIds(defaultAssigneeIds) : (defaultAssigneeId ? validMemberIds([defaultAssigneeId]) : validMemberIds(savedDefaults.assigneeIds));
+		labelIds = defaultLabelIds ? validLabelIds(defaultLabelIds) : validLabelIds(savedDefaults.labelIds);
+		pruneScopedLabels();
+		dueDate = defaultDueDate !== undefined ? defaultDueDate : savedDefaults.dueDate ?? null;
+		cycleId = defaultCycleId !== undefined ? validCycle(defaultCycleId) : validCycle(savedDefaults.cycleId);
+		clearIncompatibleTeamSelections(teamId);
+		if (slug) listTemplates(slug).then(t => templates = t).catch(() => {});
+	}
+
+	$effect(() => {
+		const isOpen = open;
+		if (isOpen === wasOpen) return;
+		wasOpen = isOpen;
+		untrack(() => {
+			if (isOpen) {
+				resetForm();
+				statusTeamBeforeOpen = teamId;
+			} else if (slug && statusTeamBeforeOpen && teamId !== statusTeamBeforeOpen) {
+				void teamStatusesState.load(slug, statusTeamBeforeOpen);
+				statusTeamBeforeOpen = '';
+			}
+		});
+	});
+
+	let selectedTeam = $derived(teams.find((t) => t.id === teamId));
+	let selectedProject = $derived(projects.find((p) => p.id === projectId));
+	let selectedAssignees = $derived(members.filter((m) => assigneeIds.includes(m.user_id)));
+	let selectedLabels = $derived(labels.filter((l) => labelIds.includes(l.id)));
+	let availableProjects = $derived(projects.filter((p) => !p.team_id || p.team_id === teamId));
+	let availableCycles = $derived((cycles ?? []).filter((c) => c.team_id === teamId));
+	let availableTemplates = $derived(
+		parentIssue
+			? templates.filter((tmpl) => !tmpl.team_id || tmpl.team_id === parentIssue.team_id)
+			: templates
+	);
+
+	const priorityValues: IssuePriority[] = [0, 1, 2, 3, 4];
+
+	const selectedStatus = $derived(teamStatusesState.statusById.get(statusId));
+
+	function templateIssueTitle(tmpl: IssueTemplate | null): string {
+		return tmpl?.default_issue_title?.trim() || tmpl?.title || '';
+	}
+
+	function handleSubmit() {
+		if (!title.trim() || !teamId || pendingUploads > 0) return;
+		onsubmit({
+			title: title.trim(),
+			description: description.trim() || undefined,
+			status_id: statusId || undefined,
+			priority,
+			team_id: teamId,
+			project_id: projectId || undefined,
+			assignee_ids: assigneeIds.length > 0 ? assigneeIds : undefined,
+			label_ids: labelIds.length > 0 ? labelIds : undefined,
+			parent_id: parentIssue?.id,
+			due_date: dueDate || undefined,
+			cycle_id: cycleId || undefined
+		});
+		if (createMore) {
+			title = templateIssueTitle(selectedTemplate);
+			description = selectedTemplate?.description ?? '';
+			descriptionVersion++;
+		} else {
+			open = false;
+		}
+	}
+
+	function reworkDraftSelection(selectedText: string): Promise<string> {
+		return reworkDescriptionSelection(() =>
+			expandDraftIssueDescription(slug, { title: title.trim(), description, selected_text: selectedText })
+		);
+	}
+
+	function titleFromListLine(line: string): string {
+		return line
+			.replace(/^\s*(?:[-*+]\s+\[[ xX]?\]\s+|\[[ xX]?\]\s+|[-*+]\s+|\d+[.)]\s+)/, '')
+			.trim();
+	}
+
+	function pastedFiles(data: DataTransfer | null): File[] {
+		if (!data) return [];
+		const files: File[] = [];
+		for (const item of data.items) {
+			if (item.kind !== 'file') continue;
+			const file = item.getAsFile();
+			if (file) files.push(file);
+		}
+		return files;
+	}
+
+	function chooseFiles(imagesOnly = false) {
+		if (!uploadUrl) return;
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.multiple = !imagesOnly;
+		if (imagesOnly) input.accept = 'image/*';
+		input.onchange = () => {
+			const files = Array.from(input.files ?? []);
+			if (files.length > 0) descriptionEditor?.insertFiles(files);
+		};
+		input.click();
+	}
+
+	function handleTitlePaste(e: ClipboardEvent) {
+		const files = pastedFiles(e.clipboardData);
+		if (files.length > 0) {
+			e.preventDefault();
+			descriptionEditor?.insertFiles(files);
+			return;
+		}
+		if (!parentIssue || !onbulkcreate) return;
+		const text = e.clipboardData?.getData('text') ?? '';
+		const titles = text.split(/\r?\n/).map(titleFromListLine).filter(Boolean);
+		if (titles.length < 2) return;
+		e.preventDefault();
+		onbulkcreate(titles);
+		if (!createMore) open = false;
+	}
+
+	const STATUS_TO_CATEGORY: Record<string, StatusCategory> = {
+		backlog: 'backlog',
+		todo: 'unstarted',
+		in_progress: 'started',
+		in_review: 'started',
+		done: 'completed',
+		cancelled: 'cancelled',
+	};
+
+	function applyTemplate(tmpl: IssueTemplate) {
+		if (parentIssue && tmpl.team_id && tmpl.team_id !== parentIssue.team_id) {
+			return;
+		}
+		selectedTemplate = tmpl;
+		title = templateIssueTitle(tmpl);
+		description = tmpl.description ?? '';
+		descriptionVersion++;
+		// The editor is recreated; counts reported by the previous instance no longer apply.
+		pendingUploads = 0;
+		priority = tmpl.priority ?? 0;
+		labelIds = Array.isArray(tmpl.label_ids) ? tmpl.label_ids : [];
+		pruneScopedLabels();
+		if (tmpl.assignee_id) assigneeIds = [tmpl.assignee_id];
+		const templateTeamId = tmpl.team_id && validTeam(tmpl.team_id) ? tmpl.team_id : undefined;
+		let teamChanged = false;
+		if (templateTeamId && templateTeamId !== teamId) {
+			teamChanged = true;
+			teamId = templateTeamId;
+			statusId = '';
+			statusFallbackId = undefined;
+			clearIncompatibleTeamSelections(templateTeamId);
+		}
+		const category = tmpl.status ? STATUS_TO_CATEGORY[tmpl.status] : undefined;
+		if (category) {
+			loadStatusesForTeam(teamId, undefined, category, !teamChanged);
+		} else if (teamChanged) {
+			loadStatusesForTeam(teamId);
+		}
+		templateOpen = false;
+	}
+
+	function clearTemplateSelection() {
+		selectedTemplate = null;
+		templateOpen = false;
+	}
+
+	function handleKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+			handleSubmit();
+			return;
+		}
+		if (e.defaultPrevented || e.shiftKey || e.altKey || e.metaKey || e.ctrlKey || e.isComposing) return;
+		const target = e.target as HTMLElement;
+		// Title -> content, and content (first line) -> title.
+		if (e.key === 'ArrowDown' && target.id === 'create-issue-title') {
+			e.preventDefault();
+			descriptionEditor?.focusStart();
+		} else if (e.key === 'ArrowUp' && target.closest('.ProseMirror') && descriptionEditor?.isCaretOnFirstLine()) {
+			e.preventDefault();
+			document.getElementById('create-issue-title')?.focus();
+		}
+	}
+
+	function toggleLabel(id: string) {
+		if (labelIds.includes(id)) {
+			labelIds = labelIds.filter((l) => l !== id);
+		} else {
+			labelIds = [...labelIds, id];
+		}
+	}
+
+	function handleTeamChange(id: string) {
+		teamId = id;
+		statusId = '';
+		statusFallbackId = undefined;
+		clearIncompatibleTeamSelections(id);
+		loadStatusesForTeam(id);
+	}
+
+	/** Labels of another project do not apply to the current one: call after projectId changes. */
+	function pruneScopedLabels() {
+		labelIds = labelIds.filter((labelId) => {
+			const label = labels.find((l) => l.id === labelId);
+			return !label || labelAppliesTo(label, projectId);
+		});
+	}
+
+	function clearIncompatibleTeamSelections(nextTeamId: string) {
+		const project = projects.find((p) => p.id === projectId);
+		if (projectId && (!project || (project.team_id && project.team_id !== nextTeamId))) {
+			projectId = null;
+			pruneScopedLabels();
+		}
+		const cycle = cycles?.find((c) => c.id === cycleId);
+		if (cycleId && (!cycle || cycle.team_id !== nextTeamId)) {
+			cycleId = null;
+		}
+	}
+</script>
+
+<Dialog.Root bind:open>
+	<Dialog.Content
+		showCloseButton={false}
+		data-expanded={expanded}
+		class="flex flex-col gap-0 overflow-hidden rounded-xl border-[var(--app-border)] bg-[var(--color-bg-secondary)] p-0 max-sm:w-screen max-sm:h-dvh max-sm:max-w-none max-sm:rounded-none max-sm:top-0 max-sm:left-0 max-sm:translate-x-0 {expanded
+			? 'sm:top-[4dvh] sm:h-[92dvh] sm:max-w-[min(80rem,calc(100vw-4rem))]'
+			: 'sm:max-h-[86dvh] sm:max-w-3xl'}"
+		onOpenAutoFocus={(e) => {
+			e.preventDefault();
+			const input = document.getElementById('create-issue-title');
+			input?.focus();
+		}}
+	>
+		<!-- Header: Team + Template, then size and close actions (as in issue details) -->
+		<Dialog.Header class="flex-row items-center gap-1.5 border-b border-[var(--app-border)] px-3 py-2 shrink-0">
+			<Dialog.Title class="sr-only">{m['sidebar.new_issue']()}</Dialog.Title>
+			<TeamSelector
+				bind:open={teamOpen}
+				{teams}
+				value={teamId}
+				onchange={handleTeamChange}
+			>
+				{#snippet trigger(props)}
+					<Button {...props} variant="plain" tabindex={-1} class="flex items-center gap-1.5 rounded-md border border-[var(--app-border)] bg-[var(--color-bg-tertiary)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]">
+						<span class="flex h-4 w-4 items-center justify-center rounded bg-[var(--app-accent)] text-[9px] font-bold text-[var(--app-accent-foreground)]">
+							{selectedTeam?.key?.charAt(0) ?? 'T'}
+						</span>
+						{selectedTeam?.key ?? m['sharedComponents.create_issue.team']()}
+					</Button>
+				{/snippet}
+			</TeamSelector>
+			<span class="text-xs text-[var(--color-text-tertiary)]">›</span>
+			{#if availableTemplates.length > 0}
+				<Popover.Root bind:open={templateOpen}>
+					<Popover.Trigger>
+						{#snippet child({ props })}
+							<Button {...props} variant="plain" tabindex={-1} class="flex max-w-52 items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]">
+								<FileText size={12} class="shrink-0 text-[var(--color-text-tertiary)]" />
+								<span class="truncate">{selectedTemplate?.title || m['sharedComponents.create_issue.template']()}</span>
+							</Button>
+						{/snippet}
+					</Popover.Trigger>
+					<Popover.Content class="w-56 p-1" align="start">
+						<Button variant="plain" onclick={clearTemplateSelection}
+							class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]"
+						>
+							<FileText size={14} class="shrink-0 text-[var(--color-text-tertiary)]" />
+							<span class="truncate">{m['sharedComponents.create_issue.no_template']()}</span>
+						</Button>
+						{#each availableTemplates as tmpl (tmpl.id)}
+							<Button variant="plain" onclick={() => applyTemplate(tmpl)}
+								class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]"
+							>
+								<FileText size={14} class="shrink-0 text-[var(--color-text-tertiary)]" />
+								<span class="truncate">{tmpl.title || m['sharedComponents.create_issue.untitled_template']()}</span>
+							</Button>
+						{/each}
+					</Popover.Content>
+				</Popover.Root>
+			{:else}
+				<span class="text-xs font-medium text-[var(--color-text-secondary)]">
+					{parentIssue ? m['sharedComponents.create_issue.new_sub_issue']({ identifier: parentIssue.identifier }) : m['sharedComponents.create_issue.new_issue']()}
+				</span>
+			{/if}
+			<div class="ml-auto flex shrink-0 items-center gap-0.5">
+				<Button
+					variant="ghost"
+					size="icon-sm"
+					class="max-sm:hidden"
+					aria-pressed={expanded}
+					aria-label={expanded ? m['sharedComponents.create_issue.collapse']() : m['sharedComponents.create_issue.expand']()}
+					title={expanded ? m['sharedComponents.create_issue.collapse']() : m['sharedComponents.create_issue.expand']()}
+					onclick={() => (expanded = !expanded)}
+				>
+					{#if expanded}<Minimize2 />{:else}<Maximize2 />{/if}
+				</Button>
+				<Dialog.Close>
+					{#snippet child({ props })}
+						<Button {...props} variant="ghost" size="icon-sm" aria-label={m['common.close']()}>
+							<X />
+						</Button>
+					{/snippet}
+				</Dialog.Close>
+			</div>
+		</Dialog.Header>
+
+		<!-- Title + Description -->
+		<!-- svelte-ignore a11y_autofocus -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-3" onkeydown={handleKeydown}>
+			<Input variant="plain"
+				id="create-issue-title"
+				type="text"
+				bind:value={title}
+				onpaste={handleTitlePaste}
+				placeholder={m['sharedComponents.create_issue.issue_title_placeholder']()}
+				class="w-full bg-transparent text-lg font-semibold text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)] max-sm:shrink-0"
+			/>
+			<div class="mt-4 flex-1 overflow-y-auto {expanded ? '' : 'sm:max-h-[calc(60vh-120px)]'}">
+				{#key descriptionVersion}
+				{@const editorVersion = descriptionVersion}
+				<RichEditor
+					bind:this={descriptionEditor}
+					content={description}
+					workspaceSlug={slug}
+					{members}
+					issues={issuesState.issues}
+					placeholder={m['sharedComponents.create_issue.description_placeholder']()}
+					bubbleMenu={true}
+					borderless={true}
+					minHeight="120px"
+					{uploadUrl}
+					hideUploadButtons={true}
+					onuploadschange={(pending) => {
+						if (open && editorVersion === descriptionVersion) pendingUploads = pending;
+					}}
+					onupdate={(html) => (description = html)}
+					onreworkselection={slug ? reworkDraftSelection : undefined}
+				/>
+				{/key}
+			</div>
+		</div>
+
+		<!-- Selection footer: property pills -->
+		<div class="flex shrink-0 flex-wrap items-center gap-1.5 px-3 py-2">
+			<!-- Status -->
+			<StatusSelector
+				bind:open={statusOpen}
+				statuses={teamStatusesState.statusOrder}
+				value={statusId}
+				onchange={(id) => { statusLoadVersion++; statusId = id; }}
+				width="w-44"
+			>
+				{#snippet trigger(props)}
+					<Button {...props} variant="plain" class="flex items-center gap-1.5 rounded-full border border-[var(--app-border)] px-2.5 py-1 max-sm:px-3 max-sm:py-1.5 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]">
+						<IssueStatusIcon category={selectedStatus?.category} color={selectedStatus?.color} size={12} />
+						{selectedStatus?.name ?? m['sharedComponents.create_issue.status']()}
+					</Button>
+				{/snippet}
+			</StatusSelector>
+
+			<!-- Priority -->
+			<PrioritySelector
+				bind:open={priorityOpen}
+				value={priority}
+				onchange={(p) => { priority = p; }}
+			>
+				{#snippet trigger(props)}
+					<Button {...props} variant="plain" class="flex items-center gap-1.5 rounded-full border border-[var(--app-border)] px-2.5 py-1 max-sm:px-3 max-sm:py-1.5 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]">
+						<IssuePriorityIcon {priority} size={12} />
+						{getPriorityLabel(priority)}
+					</Button>
+				{/snippet}
+			</PrioritySelector>
+
+			<!-- Project -->
+			<ProjectSelector
+				bind:open={projectOpen}
+				projects={availableProjects}
+				value={projectId}
+				onchange={(id) => {
+					projectId = id;
+					pruneScopedLabels();
+				}}
+			>
+				{#snippet trigger(props)}
+					<Button {...props} variant="plain" class="flex items-center gap-1.5 rounded-full border border-[var(--app-border)] px-2.5 py-1 max-sm:px-3 max-sm:py-1.5 text-xs {selectedProject ? 'text-[var(--color-text-secondary)]' : 'text-[var(--color-text-tertiary)]'} hover:bg-[var(--color-bg-hover)]">
+						<FolderKanban size={12} />
+						{selectedProject?.name ?? m['sharedComponents.create_issue.project']()}
+					</Button>
+				{/snippet}
+			</ProjectSelector>
+
+			<!-- Assignees -->
+			<AssigneeSelector
+				bind:open={assigneeOpen}
+				{members}
+				value={assigneeIds}
+				onchange={(userId) => {
+					if (assigneeIds.includes(userId)) {
+						assigneeIds = assigneeIds.filter(id => id !== userId);
+					} else {
+						assigneeIds = [...assigneeIds, userId];
+					}
+				}}
+			>
+				{#snippet trigger(props)}
+					<Button {...props} variant="plain" class="flex items-center gap-1.5 rounded-full border border-[var(--app-border)] px-2.5 py-1 max-sm:px-3 max-sm:py-1.5 text-xs {selectedAssignees.length > 0 ? 'text-[var(--color-text-secondary)]' : 'text-[var(--color-text-tertiary)]'} hover:bg-[var(--color-bg-hover)]">
+						<User size={12} />
+						{#if selectedAssignees.length === 0}
+							{m['sharedComponents.create_issue.assignee']()}
+						{:else if selectedAssignees.length === 1}
+							{selectedAssignees[0].name || selectedAssignees[0].email}
+						{:else}
+							{m['sharedComponents.create_issue.assignees_count']({ count: selectedAssignees.length })}
+						{/if}
+					</Button>
+				{/snippet}
+			</AssigneeSelector>
+
+			<!-- Labels -->
+			<LabelSelector
+				bind:open={labelsOpen}
+				{labels}
+				{projectId}
+				value={labelIds}
+				onchange={(labelId) => toggleLabel(labelId)}
+				oncreated={(label) => onlabelcreated?.(label)}
+				{slug}
+			>
+				{#snippet trigger(props)}
+					<Button {...props} variant="plain" class="flex items-center gap-1.5 rounded-full border border-[var(--app-border)] px-2.5 py-1 max-sm:px-3 max-sm:py-1.5 text-xs {selectedLabels.length > 0 ? 'text-[var(--color-text-secondary)]' : 'text-[var(--color-text-tertiary)]'} hover:bg-[var(--color-bg-hover)]">
+						<Tag size={12} />
+						{#if selectedLabels.length === 0}
+							{m['sharedComponents.create_issue.labels']()}
+						{:else if selectedLabels.length === 1}
+							{selectedLabels[0].name}
+						{:else}
+							{m['sharedComponents.create_issue.labels_count']({ count: selectedLabels.length })}
+						{/if}
+					</Button>
+				{/snippet}
+			</LabelSelector>
+
+			<!-- Cycle -->
+			<CycleSelector
+				bind:open={cycleOpen}
+				cycles={availableCycles}
+				value={cycleId}
+				onchange={(id) => { cycleId = id; }}
+			>
+				{#snippet trigger(props)}
+					<Button {...props} variant="plain" class="flex items-center gap-1.5 rounded-full border border-[var(--app-border)] px-2.5 py-1 max-sm:px-3 max-sm:py-1.5 text-xs {cycleId ? 'text-[var(--color-text-secondary)]' : 'text-[var(--color-text-tertiary)]'} hover:bg-[var(--color-bg-hover)]">
+						{#if cycleId}
+							{availableCycles.find(c => c.id === cycleId)?.name ?? m['sharedComponents.create_issue.cycle']()}
+						{:else}
+							{m['sharedComponents.create_issue.cycle']()}
+						{/if}
+					</Button>
+				{/snippet}
+			</CycleSelector>
+
+			<!-- Due Date -->
+			<DatePickerPopover
+				value={dueDate}
+				onchange={(d) => (dueDate = d)}
+				placeholder={m['sharedComponents.create_issue.due_date_placeholder']()}
+				dueDateMode
+			/>
+		</div>
+
+		<!-- End footer -->
+		<Dialog.Footer class="m-0 shrink-0 flex-row items-center gap-3 rounded-none border-t border-[var(--app-border)] bg-transparent px-3 py-2 max-sm:sticky max-sm:bottom-0 max-sm:flex-col max-sm:items-stretch max-sm:bg-[var(--color-bg-secondary)] max-sm:pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] {uploadUrl ? 'sm:justify-between' : 'sm:justify-end'}">
+			{#if uploadUrl}
+				<div class="flex items-center gap-1 max-sm:order-2">
+					<Button variant="plain" type="button"
+						onclick={() => chooseFiles(true)}
+						class="flex h-7 w-7 items-center justify-center rounded text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)]"
+						title={m['sharedComponents.rich_editor.upload_image']()}
+						aria-label={m['sharedComponents.rich_editor.upload_image']()}
+					>
+						<ImagePlus size={14} />
+					</Button>
+					<Button variant="plain" type="button"
+						onclick={() => chooseFiles()}
+						class="flex h-7 w-7 items-center justify-center rounded text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)]"
+						title={m['sharedComponents.rich_editor.attach_files']()}
+						aria-label={m['sharedComponents.rich_editor.attach_files']()}
+					>
+						<Paperclip size={14} />
+					</Button>
+				</div>
+			{/if}
+			<div class="flex items-center gap-3 max-sm:order-1 max-sm:justify-between">
+				<label class="flex items-center gap-2 text-xs text-[var(--color-text-tertiary)]">
+					<Switch bind:checked={createMore} size="sm" />
+					{m['sharedComponents.create_issue.create_more']()}
+				</label>
+				<Button
+					class="max-sm:w-full"
+					size="sm"
+					disabled={!title.trim() || !teamId || pendingUploads > 0}
+					onclick={handleSubmit}
+				>
+					{pendingUploads > 0
+						? m['sharedComponents.create_issue.uploading_attachments']()
+						: m['sharedComponents.create_issue.create_issue']()}
+				</Button>
+			</div>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

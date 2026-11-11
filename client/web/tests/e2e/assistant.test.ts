@@ -1,0 +1,2593 @@
+import { test, expect, type Page, type WebSocketRoute } from '@playwright/test';
+
+const workspace = { id: 'workspace-1', slug: 'test', name: 'Test Workspace', current_user_role: 'owner' };
+const conversation = {
+	id: 'chat-1',
+	title: 'A persistent conversation',
+	workspace_id: workspace.id,
+	creator_id: 'user-1',
+	created_at: '2026-10-26T10:00:00Z',
+	updated_at: '2026-10-26T10:00:00Z'
+};
+const userMessage = {
+	id: 'message-1',
+	conversation_id: 'chat-1',
+	sequence: 1,
+	role: 'user',
+	content: 'Hello assistant',
+	status: 'completed',
+	provider: '',
+	model: '',
+	created_at: conversation.created_at
+};
+const reply = {
+	...userMessage,
+	id: 'message-2',
+	sequence: 2,
+	role: 'assistant',
+	content: '',
+	status: 'streaming',
+	provider: 'openai_compatible',
+	model: 'configured-model'
+};
+
+async function fixture(page: Page) {
+	const state = {
+		messages: [] as (typeof userMessage)[],
+		tools: [] as any[],
+		approvals: [] as any[],
+		queue: [] as any[],
+		decisions: [] as string[],
+		decisionStatus: 200,
+		cursor: 0,
+		events: [] as Array<{ cursor: number; [key: string]: unknown }>,
+		sends: [] as string[],
+		sockets: [] as WebSocketRoute[],
+		denied: false,
+		failAfterSend: false,
+		failNextHistory: false,
+		sendDelay: null as Promise<void> | null,
+		replayDelay: null as Promise<void> | null,
+		replayRequested: false,
+		olderDelay: null as Promise<void> | null,
+		olderRequested: false,
+		// Append each send to the existing transcript instead of replacing it.
+		appendSends: false,
+		historyDelay: null as Promise<void> | null
+	};
+	await page.routeWebSocket('**/api/workspaces/test/ws', () => {});
+	await page.routeWebSocket('**/conversations/chat-1/stream*', (socket) => {
+		state.sockets.push(socket);
+	});
+	await page.route('https://raw.githubusercontent.com/**', (route) => route.fulfill({ json: [] }));
+	await page.route('**/api/**', async (route) => {
+		const url = new URL(route.request().url());
+		const path = url.pathname;
+		if (!path.startsWith('/api/')) return route.continue();
+		if (path === '/api/auth/me')
+			return route.fulfill({
+				json: { id: 'user-1', name: 'Owner', display_name: 'Owner', email: 'owner@example.test' }
+			});
+		if (path === '/api/workspaces') return route.fulfill({ json: [workspace] });
+		if (path === '/api/workspaces/test') return route.fulfill({ json: workspace });
+		if (path === '/api/notifications') return route.fulfill({ json: { notifications: [], unread_count: 0 } });
+		if (path.endsWith('/assistant/status'))
+			return route.fulfill({ json: { configured: true, provider: 'openai_compatible', model: 'configured-model' } });
+		if (path === '/api/workspaces/test/agent-tasks') return route.fulfill({ json: state.queue });
+		if (path === '/api/workspaces/test/agent-tasks/task-9')
+			return route.fulfill({
+				json: {
+					id: 'task-9',
+					conversation_id: 'chat-issue',
+					state: 'running',
+					reason: 'Native coding harness started',
+					provider: 'codex',
+					model: 'deepseek-flash',
+					generation: 1
+				}
+			});
+		if (path.endsWith('/conversations'))
+			return route.fulfill({ json: route.request().method() === 'POST' ? conversation : [conversation] });
+		if (path.includes('/conversations/chat-1')) {
+			if (state.denied) return route.fulfill({ status: 404, json: { error: { code: 'NOT_FOUND' } } });
+			if (path.endsWith('/messages')) {
+				state.sends.push(route.request().postDataJSON().content);
+				if (state.sendDelay) await state.sendDelay;
+				if (state.failAfterSend) state.failNextHistory = true;
+				if (state.appendSends) {
+					const sequence = state.messages.length + 1;
+					const sent = {
+						...userMessage,
+						id: `sent-${sequence}`,
+						sequence,
+						content: route.request().postDataJSON().content
+					};
+					const live = { ...reply, id: `live-${sequence + 1}`, sequence: sequence + 1 };
+					state.messages = [...state.messages, sent, live];
+					return route.fulfill({ status: 202, json: live });
+				}
+				state.messages = [userMessage, reply];
+				return route.fulfill({ status: 202, json: reply });
+			}
+			if (path.includes('/approvals/')) {
+				const decision = route.request().postDataJSON().decision;
+				state.decisions.push(decision);
+				if (state.decisionStatus !== 200)
+					return route.fulfill({ status: state.decisionStatus, json: { error: { code: 'INTERNAL_ERROR' } } });
+				const resolved = {
+					...state.approvals[0],
+					status: decision === 'approve' ? 'approved' : 'denied',
+					task_id: decision === 'approve' ? 'task-9' : undefined,
+					resolved_at: '2026-10-26T10:05:00Z',
+					updated_at: '2026-10-26T10:05:00Z'
+				};
+				state.approvals = [resolved];
+				return route.fulfill({ json: resolved });
+			}
+			if (path.endsWith('/events')) {
+				state.replayRequested = true;
+				if (state.replayDelay) await state.replayDelay;
+				return route.fulfill({
+					json: state.events.filter((event) => event.cursor > Number(url.searchParams.get('after') ?? 0))
+				});
+			}
+			if (path.endsWith('/cancel')) {
+				state.messages = state.messages.map((m) => (m.status === 'streaming' ? { ...m, status: 'cancelled' } : m));
+				return route.fulfill({ status: 204 });
+			}
+			if (state.failNextHistory) {
+				state.failNextHistory = false;
+				return route.fulfill({ status: 500, json: { error: { code: 'INTERNAL_ERROR' } } });
+			}
+			if (state.historyDelay) await state.historyDelay;
+			const before = Number(url.searchParams.get('before') ?? 0);
+			if (before && state.olderDelay) {
+				state.olderRequested = true;
+				await state.olderDelay;
+			}
+			const messages = state.messages.filter((m) => !before || m.sequence < before);
+			return route.fulfill({
+				json: {
+					conversation,
+					messages: messages.slice(-50),
+					tools: state.tools,
+					approvals: state.approvals,
+					cursor: state.cursor,
+					has_more: messages.length > 50
+				}
+			});
+		}
+		return route.fulfill({ json: [] });
+	});
+	return state;
+}
+
+test('streams real events, preserves history and deduplicates reconnect replay', async ({ page }) => {
+	const state = await fixture(page);
+	await page.goto('/test/assistant?conversation=chat-1');
+	const composer = page.getByRole('textbox', { name: 'Message' });
+	await composer.fill('Hello assistant');
+	await composer.press('Enter');
+	await expect.poll(() => state.sends).toEqual(['Hello assistant']);
+	await expect.poll(() => state.sockets.length).toBeGreaterThanOrEqual(2);
+	const event = {
+		id: 'event-3',
+		cursor: 3,
+		conversation_id: 'chat-1',
+		type: 'message.delta',
+		payload: { message_id: 'message-2', delta: 'Live partial answer' }
+	};
+	state.sockets.at(-1)!.send(JSON.stringify(event));
+	await expect(page.getByText('Live partial answer', { exact: true })).toBeVisible();
+	state.sockets.at(-1)!.send(JSON.stringify(event));
+	await expect(page.getByText('Live partial answer', { exact: true })).toHaveCount(1);
+	const socketCount = state.sockets.length;
+	state.events = [
+		{ ...event, id: 'event-4', cursor: 4, payload: { message_id: 'message-2', delta: ' after reconnect' } }
+	];
+	state.sockets.at(-1)!.close({ code: 1012, reason: 'Restart' });
+	await expect.poll(() => state.sockets.length).toBe(socketCount + 1);
+	await expect(page.getByText('Live partial answer after reconnect', { exact: true })).toBeVisible();
+	expect(state.sockets.at(-1)!.url()).toContain('after=4');
+	state.messages = [userMessage, { ...reply, content: 'Live partial answer after reconnect', status: 'completed' }];
+	state.cursor = 5;
+	state.sockets.at(-1)!.send(
+		JSON.stringify({
+			...event,
+			id: 'event-5',
+			cursor: 5,
+			type: 'message.completed',
+			payload: { message_id: 'message-2', status: 'completed' }
+		})
+	);
+	await page.reload();
+	await expect(page.getByText('Live partial answer after reconnect', { exact: true })).toBeVisible();
+	expect(state.sends).toHaveLength(1);
+});
+
+test('keyboard newline, local drafts and mobile layout', async ({ page }, testInfo) => {
+	await page.setViewportSize({ width: 375, height: 812 });
+	const state = await fixture(page);
+	await page.goto('/test/assistant?conversation=chat-1');
+	const composer = page.getByRole('textbox', { name: 'Message' });
+	await composer.fill('First line');
+	await composer.press('Shift+Enter');
+	await composer.type('Second line');
+	expect(state.sends).toHaveLength(0);
+	await page.reload();
+	await expect(composer).toHaveValue('First line\nSecond line');
+	expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+	await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('mobile.png') });
+});
+
+test('clears conversation content after access is revoked', async ({ page }) => {
+	const state = await fixture(page);
+	state.messages = [userMessage, { ...reply, content: 'Private response', status: 'completed' }];
+	await page.goto('/test/assistant?conversation=chat-1');
+	await expect(page.getByText('Private response', { exact: true })).toBeVisible();
+	state.denied = true;
+	state.sockets[0].close({ code: 1008, reason: 'Access revoked' });
+	await expect(page.getByText('Private response', { exact: true })).toHaveCount(0);
+	await expect(page.getByText('This conversation is no longer available.')).toBeVisible();
+});
+
+test('loads long history without moving the reader and follows only at the live edge', async ({ page }, testInfo) => {
+	const state = await fixture(page);
+	state.messages = Array.from({ length: 130 }, (_, i) => ({
+		...userMessage,
+		id: `history-${i}`,
+		sequence: i + 1,
+		role: i % 2 ? 'assistant' : 'user',
+		content: `History message ${i}. ` + 'Detailed content. '.repeat(30)
+	}));
+	await page.goto('/test/assistant?conversation=chat-1');
+	const viewport = page.locator('[data-slot="message-scroller-viewport"]');
+	await expect(page.locator('[data-slot="message"]')).toHaveCount(50);
+	await viewport.hover();
+	await page.mouse.wheel(0, -100000);
+	await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBe(0);
+	await page.getByRole('button', { name: 'Load older messages' }).click();
+	await expect(page.locator('[data-slot="message"]')).toHaveCount(100);
+	await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+	const position = await viewport.evaluate((el) => el.scrollTop);
+	const event = {
+		id: 'new',
+		cursor: 200,
+		conversation_id: 'chat-1',
+		type: 'message.created',
+		payload: { ...reply, id: 'latest', sequence: 131, content: 'New live activity' }
+	};
+	state.sockets.at(-1)!.send(JSON.stringify(event));
+	await expect(page.locator('[data-slot="message"]')).toHaveCount(101);
+	expect(Math.abs((await viewport.evaluate((el) => el.scrollTop)) - position)).toBeLessThan(40);
+	await page.getByRole('button', { name: 'Scroll to latest' }).click();
+	await expect(page.getByText('New live activity', { exact: true })).toBeInViewport();
+	await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('desktop.png') });
+	await page.evaluate(() => document.documentElement.classList.add('dark'));
+	await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('desktop-dark.png') });
+});
+
+function longTranscript(length: number) {
+	return Array.from({ length }, (_, i) => ({
+		...userMessage,
+		id: `history-${i}`,
+		sequence: i + 1,
+		role: i % 2 ? 'assistant' : 'user',
+		content: `History message ${i}. ` + 'Detailed content. '.repeat(30)
+	}));
+}
+
+// Streams `count` deltas into the live reply, each long enough to grow the transcript.
+async function streamDeltas(
+	page: Page,
+	state: Awaited<ReturnType<typeof fixture>>,
+	messageId: string,
+	from: number,
+	count: number
+) {
+	for (let i = from; i < from + count; i++) {
+		state.sockets.at(-1)!.send(
+			JSON.stringify({
+				id: `delta-${i}`,
+				cursor: 1000 + i,
+				conversation_id: 'chat-1',
+				type: 'message.delta',
+				payload: { message_id: messageId, delta: `\n\nStreamed paragraph ${i}. ` + 'More streamed text. '.repeat(20) }
+			})
+		);
+		await expect(page.getByText(`Streamed paragraph ${i}.`, { exact: false })).toHaveCount(1);
+	}
+}
+
+function atLiveEdge(viewport: ReturnType<Page['locator']>) {
+	return viewport.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight <= 16);
+}
+
+for (const size of [
+	{ name: 'desktop', width: 1280, height: 800 },
+	{ name: 'phone', width: 390, height: 844 }
+]) {
+	test(`pressing Enter shows the sent message and follows the streaming reply (${size.name})`, async ({
+		page
+	}, testInfo) => {
+		await page.setViewportSize({ width: size.width, height: size.height });
+		const state = await fixture(page);
+		state.appendSends = true;
+		state.messages = longTranscript(30);
+		await page.goto('/test/assistant?conversation=chat-1');
+		const viewport = page.locator('[data-slot="message-scroller-viewport"]');
+		await expect(page.locator('[data-slot="message"]')).toHaveCount(30);
+		// The reader glanced at earlier history; sending is still a request to see the reply.
+		await viewport.hover();
+		await page.mouse.wheel(0, -600);
+		await expect.poll(() => atLiveEdge(viewport)).toBe(false);
+		const composer = page.getByRole('textbox', { name: 'Message' });
+		await composer.fill('What changed in the latest release?');
+		await composer.press('Enter');
+		await expect.poll(() => state.sends).toEqual(['What changed in the latest release?']);
+		await expect(page.getByText('What changed in the latest release?', { exact: true })).toBeInViewport();
+		await expect.poll(() => atLiveEdge(viewport)).toBe(true);
+		await expect.poll(() => state.sockets.length).toBeGreaterThanOrEqual(2);
+		await streamDeltas(page, state, 'live-32', 0, 6);
+		await expect(page.getByText('Streamed paragraph 5.', { exact: false })).toBeInViewport();
+		await expect.poll(() => atLiveEdge(viewport)).toBe(true);
+		await expect(page.getByRole('button', { name: 'Scroll to latest' })).toHaveAttribute('data-active', 'false');
+		expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+		await page.screenshot({ animations: 'disabled', path: testInfo.outputPath(`send-follow-${size.name}.png`) });
+	});
+}
+
+test('a slow history reload after sending keeps the transcript and the sent message on screen', async ({ page }) => {
+	const state = await fixture(page);
+	state.appendSends = true;
+	state.messages = longTranscript(30);
+	await page.goto('/test/assistant?conversation=chat-1');
+	const viewport = page.locator('[data-slot="message-scroller-viewport"]');
+	await expect(page.locator('[data-slot="message"]')).toHaveCount(30);
+	await expect.poll(() => atLiveEdge(viewport)).toBe(true);
+	let releaseReload!: () => void;
+	const reload = new Promise<void>((resolve) => (releaseReload = resolve));
+	const composer = page.getByRole('textbox', { name: 'Message' });
+	await composer.fill('Slow question');
+	state.historyDelay = reload;
+	await composer.press('Enter');
+	await expect.poll(() => state.sends).toEqual(['Slow question']);
+	// While the reload is pending the transcript stays rendered and the accepted reply is followed.
+	await expect(page.locator('[data-slot="message"]')).toHaveCount(31);
+	await expect(page.locator('[data-slot="message"]').last()).toBeInViewport();
+	await expect.poll(() => atLiveEdge(viewport)).toBe(true);
+	await expect(page.getByRole('status').filter({ hasText: 'Loading' })).toHaveCount(0);
+	state.historyDelay = null;
+	releaseReload();
+	await expect(page.locator('[data-slot="message"]')).toHaveCount(32);
+	await expect(page.getByText('Slow question', { exact: true })).toBeInViewport();
+	await expect.poll(() => atLiveEdge(viewport)).toBe(true);
+});
+
+test('a reader who scrolls up while a reply streams stays put and can jump to the latest', async ({
+	page
+}, testInfo) => {
+	const state = await fixture(page);
+	state.appendSends = true;
+	state.messages = longTranscript(30);
+	await page.goto('/test/assistant?conversation=chat-1');
+	const viewport = page.locator('[data-slot="message-scroller-viewport"]');
+	await expect(page.locator('[data-slot="message"]')).toHaveCount(30);
+	const composer = page.getByRole('textbox', { name: 'Message' });
+	await composer.fill('Summarise the thread');
+	await composer.press('Enter');
+	await expect.poll(() => state.sockets.length).toBeGreaterThanOrEqual(2);
+	await streamDeltas(page, state, 'live-32', 0, 2);
+	await expect.poll(() => atLiveEdge(viewport)).toBe(true);
+	await viewport.hover();
+	await page.mouse.wheel(0, -1500);
+	await expect.poll(() => atLiveEdge(viewport)).toBe(false);
+	const position = await viewport.evaluate((el) => el.scrollTop);
+	await streamDeltas(page, state, 'live-32', 2, 4);
+	expect(Math.abs((await viewport.evaluate((el) => el.scrollTop)) - position)).toBeLessThan(40);
+	const latest = page.getByRole('button', { name: 'Scroll to latest' });
+	await expect(latest).toHaveAttribute('data-active', 'true');
+	await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('scrolled-up-latest.png') });
+	await latest.click();
+	await expect(page.getByText('Streamed paragraph 5.', { exact: false })).toBeInViewport();
+	await expect.poll(() => atLiveEdge(viewport)).toBe(true);
+	// Back at the live edge, later chunks are followed again.
+	await streamDeltas(page, state, 'live-32', 6, 2);
+	await expect.poll(() => atLiveEdge(viewport)).toBe(true);
+});
+
+test('does not fetch provider-authored image URLs or execute agent HTML', async ({ page }) => {
+	const state = await fixture(page);
+	const fetched: string[] = [];
+	await page.route('https://untrusted.example/**', (route) => {
+		fetched.push(route.request().url());
+		return route.fulfill({ status: 204 });
+	});
+	state.messages = [
+		userMessage,
+		{
+			...reply,
+			status: 'completed',
+			content:
+				'Safe response\n\n![preview](https://untrusted.example/leak?conversation=private)\n\n<script>window.agentExecuted=true</script>\n\n[Review changes](https://github.com/example/project/pull/1)'
+		}
+	];
+	await page.goto('/test/assistant?conversation=chat-1');
+	await expect(page.getByText('Safe response', { exact: true })).toBeVisible();
+	await expect(page.locator('.assistant-markdown img')).toHaveCount(0);
+	expect(fetched).toEqual([]);
+	expect(await page.evaluate(() => Boolean((window as unknown as { agentExecuted?: boolean }).agentExecuted))).toBe(
+		false
+	);
+	await expect(page.getByRole('link', { name: 'Review changes' })).toHaveAttribute(
+		'href',
+		'https://github.com/example/project/pull/1'
+	);
+});
+
+test('keeps accepted sends visible while a history reload fails', async ({ page }) => {
+	const state = await fixture(page);
+	state.failAfterSend = true;
+	await page.goto('/test/assistant?conversation=chat-1');
+	const composer = page.getByRole('textbox', { name: 'Message' });
+	await composer.fill('Hello assistant');
+	await composer.press('Enter');
+	await expect(page.getByRole('alert').filter({ hasText: 'Something went wrong' })).toBeVisible();
+	await expect(page.getByText('Responding…', { exact: true })).toBeVisible();
+	await composer.fill('Another thought');
+	await expect(page.getByRole('button', { name: 'Send message' })).toHaveCount(0);
+	await expect(page.getByText('Hello assistant', { exact: true })).toBeVisible({ timeout: 8000 });
+	expect(state.sends).toHaveLength(1);
+});
+
+test('preserves a new draft typed while a send is pending', async ({ page }) => {
+	const state = await fixture(page);
+	let release!: () => void;
+	state.sendDelay = new Promise<void>((resolve) => (release = resolve));
+	await page.goto('/test/assistant?conversation=chat-1');
+	const composer = page.getByRole('textbox', { name: 'Message' });
+	await composer.fill('Hello assistant');
+	await composer.press('Enter');
+	await expect.poll(() => state.sends.length).toBe(1);
+	await composer.fill('My next thought');
+	release();
+	await expect(page.getByText('Hello assistant', { exact: true })).toBeVisible();
+	await expect(composer).toHaveValue('My next thought');
+});
+
+test('ignores a delayed reconnect after a fresh conversation load', async ({ page }) => {
+	const state = await fixture(page);
+	state.messages = [userMessage, reply];
+	let release!: () => void;
+	state.replayDelay = new Promise<void>((resolve) => (release = resolve));
+	await page.goto('/test/assistant?conversation=chat-1');
+	await expect.poll(() => state.sockets.length).toBe(1);
+	state.sockets[0].close({ code: 1012, reason: 'Restart' });
+	await expect.poll(() => state.replayRequested).toBe(true);
+	await page.getByRole('button', { name: 'Stop response' }).click();
+	await expect.poll(() => state.sockets.length).toBe(2);
+	release();
+	// Observe the stale network continuation; it must not open a third socket.
+	await page.waitForTimeout(300);
+	expect(state.sockets).toHaveLength(2);
+});
+
+test('does not restore delayed older history after access is revoked', async ({ page }) => {
+	const state = await fixture(page);
+	state.messages = Array.from({ length: 60 }, (_, i) => ({
+		...userMessage,
+		id: `history-${i}`,
+		sequence: i + 1,
+		content: `Private message ${i}`
+	}));
+	let release!: () => void;
+	state.olderDelay = new Promise<void>((resolve) => (release = resolve));
+	await page.goto('/test/assistant?conversation=chat-1');
+	await expect(page.locator('[data-slot="message"]')).toHaveCount(50);
+	await page.getByRole('button', { name: 'Load older messages' }).click();
+	await expect.poll(() => state.olderRequested).toBe(true);
+	state.denied = true;
+	state.sockets.at(-1)!.close({ code: 1008, reason: 'Revoked' });
+	await expect(page.getByText('This conversation is no longer available.')).toBeVisible();
+	release();
+	await page.waitForTimeout(300);
+	await expect(page.locator('[data-slot="message"]')).toHaveCount(0);
+});
+
+const chatIssue = {
+	id: 'issue-1',
+	identifier: 'ENG-1',
+	workspace_id: workspace.id,
+	team_id: 'team-1',
+	title: 'Implement issue chat',
+	description: 'Issue context',
+	status: 'todo',
+	priority: 0,
+	number: 1,
+	creator_id: 'user-1',
+	created_at: conversation.created_at,
+	updated_at: conversation.updated_at,
+	labels: [],
+	assignees: []
+};
+
+test('the issue page opens its conversation in the assistant instead of embedding a chat', async ({ page }) => {
+	const state = await fixture(page);
+	const issueChat = { ...conversation, issue_id: chatIssue.id, team_id: chatIssue.team_id };
+	let opens = 0;
+	await page.route('**/api/workspaces/test/issues/ENG-1', (route) => route.fulfill({ json: chatIssue }));
+	await page.route('**/api/workspaces/test/conversations', (route) => {
+		if (route.request().method() === 'POST') {
+			expect(route.request().postDataJSON()).toEqual({ issue_id: chatIssue.id });
+			opens++;
+			return route.fulfill({ json: issueChat });
+		}
+		return route.fulfill({ json: [issueChat] });
+	});
+	await page.route('**/api/workspaces/test/conversations/chat-1?*', (route) =>
+		route.fulfill({
+			json: {
+				conversation: issueChat,
+				issue: {
+					id: chatIssue.id,
+					identifier: chatIssue.identifier,
+					title: chatIssue.title,
+					description: chatIssue.description,
+					status: chatIssue.status
+				},
+				messages: state.messages,
+				cursor: state.cursor,
+				has_more: false
+			}
+		})
+	);
+	await page.goto('/test/issue/ENG-1');
+	await expect(page.getByText('Issue context')).toBeVisible();
+	// The description is followed by the issue's own content: no chat is embedded.
+	await expect(page.getByRole('textbox', { name: 'Message', exact: true })).toHaveCount(0);
+	await expect(page.getByRole('region', { name: 'Issue chat' })).toHaveCount(0);
+	const open = page.getByRole('button', { name: 'Chat with assistant', exact: true });
+	await expect(open).toBeVisible();
+	// Keyboard: the button is reachable and activates with Enter.
+	await open.focus();
+	await page.keyboard.press('Enter');
+	await expect(page).toHaveURL(/\/test\/assistant\?conversation=chat-1$/);
+	expect(opens).toBe(1);
+	await expect(page.getByRole('link', { name: 'ENG-1', exact: true })).toHaveAttribute('href', '/test/issue/ENG-1');
+	const composer = page.getByRole('textbox', { name: 'Message', exact: true });
+	await composer.fill('Explain the implementation');
+	await composer.press('Enter');
+	await expect.poll(() => state.sends).toEqual(['Explain the implementation']);
+	// The issue's conversation is the selected one in the sidebar.
+	await expect(
+		page.getByRole('navigation', { name: 'Conversations' }).getByRole('link', { name: conversation.title })
+	).toHaveAttribute('aria-current', 'page');
+});
+
+test('a denied issue conversation reports the failure and stays on the issue', async ({ page }) => {
+	await fixture(page);
+	await page.route('**/api/workspaces/test/issues/ENG-1', (route) => route.fulfill({ json: chatIssue }));
+	await page.route('**/api/workspaces/test/conversations', (route) =>
+		route.fulfill({ status: 404, json: { error: { code: 'NOT_FOUND' } } })
+	);
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.goto('/test/issue/ENG-1');
+	await page.getByRole('button', { name: 'Chat with assistant', exact: true }).click();
+	await expect(page.getByText("Could not open this issue's conversation.")).toBeVisible();
+	await expect(page).toHaveURL(/\/issue\/ENG-1$/);
+	expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test('renders recorded tool calls from history and live events as escaped data', async ({ page }) => {
+	const state = await fixture(page);
+	const answered = { ...reply, status: 'completed', content: 'I created the issue.' };
+	state.messages = [userMessage, answered];
+	state.cursor = 4;
+	const created = {
+		id: 'tool-1',
+		conversation_id: 'chat-1',
+		message_id: answered.id,
+		sequence: 0,
+		call_id: 'call_1',
+		name: 'create_issue',
+		input: { team_key: 'ENG', title: 'Dark mode' },
+		status: 'completed',
+		output: { identifier: 'ENG-7', title: '<img src=x onerror="window.evil=1">' },
+		created_at: conversation.created_at
+	};
+	state.tools = [created];
+	await page.goto('/test/assistant?conversation=chat-1');
+	const trigger = page.getByRole('button', { name: 'Created ENG-7' });
+	await expect(trigger).toBeVisible();
+	await expect(page.getByRole('link', { name: 'ENG-7' })).toHaveAttribute('href', '/test/issue/ENG-7');
+	await trigger.click();
+	await expect(
+		page.locator('[data-slot="code-block-code"]').getByText('<img src=x onerror=', { exact: false })
+	).toBeVisible();
+	expect(await page.evaluate(() => (window as any).evil)).toBeUndefined();
+	await expect.poll(() => state.sockets.length).toBeGreaterThan(0);
+	const search = {
+		...created,
+		id: 'tool-2',
+		sequence: 1,
+		call_id: 'call_2',
+		name: 'search_issues',
+		input: { query: 'dark' },
+		status: 'running',
+		output: undefined
+	};
+	state.sockets
+		.at(-1)!
+		.send(JSON.stringify({ id: 'e5', cursor: 5, conversation_id: 'chat-1', type: 'tool.started', payload: search }));
+	await expect(page.getByText('Running Search issues', { exact: true })).toBeVisible();
+	const failed = { ...search, status: 'failed', error: 'query must be 1 to 200 characters' };
+	state.sockets
+		.at(-1)!
+		.send(JSON.stringify({ id: 'e6', cursor: 6, conversation_id: 'chat-1', type: 'tool.completed', payload: failed }));
+	await expect(page.getByRole('button', { name: 'Failed to run Search issues' })).toBeVisible();
+	// A late replay of the start must not hide the recorded failure.
+	state.sockets
+		.at(-1)!
+		.send(JSON.stringify({ id: 'e5', cursor: 5, conversation_id: 'chat-1', type: 'tool.started', payload: search }));
+	await expect(page.getByRole('button', { name: 'Failed to run Search issues' })).toBeVisible();
+	await expect(page.getByText('I created the issue.', { exact: true })).toBeVisible();
+	const updated = {
+		...created,
+		id: 'tool-3',
+		sequence: 2,
+		call_id: 'call_3',
+		name: 'update_issue',
+		input: { identifier: 'ENG-7', priority: 1 },
+		output: { identifier: 'ENG-7', title: 'Dark mode' }
+	};
+	state.sockets
+		.at(-1)!
+		.send(JSON.stringify({ id: 'e7', cursor: 7, conversation_id: 'chat-1', type: 'tool.completed', payload: updated }));
+	await expect(page.getByRole('button', { name: 'Updated ENG-7' })).toBeVisible();
+});
+
+test('asks for approval before delegating and records the decision from the backend', async ({ page }) => {
+	const state = await fixture(page);
+	const answered = { ...reply, status: 'completed', content: 'Approval is pending.' };
+	state.messages = [userMessage, answered];
+	const call = {
+		id: 'tool-9',
+		conversation_id: 'chat-1',
+		message_id: answered.id,
+		sequence: 0,
+		call_id: 'call_9',
+		name: 'delegate_issue',
+		input: { identifier: 'ENG-1' },
+		status: 'completed',
+		output: { approval_id: 'approval-1', status: 'pending_user_approval', identifier: 'ENG-1' },
+		created_at: conversation.created_at
+	};
+	state.tools = [call];
+	state.approvals = [
+		{
+			id: 'approval-1',
+			conversation_id: 'chat-1',
+			tool_call_id: 'tool-9',
+			action: 'delegate_issue',
+			actor_id: 'user-1',
+			issue_id: 'issue-1',
+			payload: {
+				identifier: 'ENG-1',
+				title: 'Dark mode',
+				instructions: '<b onmouseover="window.evil=1">Implement</b> dark mode'
+			},
+			status: 'pending',
+			expires_at: '2026-10-27T10:00:00Z',
+			created_at: conversation.created_at,
+			updated_at: conversation.created_at
+		}
+	];
+	await page.goto('/test/assistant?conversation=chat-1');
+	await expect(page.getByText('Start a coding agent on ENG-1?', { exact: true })).toBeVisible();
+	await expect(page.getByText('<b onmouseover=', { exact: false })).toBeVisible();
+	// The approval request closes the message: it comes after the reply's text.
+	const text = await page.getByText('Approval is pending.', { exact: true }).boundingBox();
+	const request = await page.getByText('Start a coding agent on ENG-1?', { exact: true }).boundingBox();
+	expect(request!.y).toBeGreaterThan(text!.y);
+	await page.setViewportSize({ width: 360, height: 800 });
+	await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeInViewport();
+	expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+	expect(await page.evaluate(() => (window as any).evil)).toBeUndefined();
+	state.decisionStatus = 500;
+	await page.getByRole('button', { name: 'Approve', exact: true }).click();
+	await expect(page.getByRole('alert').getByText('The decision could not be saved. Try again.')).toBeVisible();
+	state.decisionStatus = 200;
+	await page.getByRole('button', { name: 'Approve', exact: true }).click();
+	await expect(page.getByText('Coding agent started on ENG-1', { exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0);
+	const subagent = page.getByRole('button', { name: /Coding agent on ENG-1/ });
+	await expect(subagent).toBeVisible();
+	await expect(subagent).toContainText('Running');
+	await subagent.click();
+	await expect(page.getByText('Native coding harness started', { exact: true })).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Open the issue chat' })).toHaveAttribute(
+		'href',
+		'/test/assistant?conversation=chat-issue'
+	);
+	expect(state.decisions).toEqual(['approve', 'approve']);
+	await page.reload();
+	await expect(page.getByText('Coding agent started on ENG-1', { exact: true })).toBeVisible();
+	// A stale pending copy replayed later cannot reopen the decision.
+	await expect.poll(() => state.sockets.length).toBeGreaterThan(0);
+	state.sockets.at(-1)!.send(
+		JSON.stringify({
+			id: 'e9',
+			cursor: 9,
+			conversation_id: 'chat-1',
+			type: 'approval.requested',
+			payload: { ...state.approvals[0], status: 'pending', updated_at: conversation.created_at }
+		})
+	);
+	await expect(page.getByText('Coding agent started on ENG-1', { exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0);
+});
+
+test('the approval card runs the model on the model server the user picked', async ({ page }) => {
+	const state = await fixture(page);
+	const answered = { ...reply, status: 'completed', content: 'Approval is pending.' };
+	state.messages = [userMessage, answered];
+	state.tools = [
+		{
+			id: 'tool-9',
+			conversation_id: 'chat-1',
+			message_id: answered.id,
+			sequence: 0,
+			call_id: 'call_9',
+			name: 'delegate_issue',
+			input: { identifier: 'ENG-1' },
+			status: 'completed',
+			output: { approval_id: 'approval-1', status: 'pending_user_approval', identifier: 'ENG-1' },
+			created_at: conversation.created_at
+		}
+	];
+	state.approvals = [
+		{
+			id: 'approval-1',
+			conversation_id: 'chat-1',
+			tool_call_id: 'tool-9',
+			action: 'delegate_issue',
+			actor_id: 'user-1',
+			issue_id: 'issue-1',
+			payload: { identifier: 'ENG-1', title: 'Dark mode', instructions: 'Implement dark mode' },
+			status: 'pending',
+			expires_at: '2026-10-27T10:00:00Z',
+			created_at: conversation.created_at,
+			updated_at: conversation.created_at
+		}
+	];
+	// Two gateways list the same model name; only the server tells them apart.
+	const server = (id: string, name: string, is_default: boolean, models: string[]) => ({
+		id,
+		name,
+		models,
+		default_model: models[0],
+		fast_model: '',
+		thinking: 'high',
+		is_default,
+		harnesses: ['codex'],
+		thinking_levels: ['off', 'low', 'high', 'max'],
+		updated_at: conversation.created_at
+	});
+	await page.route('**/api/workspaces/test/conversations/chat-1/task-options', (route) =>
+		route.fulfill({
+			json: {
+				providers: [{ id: 'codex', display_name: 'Codex' }],
+				default_provider: 'codex',
+				model_servers: [
+					server('server-a', 'Gateway A', true, ['gpt-5']),
+					server('server-b', 'Gateway B', false, ['gpt-5', 'o4'])
+				]
+			}
+		})
+	);
+	const bodies: unknown[] = [];
+	page.on('request', (request) => {
+		if (request.method() === 'POST' && request.url().includes('/approvals/')) bodies.push(request.postDataJSON());
+	});
+	await page.goto('/test/assistant?conversation=chat-1');
+	const serverButton = page.getByRole('button', { name: 'Model server' });
+	await expect(serverButton).toHaveText('Gateway A');
+	await expect(page.getByRole('button', { name: 'Model', exact: true })).toHaveText('gpt-5');
+	await serverButton.click();
+	await page.getByRole('menuitemradio', { name: 'Gateway B' }).click();
+	await expect(serverButton).toHaveText('Gateway B');
+	await expect(page.getByRole('button', { name: 'Model', exact: true })).toHaveText('gpt-5');
+	await page.getByRole('button', { name: 'Approve', exact: true }).click();
+	await expect(page.getByText('Coding agent started on ENG-1', { exact: true })).toBeVisible();
+	expect(bodies).toEqual([{ decision: 'approve', model: 'gpt-5', model_server_id: 'server-b' }]);
+});
+
+test('a long conversation list scrolls inside the sidebar, never the page', async ({ page }) => {
+	const state = await fixture(page);
+	const many = Array.from({ length: 40 }, (_, i) => ({
+		...conversation,
+		id: `chat-${i + 2}`,
+		title: `Conversation ${i + 2}`
+	}));
+	await page.route('**/api/workspaces/test/conversations', (route) =>
+		route.fulfill({ json: route.request().method() === 'POST' ? conversation : [conversation, ...many] })
+	);
+	state.queue = [
+		{
+			id: 'b',
+			conversation_id: 'chat-b',
+			state: 'awaiting_review',
+			reason: '',
+			issue_identifier: 'ENG-2',
+			issue_title: 'Title ENG-2',
+			updated_at: conversation.created_at
+		}
+	];
+	await page.goto('/test/assistant?conversation=chat-1');
+	await expect(page.getByRole('region', { name: 'Background tasks', exact: true })).toBeAttached();
+	await expect(page.getByRole('navigation', { name: 'Conversations' }).getByRole('link')).toHaveCount(41);
+	// Visually hidden labels below the fold must not stretch the document.
+	expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight)).toBe(true);
+	await page.mouse.move(640, 300);
+	await page.mouse.wheel(0, 3000);
+	expect(await page.evaluate(() => window.scrollY)).toBe(0);
+});
+
+test('lists background agent work; failed tasks stay listed and finished ones fold into one row', async ({ page }) => {
+	const state = await fixture(page);
+	const item = (id: string, identifier: string, taskState: string) => ({
+		id,
+		conversation_id: `chat-${id}`,
+		state: taskState,
+		reason: '',
+		issue_identifier: identifier,
+		issue_title: `Title ${identifier}`,
+		provider: 'codex',
+		updated_at: conversation.created_at
+	});
+	state.queue = [
+		item('a', 'ENG-1', 'running'),
+		item('b', 'ENG-2', 'awaiting_review'),
+		item('c', 'WEB-3', 'completed'),
+		item('d', 'ENG-4', 'failed')
+	];
+	await page.goto('/test/assistant');
+	const queue = page.getByRole('region', { name: 'Background tasks', exact: true });
+	await expect(queue.getByText('3 in progress or waiting', { exact: true })).toBeAttached();
+	await expect(queue.getByRole('link', { name: /ENG-1 · Title ENG-1/ })).toHaveAttribute(
+		'href',
+		'/test/assistant?conversation=chat-a&agent=a'
+	);
+	await expect(queue.getByRole('link', { name: /ENG-2/ })).toBeVisible();
+	// A failure does not disappear into the finished row: it stays listed with its state.
+	const failed = queue.getByRole('link', { name: /ENG-4/ });
+	await expect(failed).toBeVisible();
+	await expect(failed.getByRole('img', { name: 'Failed' })).toBeAttached();
+	await expect(queue.getByRole('link', { name: /WEB-3/ })).toBeHidden();
+	await queue.getByRole('button', { name: '1 finished' }).click();
+	await expect(queue.getByRole('link', { name: /WEB-3/ })).toBeVisible();
+});
+
+test('three columns on desktop; both sidebars become drawers on narrow screens', async ({ page }) => {
+	await fixture(page);
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto('/test/assistant?conversation=chat-1');
+	const sidebar = page.getByRole('complementary', { name: 'Assistant sidebar' });
+	const conversationSection = page.getByRole('region', { name: 'Conversation', exact: true });
+	const panel = page.getByTestId('side-panel');
+	await expect(sidebar).toBeVisible();
+	await expect(conversationSection).toBeVisible();
+	await expect(panel).toBeVisible();
+	await expect(panel.getByText('Background tasks')).toBeVisible();
+	// The sidebar header holds the settings cog; there is no search button there and no user footer.
+	await expect(sidebar.getByRole('link', { name: 'Assistant', exact: true })).toHaveAttribute(
+		'href',
+		'/test/settings/assistant'
+	);
+	await expect(sidebar.getByRole('button', { name: 'Search conversations' })).toHaveCount(0);
+	await expect(sidebar.getByRole('searchbox', { name: 'Search conversations' })).toBeVisible();
+	const [left, middle, right] = await Promise.all([
+		sidebar.boundingBox(),
+		conversationSection.boundingBox(),
+		panel.boundingBox()
+	]);
+	expect(left!.x + left!.width).toBeLessThanOrEqual(middle!.x + 1);
+	expect(middle!.x + middle!.width).toBeLessThanOrEqual(right!.x + 1);
+	// The side panel can be closed and reopened from the conversation's top bar.
+	await page.getByRole('button', { name: 'Close panel' }).click();
+	await expect(panel).toHaveCount(0);
+	await page.getByRole('button', { name: 'Details', exact: true }).click();
+	await expect(page.getByTestId('side-panel')).toBeVisible();
+
+	await page.setViewportSize({ width: 390, height: 844 });
+	await expect(page.getByRole('complementary', { name: 'Assistant sidebar' })).toHaveCount(0);
+	await expect(page.getByTestId('side-panel')).toHaveCount(0);
+	expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+	await page.getByRole('button', { name: 'Show conversations' }).click();
+	const drawer = page.getByRole('dialog', { name: 'Assistant sidebar' });
+	await expect(drawer.getByRole('navigation', { name: 'Conversations' })).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(drawer).toHaveCount(0);
+	await page.getByRole('button', { name: 'Details', exact: true }).click();
+	const details = page.getByRole('dialog', { name: 'Details' });
+	await expect(details.getByText('Context', { exact: true })).toBeVisible();
+	await details.getByRole('button', { name: 'Close panel' }).click();
+	await expect(details).toHaveCount(0);
+});
+
+test('earlier history folds behind one row and unfolds again', async ({ page }) => {
+	const state = await fixture(page);
+	state.messages = longTranscript(12);
+	await page.goto('/test/assistant?conversation=chat-1');
+	await expect(page.locator('[data-slot="message"]')).toHaveCount(12);
+	await page.getByRole('button', { name: 'Collapse earlier messages' }).click();
+	await expect(page.locator('[data-slot="message"]')).toHaveCount(6);
+	await expect(page.getByText('History message 0.', { exact: false })).toHaveCount(0);
+	await expect(page.getByText('History message 11.', { exact: false })).toBeVisible();
+	// The choice is remembered.
+	await page.reload();
+	const show = page.getByRole('button', { name: 'Show 6 earlier messages' });
+	await expect(show).toBeVisible();
+	await show.click();
+	await expect(page.locator('[data-slot="message"]')).toHaveCount(12);
+});
+
+test('lists the issues a reply used and offers contextual suggestions', async ({ page }) => {
+	const state = await fixture(page);
+	await page.goto('/test/assistant?conversation=chat-1');
+	const suggestion = page.getByRole('button', { name: 'Which of my issues are in review?' });
+	await expect(suggestion).toBeVisible();
+	await suggestion.click();
+	await expect.poll(() => state.sends).toEqual(['Which of my issues are in review?']);
+
+	const answered = { ...reply, status: 'completed', content: 'Two issues are in review.' };
+	state.messages = [userMessage, answered];
+	state.tools = [
+		{
+			id: 't1',
+			conversation_id: 'chat-1',
+			message_id: answered.id,
+			sequence: 0,
+			call_id: 'c1',
+			name: 'search_issues',
+			input: { query: 'review' },
+			status: 'completed',
+			output: {
+				issues: [
+					{ identifier: 'ENG-1', title: 'Dark mode' },
+					{ identifier: 'ENG-2', title: 'Search' },
+					{ identifier: 'javascript:alert(1)', title: 'x' }
+				]
+			},
+			created_at: conversation.created_at
+		},
+		{
+			id: 't2',
+			conversation_id: 'chat-1',
+			message_id: answered.id,
+			sequence: 1,
+			call_id: 'c2',
+			name: 'get_issue',
+			input: { identifier: 'ENG-1' },
+			status: 'completed',
+			output: { identifier: 'ENG-1', title: 'Dark mode' },
+			created_at: conversation.created_at
+		},
+		{
+			id: 't3',
+			conversation_id: 'chat-1',
+			message_id: answered.id,
+			sequence: 2,
+			call_id: 'c3',
+			name: 'plan_issues',
+			input: { identifiers: ['ENG-1', 'ENG-2'] },
+			status: 'completed',
+			output: { waves: [[{ identifier: 'ENG-1', title: 'Dark mode' }], [{ identifier: 'ENG-2', title: 'Search' }]] },
+			created_at: conversation.created_at
+		}
+	];
+	await page.reload();
+	await expect(page.getByText('Ran Plan issues')).toBeVisible();
+	const sources = page.getByRole('button', { name: 'Used 2 issues' });
+	await expect(sources).toBeVisible();
+	await sources.click();
+	await expect(page.getByRole('link', { name: /ENG-2 · Search/ })).toHaveAttribute('href', '/test/issue/ENG-2');
+	await expect(page.getByRole('link', { name: /javascript/ })).toHaveCount(0);
+});
+
+test('groups conversations into folders and deletes one after confirmation', async ({ page }) => {
+	await fixture(page);
+	const other = { ...conversation, id: 'chat-2', title: 'Release notes' };
+	const folders: { id: string; name: string }[] = [];
+	const moves: unknown[] = [];
+	const deletes: string[] = [];
+	await page.route('**/api/workspaces/test/conversations', (route) =>
+		route.fulfill({ json: route.request().method() === 'POST' ? conversation : [conversation, other] })
+	);
+	await page.route('**/api/workspaces/test/conversation-folders', (route) => {
+		if (route.request().method() === 'POST') {
+			const folder = { id: 'folder-1', name: route.request().postDataJSON().name };
+			folders.push(folder);
+			return route.fulfill({ status: 201, json: folder });
+		}
+		return route.fulfill({ json: folders });
+	});
+	await page.route('**/api/workspaces/test/conversations/chat-2', (route) => {
+		if (route.request().method() === 'PATCH') {
+			moves.push(route.request().postDataJSON());
+			return route.fulfill({ json: { ...other, folder_id: route.request().postDataJSON().folder_id } });
+		}
+		if (route.request().method() === 'DELETE') {
+			deletes.push('chat-2');
+			return route.fulfill({ status: 204 });
+		}
+		return route.fallback();
+	});
+	await page.goto('/test/assistant?conversation=chat-1');
+	const nav = page.getByRole('navigation', { name: 'Conversations' });
+	await expect(nav.getByRole('link', { name: 'Release notes' })).toBeVisible();
+	const live = page.getByRole('button', { name: 'Live' });
+	await live.click();
+	await expect(
+		page.getByText('Connected. New messages, tool calls and agent updates appear here as they happen.')
+	).toBeVisible();
+	await page.keyboard.press('Escape');
+
+	await page.getByRole('button', { name: 'New folder' }).click();
+	// The folder is named in place, in the list.
+	const name = nav.getByRole('textbox', { name: 'Folder name' });
+	await expect(name).toBeFocused();
+	await name.fill('Releases');
+	await name.press('Enter');
+	await expect(nav.getByRole('button', { name: /^Releases \d+$/ })).toBeVisible();
+
+	await nav.getByRole('button', { name: 'Actions for Release notes' }).click();
+	await page.getByRole('menuitem', { name: 'Move to', exact: true }).click();
+	await page.getByRole('menuitem', { name: 'Releases' }).click();
+	await expect.poll(() => moves).toEqual([{ folder_id: 'folder-1' }]);
+	const folder = nav.getByRole('button', { name: /^Releases \d+$/ });
+	await expect(folder).toContainText('1');
+	// Folders start collapsed unless they hold the open conversation.
+	await expect(nav.getByRole('link', { name: 'Release notes' })).toBeHidden();
+	await folder.click();
+	await expect(nav.getByRole('link', { name: 'Release notes' })).toBeVisible();
+
+	await nav.getByRole('button', { name: 'Actions for Release notes' }).click();
+	await page.getByRole('menuitem', { name: 'Delete' }).click();
+	const dialog = page.getByRole('alertdialog');
+	await expect(dialog).toContainText('Release notes');
+	await dialog.getByRole('button', { name: 'Delete' }).click();
+	await expect.poll(() => deletes).toEqual(['chat-2']);
+	await expect(nav.getByRole('link', { name: 'Release notes' })).toHaveCount(0);
+});
+
+test('drags a conversation into a folder and back out to the list', async ({ page }) => {
+	await fixture(page);
+	const other = { ...conversation, id: 'chat-2', title: 'Release notes' };
+	const folders = [{ id: 'folder-1', name: 'Releases' }];
+	const moves: unknown[] = [];
+	let current = { ...other, folder_id: null as string | null };
+	await page.route('**/api/workspaces/test/conversations', (route) =>
+		route.fulfill({ json: route.request().method() === 'POST' ? conversation : [conversation, current] })
+	);
+	await page.route('**/api/workspaces/test/conversation-folders', (route) => route.fulfill({ json: folders }));
+	await page.route('**/api/workspaces/test/conversations/chat-2', (route) => {
+		if (route.request().method() !== 'PATCH') return route.fallback();
+		const body = route.request().postDataJSON();
+		moves.push(body);
+		current = { ...current, folder_id: body.folder_id };
+		return route.fulfill({ json: current });
+	});
+	await page.goto('/test/assistant?conversation=chat-1');
+	const nav = page.getByRole('navigation', { name: 'Conversations' });
+	const row = nav.locator('[data-conversation="chat-2"]');
+	const folder = nav.getByRole('group', { name: 'Folder Releases' });
+	await expect(row).toBeVisible();
+	await row.dragTo(folder);
+	await expect.poll(() => moves).toEqual([{ folder_id: 'folder-1' }]);
+	// The folder opens to show where the conversation went.
+	await expect(nav.getByRole('button', { name: /^Releases 1$/ })).toBeVisible();
+	await expect(nav.getByRole('link', { name: 'Release notes' })).toBeVisible();
+	// Dropping on the list itself takes it out of the folder again.
+	await nav.locator('[data-conversation="chat-2"]').dragTo(nav.locator('[data-conversation="chat-1"]'));
+	await expect.poll(() => moves).toEqual([{ folder_id: 'folder-1' }, { folder_id: null }]);
+	await expect(nav.getByRole('button', { name: /^Releases 0$/ })).toBeVisible();
+	// Dropping where it already is changes nothing.
+	await nav.locator('[data-conversation="chat-2"]').dragTo(nav.locator('[data-conversation="chat-1"]'));
+	await page.waitForTimeout(200);
+	expect(moves).toHaveLength(2);
+});
+
+test('renames a conversation in place from its menu', async ({ page }) => {
+	await fixture(page);
+	const renames: unknown[] = [];
+	await page.route('**/api/workspaces/test/conversations/chat-1', (route) => {
+		if (route.request().method() !== 'PATCH') return route.fallback();
+		const body = route.request().postDataJSON();
+		renames.push(body);
+		return route.fulfill({ json: { ...conversation, title: body.title.trim() } });
+	});
+	await page.goto('/test/assistant?conversation=chat-1');
+	const nav = page.getByRole('navigation', { name: 'Conversations' });
+	const header = page.getByRole('region', { name: 'Conversation' });
+	await expect(nav.getByRole('link', { name: 'A persistent conversation' })).toBeVisible();
+	await expect(header.getByText('A persistent conversation')).toBeVisible();
+
+	// Escape keeps the old title and sends nothing.
+	await nav.getByRole('button', { name: 'Actions for A persistent conversation' }).click();
+	await page.getByRole('menuitem', { name: 'Rename' }).click();
+	const field = nav.getByRole('textbox', { name: 'Conversation name' });
+	await expect(field).toBeFocused();
+	await expect(field).toHaveValue('A persistent conversation');
+	await field.fill('Discarded');
+	await field.press('Escape');
+	await expect(nav.getByRole('link', { name: 'A persistent conversation' })).toBeVisible();
+	expect(renames).toEqual([]);
+
+	await nav.getByRole('button', { name: 'Actions for A persistent conversation' }).click();
+	await page.getByRole('menuitem', { name: 'Rename' }).click();
+	await field.fill('  Launch plan ');
+	await field.press('Enter');
+	await expect.poll(() => renames).toEqual([{ title: 'Launch plan' }]);
+	await expect(nav.getByRole('link', { name: 'Launch plan' })).toBeVisible();
+	// The open conversation's header follows the new title.
+	await expect(header.getByText('Launch plan')).toBeVisible();
+});
+
+async function projectFixture(page: Page) {
+	const projects = [
+		{ id: 'p-1', name: 'Launch', team_id: null },
+		{ id: 'p-2', name: 'Company', team_id: null }
+	];
+	const tagged = { ...conversation, project_id: 'p-1', project: projects[0] };
+	const loose = { ...conversation, id: 'chat-2', title: 'Release notes', project_id: null, project: null };
+	const issueChat = {
+		...conversation,
+		id: 'chat-3',
+		title: 'ENG-1 · Fix login',
+		issue_id: 'issue-1',
+		team_id: 'team-1',
+		project_id: null,
+		project: null
+	};
+	const chats = [tagged, loose, issueChat];
+	const requests = { lists: [] as (string | null)[], creates: [] as unknown[], patches: [] as unknown[] };
+	await page.route('**/api/workspaces/test/projects', (route) => route.fulfill({ json: projects }));
+	await page.route(
+		(url) => url.pathname === '/api/workspaces/test/conversations',
+		(route) => {
+			if (route.request().method() === 'POST') {
+				requests.creates.push(route.request().postDataJSON());
+				return route.fulfill({ status: 201, json: tagged });
+			}
+			const filter = new URL(route.request().url()).searchParams.get('project_id');
+			requests.lists.push(filter);
+			const list = chats.filter((c) => !filter || (filter === 'none' ? !c.project : c.project?.id === filter));
+			return route.fulfill({ json: list });
+		}
+	);
+	await page.route('**/api/workspaces/test/conversations/chat-1', (route) => {
+		if (route.request().method() !== 'PATCH') return route.fallback();
+		const body = route.request().postDataJSON();
+		requests.patches.push(body);
+		tagged.project_id = body.project_id;
+		tagged.project = projects.find((p) => p.id === body.project_id) ?? (null as never);
+		return route.fulfill({ json: tagged });
+	});
+	return requests;
+}
+
+test('filters conversations by project, tags rows and moves a chat to another project', async ({ page }, testInfo) => {
+	await fixture(page);
+	const requests = await projectFixture(page);
+	await page.goto('/test/assistant?conversation=chat-1');
+	const nav = page.getByRole('navigation', { name: 'Conversations' });
+	// Rows carry their project; the issue chat and the loose chat have none.
+	await expect(nav.getByText('Launch', { exact: true })).toHaveCount(1);
+	await expect(nav.getByText('Launch', { exact: true })).toBeVisible();
+	await expect(nav.getByRole('link', { name: 'Release notes' })).toBeVisible();
+	await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('project-chips-desktop.png') });
+
+	const filter = page.getByRole('combobox', { name: 'Project filter' });
+	await expect(filter).toHaveText('All projects');
+	await filter.click();
+	await page.getByRole('option', { name: 'No project' }).click();
+	await expect(nav.getByRole('link', { name: 'Release notes' })).toBeVisible();
+	await expect(nav.getByRole('link', { name: 'A persistent conversation' })).toHaveCount(0);
+	await filter.click();
+	await page.getByRole('option', { name: 'Launch' }).click();
+	await expect(nav.getByRole('link', { name: 'A persistent conversation' })).toBeVisible();
+	await expect(nav.getByRole('link', { name: 'Release notes' })).toHaveCount(0);
+	expect(requests.lists).toEqual([null, 'none', 'p-1']);
+
+	// An issue chat follows its issue's project, so it cannot be moved.
+	await filter.click();
+	await page.getByRole('option', { name: 'All projects' }).click();
+	await nav.getByRole('button', { name: 'Actions for ENG-1 · Fix login' }).click();
+	await page.getByRole('menuitem', { name: 'Move to project' }).click();
+	await expect(page.getByRole('menuitem', { name: 'Company' })).toBeDisabled();
+	await page.keyboard.press('Escape');
+	await page.keyboard.press('Escape');
+
+	await filter.click();
+	await page.getByRole('option', { name: 'Launch' }).click();
+	await nav.getByRole('button', { name: 'Actions for A persistent conversation' }).click();
+	await page.getByRole('menuitem', { name: 'Move to project' }).click();
+	await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('move-to-project-desktop.png') });
+	await page.getByRole('menuitem', { name: 'Company' }).click();
+	await expect.poll(() => requests.patches).toEqual([{ project_id: 'p-2' }]);
+	// It no longer belongs to the filtered project.
+	await expect(nav.getByRole('link', { name: 'A persistent conversation' })).toHaveCount(0);
+});
+
+test('a new chat starts in the filtered project and the filter is remembered', async ({ page }, testInfo) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await fixture(page);
+	const requests = await projectFixture(page);
+	await page.goto('/test/assistant');
+	await page.getByRole('button', { name: 'Conversations' }).click();
+	const filter = page.getByRole('combobox', { name: 'Project filter' });
+	await filter.click();
+	await page.getByRole('option', { name: 'Launch' }).click();
+	await expect(
+		page.getByRole('navigation', { name: 'Conversations' }).getByText('A persistent conversation')
+	).toBeVisible();
+	expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+	await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('project-filter-mobile.png') });
+
+	await page.reload();
+	await expect.poll(() => requests.lists.at(-1)).toBe('p-1');
+	await page.getByRole('textbox', { name: 'Message' }).fill('Plan the launch');
+	await page.getByRole('textbox', { name: 'Message' }).press('Enter');
+	await expect.poll(() => requests.creates).toEqual([{ title: 'Plan the launch', project_id: 'p-1' }]);
+});
+
+test('asks for approval before merging the reviewed pull request', async ({ page }) => {
+	const state = await fixture(page);
+	const answered = { ...reply, status: 'completed', content: 'Merge approval is pending.' };
+	state.messages = [userMessage, answered];
+	state.tools = [
+		{
+			id: 'tool-10',
+			conversation_id: 'chat-1',
+			message_id: answered.id,
+			sequence: 0,
+			call_id: 'call_10',
+			name: 'merge_pull_request',
+			input: { identifier: 'ENG-1' },
+			status: 'completed',
+			output: { approval_id: 'approval-2', status: 'pending_user_approval', identifier: 'ENG-1' },
+			created_at: conversation.created_at
+		}
+	];
+	state.approvals = [
+		{
+			id: 'approval-2',
+			conversation_id: 'chat-1',
+			tool_call_id: 'tool-10',
+			action: 'merge_pull_request',
+			actor_id: 'user-1',
+			issue_id: 'issue-1',
+			payload: {
+				identifier: 'ENG-1',
+				title: 'Dark mode',
+				task_id: 'task-9',
+				repository: 'acme/app',
+				pull_request: 12,
+				pull_request_url: 'https://github.com/acme/app/pull/12',
+				commit: '0123456789abcdef0123456789abcdef01234567'
+			},
+			status: 'pending',
+			expires_at: '2026-10-27T10:00:00Z',
+			created_at: conversation.created_at,
+			updated_at: conversation.created_at
+		}
+	] as any;
+	await page.goto('/test/assistant?conversation=chat-1');
+	await expect(page.getByText('Merge pull request #12 for ENG-1?', { exact: true })).toBeVisible();
+	await expect(
+		page.getByText('Merges (squash) the reviewed commit 0123456 of Dark mode in acme/app.', { exact: false })
+	).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Open pull request' })).toHaveAttribute(
+		'href',
+		'https://github.com/acme/app/pull/12'
+	);
+	await page.getByRole('button', { name: 'Approve', exact: true }).click();
+	await expect(page.getByText('Merged the pull request for ENG-1', { exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: /Coding agent on ENG-1/ })).toHaveCount(0);
+	expect(state.decisions).toEqual(['approve']);
+});
+
+const pullRequestPayload = {
+	identifier: 'ENG-1',
+	title: 'Dark mode',
+	task_id: 'task-9',
+	repository: 'acme/app',
+	pull_request: 12,
+	pull_request_url: 'https://github.com/acme/app/pull/12',
+	draft: false
+};
+
+const pullRequestCards: {
+	name: string;
+	payload: Record<string, unknown>;
+	title: string;
+	text: string[];
+	done: string;
+}[] = [
+	{
+		name: 'reply_to_review_comment',
+		payload: {
+			comment_id: 55,
+			thread_id: 'T1',
+			author: 'chatgpt-codex-connector',
+			bot: true,
+			path: 'src/app.go',
+			excerpt: 'Possible nil dereference when the cache is empty',
+			body: 'Fixed in 1a2b3c4: the cache is now checked first.'
+		},
+		title: 'Reply to chatgpt-codex-connector on pull request #12 for ENG-1?',
+		text: [
+			'chatgpt-codex-connector is a bot reviewer.',
+			'Possible nil dereference when the cache is empty',
+			'Fixed in 1a2b3c4: the cache is now checked first.'
+		],
+		done: 'Changed the pull request for ENG-1'
+	},
+	{
+		name: 'resolve_review_thread',
+		payload: { thread_id: 'T1', author: 'maintainer', path: 'src/app.go', comment_id: 55, excerpt: 'Add a test' },
+		title: 'Resolve the review thread on src/app.go for ENG-1?',
+		text: ['Add a test'],
+		done: 'Changed the pull request for ENG-1'
+	},
+	{
+		name: 'update_pull_request_branch',
+		payload: { head: '0123456789abcdef0123456789abcdef01234567', base: 'main', behind: 3 },
+		title: 'Update the branch of pull request #12 for ENG-1?',
+		text: ['only while its head is still 0123456', 'It cannot resolve conflicts'],
+		done: 'Changed the pull request for ENG-1'
+	},
+	{
+		name: 'mark_pull_request_ready',
+		payload: { draft: false },
+		title: 'Mark pull request #12 for ENG-1 ready for review?',
+		text: ['Changes the draft state of Dark mode in acme/app on GitHub.'],
+		done: 'Changed the pull request for ENG-1'
+	},
+	{
+		name: 'mark_pull_request_ready',
+		payload: { draft: true },
+		title: 'Put pull request #12 for ENG-1 back to draft?',
+		text: ['Changes the draft state of Dark mode in acme/app on GitHub.'],
+		done: 'Changed the pull request for ENG-1'
+	}
+];
+
+for (const card of pullRequestCards) {
+	test(`${card.name} (${JSON.stringify(card.payload.draft ?? '')}) waits for approval and shows exactly what changes`, async ({
+		page
+	}) => {
+		const state = await fixture(page);
+		machineApproval(state, card.name, { ...pullRequestPayload, ...card.payload });
+		await page.goto('/test/assistant?conversation=chat-1');
+		await expect(page.getByText(card.title, { exact: true })).toBeVisible();
+		for (const text of card.text) await expect(page.getByText(text, { exact: false })).toBeVisible();
+		await expect(page.getByRole('link', { name: 'Open pull request' })).toHaveAttribute(
+			'href',
+			'https://github.com/acme/app/pull/12'
+		);
+		// Nothing is decided before the user answers.
+		expect(state.decisions).toEqual([]);
+		await page.getByRole('button', { name: 'Approve', exact: true }).click();
+		await expect(page.getByText(card.done, { exact: true })).toBeVisible();
+		expect(state.decisions).toEqual(['approve']);
+	});
+}
+
+test('denying a pull request change records the denial and changes nothing', async ({ page }) => {
+	const state = await fixture(page);
+	machineApproval(state, 'resolve_review_thread', { ...pullRequestPayload, thread_id: 'T1', path: 'a.go' });
+	await page.goto('/test/assistant?conversation=chat-1');
+	await page.getByRole('button', { name: 'Deny', exact: true }).click();
+	await expect(page.getByText('Denied changing the pull request for ENG-1', { exact: true })).toBeVisible();
+	expect(state.decisions).toEqual(['deny']);
+});
+
+test('a failed pull request change shows GitHub’s reason and the next step', async ({ page }) => {
+	const state = await fixture(page);
+	machineApproval(state, 'update_pull_request_branch', {
+		...pullRequestPayload,
+		head: '0123456789abcdef',
+		base: 'main'
+	});
+	state.approvals[0].status = 'failed' as any;
+	(state.approvals[0] as any).error =
+		'GitHub refused: merge conflict. If the branch has conflicts or moved, ask for update_pull_request_branch again so the task agent merges the base itself';
+	await page.goto('/test/assistant?conversation=chat-1');
+	await expect(
+		page.getByText(/Could not change the pull request for ENG-1: GitHub refused: merge conflict/)
+	).toBeVisible();
+	await expect(page.getByText(/task agent merges the base itself/)).toBeVisible();
+});
+
+test('merge approval shows the commit others pushed after the task was published', async ({ page }) => {
+	const state = await fixture(page);
+	const answered = { ...reply, status: 'completed', content: 'Merge approval is pending.' };
+	state.messages = [userMessage, answered];
+	state.tools = [
+		{
+			id: 'tool-10',
+			conversation_id: 'chat-1',
+			message_id: answered.id,
+			sequence: 0,
+			call_id: 'call_10',
+			name: 'merge_pull_request',
+			input: { identifier: 'ENG-1' },
+			status: 'completed',
+			output: { approval_id: 'approval-2', status: 'pending_user_approval', identifier: 'ENG-1' },
+			created_at: conversation.created_at
+		}
+	];
+	state.approvals = [
+		{
+			id: 'approval-2',
+			conversation_id: 'chat-1',
+			tool_call_id: 'tool-10',
+			action: 'merge_pull_request',
+			actor_id: 'user-1',
+			issue_id: 'issue-1',
+			payload: {
+				identifier: 'ENG-1',
+				title: 'Dark mode',
+				task_id: 'task-9',
+				repository: 'acme/app',
+				pull_request: 108,
+				pull_request_url: 'https://github.com/acme/app/pull/108',
+				commit: '3220dbc9aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+				published_commit: '15af2c3abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+				head_change: {
+					kind: 'merge',
+					tree_changed: false,
+					commits: [
+						{
+							sha: '3220dbc9aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+							author: 'maintainer',
+							subject: "Merge branch 'main'",
+							merge: true
+						}
+					]
+				}
+			},
+			status: 'pending',
+			expires_at: '2026-10-27T10:00:00Z',
+			created_at: conversation.created_at,
+			updated_at: conversation.created_at
+		}
+	] as any;
+	await page.goto('/test/assistant?conversation=chat-1');
+	await expect(page.getByText('Merge pull request #108 for ENG-1?', { exact: true })).toBeVisible();
+	// The card names the exact commit that merges, not the one Kuayle published.
+	await expect(page.getByText('reviewed commit 3220dbc of Dark mode', { exact: false })).toBeVisible();
+	const change = page.getByTestId('merge-head-change');
+	await expect(change).toContainText('Since Kuayle published 15af2c3, a branch was merged into this pull request.');
+	await expect(change).toContainText('The files are identical to what Kuayle published.');
+	await expect(page.getByTestId('merge-review-stale')).toContainText('re-run the agent review');
+	await expect(change).toContainText("3220dbc by maintainer: Merge branch 'main'");
+	await page.getByRole('button', { name: 'Approve', exact: true }).click();
+	expect(state.decisions).toEqual(['approve']);
+});
+
+test('an approval card names the GitHub App permissions the action lacks', async ({ page }) => {
+	const state = await fixture(page);
+	const answered = { ...reply, status: 'completed', content: 'Approval is pending.' };
+	state.messages = [userMessage, answered];
+	state.tools = [
+		{
+			id: 'tool-11',
+			conversation_id: 'chat-1',
+			message_id: answered.id,
+			sequence: 0,
+			call_id: 'call_11',
+			name: 'merge_pull_request',
+			input: { identifier: 'ENG-1' },
+			status: 'completed',
+			output: { approval_id: 'approval-3', status: 'pending_user_approval', identifier: 'ENG-1' },
+			created_at: conversation.created_at
+		}
+	];
+	const approval = (githubAccess: Record<string, unknown>) => ({
+		id: 'approval-3',
+		conversation_id: 'chat-1',
+		tool_call_id: 'tool-11',
+		action: 'merge_pull_request',
+		actor_id: 'user-1',
+		issue_id: 'issue-1',
+		payload: {
+			identifier: 'ENG-1',
+			title: 'Dark mode',
+			task_id: 'task-9',
+			repository: 'acme/app',
+			pull_request: 108,
+			pull_request_url: 'https://github.com/acme/app/pull/108',
+			commit: '3220dbc9aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+			github_access: githubAccess
+		},
+		status: 'pending',
+		expires_at: '2026-10-27T10:00:00Z',
+		created_at: conversation.created_at,
+		updated_at: conversation.created_at
+	});
+	state.approvals = [
+		approval({
+			missing: [{ name: 'contents', level: 'write' }],
+			settings_url: 'https://github.com/settings/apps/kuayle/permissions',
+			message: 'The GitHub App lacks permissions this needs (contents: write).'
+		})
+	] as any;
+	await page.goto('/test/assistant?conversation=chat-1');
+	const gap = page.getByTestId('github-access-gap');
+	await expect(gap).toContainText('GitHub App permission missing');
+	await expect(gap).toContainText('(contents: write)');
+	await expect(gap.getByRole('link', { name: 'Open GitHub App settings' })).toHaveAttribute(
+		'href',
+		'https://github.com/settings/apps/kuayle/permissions'
+	);
+	// The approval stays available: approving re-checks the permission.
+	await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeEnabled();
+
+	state.approvals = [approval({ missing: [], unverified: true, message: 'GitHub did not answer.' })] as any;
+	await page.reload();
+	await expect(page.getByTestId('github-access-gap')).toContainText("Couldn't verify GitHub App permissions");
+	await expect(page.getByTestId('github-access-gap').getByRole('link')).toHaveCount(0);
+});
+
+test('merge approval warns when the list of commits others pushed is truncated', async ({ page }) => {
+	const state = await fixture(page);
+	const answered = { ...reply, status: 'completed', content: 'Merge approval is pending.' };
+	state.messages = [userMessage, answered];
+	state.tools = [
+		{
+			id: 'tool-10',
+			conversation_id: 'chat-1',
+			message_id: answered.id,
+			sequence: 0,
+			call_id: 'call_10',
+			name: 'merge_pull_request',
+			input: { identifier: 'ENG-1' },
+			status: 'completed',
+			output: { approval_id: 'approval-2', status: 'pending_user_approval', identifier: 'ENG-1' },
+			created_at: conversation.created_at
+		}
+	];
+	state.approvals = [
+		{
+			id: 'approval-2',
+			conversation_id: 'chat-1',
+			tool_call_id: 'tool-10',
+			action: 'merge_pull_request',
+			actor_id: 'user-1',
+			issue_id: 'issue-1',
+			payload: {
+				identifier: 'ENG-1',
+				title: 'Dark mode',
+				task_id: 'task-9',
+				repository: 'acme/app',
+				pull_request: 108,
+				pull_request_url: 'https://github.com/acme/app/pull/108',
+				commit: '3220dbc9aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+				published_commit: '15af2c3abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+				head_change: {
+					kind: 'merge',
+					tree_changed: true,
+					truncated: true,
+					total_commits: 121,
+					commits: [
+						{
+							sha: '3220dbc9aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+							author: 'maintainer',
+							subject: "Merge branch 'main'",
+							merge: true
+						}
+					]
+				}
+			},
+			status: 'pending',
+			expires_at: '2026-10-27T10:00:00Z',
+			created_at: conversation.created_at,
+			updated_at: conversation.created_at
+		}
+	] as any;
+	await page.goto('/test/assistant?conversation=chat-1');
+	await expect(page.getByText('Merge pull request #108 for ENG-1?', { exact: true })).toBeVisible();
+	// The card names the exact commit that merges, not the one Kuayle published.
+	await expect(page.getByText('reviewed commit 3220dbc of Dark mode', { exact: false })).toBeVisible();
+	await expect(page.getByTestId('merge-head-truncated')).toContainText(
+		'120 more commits not shown — inspect the pull request on GitHub before approving.'
+	);
+	await expect(page.getByRole('link', { name: 'Open pull request' })).toHaveAttribute(
+		'href',
+		'https://github.com/acme/app/pull/108'
+	);
+});
+
+test('asks for approval before accepting work in Kuayle without merging', async ({ page }) => {
+	const state = await fixture(page);
+	const answered = { ...reply, status: 'completed', content: 'Acceptance approval is pending.' };
+	state.messages = [userMessage, answered];
+	state.tools = [
+		{
+			id: 'tool-11',
+			conversation_id: 'chat-1',
+			message_id: answered.id,
+			sequence: 0,
+			call_id: 'call_11',
+			name: 'accept_agent_work',
+			input: { identifier: 'ENG-1' },
+			status: 'completed',
+			output: { approval_id: 'approval-3', status: 'pending_user_approval', identifier: 'ENG-1' },
+			created_at: conversation.created_at
+		}
+	];
+	state.approvals = [
+		{
+			id: 'approval-3',
+			conversation_id: 'chat-1',
+			tool_call_id: 'tool-11',
+			action: 'accept_agent_work',
+			actor_id: 'user-1',
+			issue_id: 'issue-1',
+			payload: {
+				identifier: 'ENG-1',
+				title: 'Dark mode',
+				task_id: 'task-9',
+				generation: 2,
+				pull_request: 12,
+				pull_request_url: 'https://github.com/acme/app/pull/12',
+				commit: '0123456789abcdef0123456789abcdef01234567'
+			},
+			status: 'pending',
+			expires_at: '2026-10-27T10:00:00Z',
+			created_at: conversation.created_at,
+			updated_at: conversation.created_at
+		}
+	] as any;
+	await page.goto('/test/assistant?conversation=chat-1');
+	await expect(page.getByText('Accept the work on ENG-1 without merging?', { exact: true })).toBeVisible();
+	await expect(
+		page.getByText('Completes iteration 2 of Dark mode in Kuayle. Pull request #12 stays open and is not merged.', {
+			exact: false
+		})
+	).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Open pull request' })).toHaveAttribute(
+		'href',
+		'https://github.com/acme/app/pull/12'
+	);
+	await page.getByRole('button', { name: 'Approve', exact: true }).click();
+	await expect(page.getByText('Accepted the work on ENG-1 without merging', { exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: /Coding agent on ENG-1/ })).toHaveCount(0);
+	expect(state.decisions).toEqual(['approve']);
+});
+
+test('a requested review and a follow-up wait for approval in the chat', async ({ page }) => {
+	const state = await fixture(page);
+	const answered = { ...reply, status: 'completed', content: 'Review approval is pending.' };
+	state.messages = [userMessage, answered];
+	const call = (id: string, sequence: number, name: string, approval: string) => ({
+		id,
+		conversation_id: 'chat-1',
+		message_id: answered.id,
+		sequence,
+		call_id: `call_${id}`,
+		name,
+		input: { identifier: 'ENG-1' },
+		status: 'completed',
+		output: { approval_id: approval, status: 'pending_user_approval', identifier: 'ENG-1' },
+		created_at: conversation.created_at
+	});
+	state.tools = [
+		call('tool-20', 0, 'request_agent_review', 'approval-20'),
+		call('tool-21', 1, 'follow_up_task', 'approval-21')
+	];
+	const base = {
+		conversation_id: 'chat-1',
+		actor_id: 'user-1',
+		issue_id: 'issue-1',
+		status: 'pending',
+		expires_at: '2026-10-27T10:00:00Z',
+		created_at: conversation.created_at,
+		updated_at: conversation.created_at
+	};
+	state.approvals = [
+		{
+			...base,
+			id: 'approval-20',
+			tool_call_id: 'tool-20',
+			action: 'request_agent_review',
+			payload: {
+				identifier: 'ENG-1',
+				title: 'Dark mode',
+				task_id: 'task-9',
+				harness: 'claude-code',
+				focus: 'Error handling',
+				post_to_pull_request: false,
+				pull_request: 12,
+				pull_request_url: 'https://github.com/acme/app/pull/12',
+				commit: '0123456789abcdef0123456789abcdef01234567'
+			}
+		},
+		{
+			...base,
+			id: 'approval-21',
+			tool_call_id: 'tool-21',
+			action: 'follow_up_task',
+			payload: {
+				identifier: 'ENG-1',
+				title: 'Dark mode',
+				task_id: 'task-9',
+				generation: 1,
+				instructions: 'Fix the review findings'
+			}
+		}
+	] as any;
+	await page.goto('/test/assistant?conversation=chat-1');
+	await expect(page.getByText('Review ENG-1 with Claude Code?', { exact: true })).toBeVisible();
+	await expect(
+		page.getByText('The agent reviews commit 0123456 of pull request #12 without pushing anything.', { exact: true })
+	).toBeVisible();
+	await expect(
+		page.getByText('The findings stay in Kuayle; nothing is posted on GitHub.', { exact: true })
+	).toBeVisible();
+	await expect(page.getByText('Error handling', { exact: true })).toBeVisible();
+	await expect(page.getByText('Start a follow-up on ENG-1?', { exact: true })).toBeVisible();
+	await expect(page.getByText('Fix the review findings', { exact: true })).toBeVisible();
+	await page.getByRole('button', { name: 'Approve', exact: true }).first().click();
+	await expect(page.getByText('Claude Code review of ENG-1 started', { exact: true })).toBeVisible();
+	expect(state.decisions).toEqual(['approve']);
+});
+
+// Preview and port approvals: the card says which machine and port and who
+// can open the link; once approved, the chat opens the port through the API.
+async function machinePorts(page: Page, ports: () => any[]) {
+	const launches: string[] = [];
+	await page.route('**/api/workspaces/test/dev-machines/machine-1/ports**', (route) => {
+		const path = new URL(route.request().url()).pathname;
+		const launch = path.match(/\/ports\/([^/]+)\/launch$/);
+		if (launch) {
+			launches.push(launch[1]);
+			const target = ports().find((p) => p.id === launch[1]);
+			return route.fulfill({
+				status: 201,
+				json: { status: 'ready', launch_url: `https://${target.host}/?ticket=redacted` }
+			});
+		}
+		return route.fulfill({ json: { ports: ports(), listening: [], scanned_at: null } });
+	});
+	await page
+		.context()
+		.route('https://*.machines.example.test/**', (route) =>
+			route.fulfill({ contentType: 'text/html', body: '<title>App</title>' })
+		);
+	return launches;
+}
+
+function machineApproval(state: Awaited<ReturnType<typeof fixture>>, name: string, payload: Record<string, unknown>) {
+	const answered = { ...reply, status: 'completed', content: 'Approval is pending.' };
+	state.messages = [userMessage, answered];
+	state.tools = [
+		{
+			id: 'tool-30',
+			conversation_id: 'chat-1',
+			message_id: answered.id,
+			sequence: 0,
+			call_id: 'call_30',
+			name,
+			input: { identifier: 'ENG-1' },
+			status: 'completed',
+			output: { approval_id: 'approval-30', status: 'pending_user_approval', identifier: 'ENG-1' },
+			created_at: conversation.created_at
+		}
+	];
+	state.approvals = [
+		{
+			id: 'approval-30',
+			conversation_id: 'chat-1',
+			tool_call_id: 'tool-30',
+			action: name,
+			actor_id: 'user-1',
+			issue_id: 'issue-1',
+			payload: {
+				identifier: 'ENG-1',
+				title: 'Dark mode',
+				task_id: 'task-9',
+				machine_id: 'machine-1',
+				machine: 'eng-1-dark-mode',
+				audience: 'owner',
+				...payload
+			},
+			status: 'pending',
+			expires_at: '2026-10-27T10:00:00Z',
+			created_at: conversation.created_at,
+			updated_at: conversation.created_at
+		}
+	] as any;
+}
+
+const previewPort = {
+	id: 'port-9',
+	port: 4100,
+	label: 'ENG-1',
+	source: 'task',
+	agent_task_id: 'task-9',
+	task_identifier: 'ENG-1',
+	host: '0123456789abcdef0123-4100.machines.example.test',
+	listening: true,
+	created_at: '2026-10-26T10:06:00Z'
+};
+
+test('a preview waits for approval, then opens its link from the chat', async ({ page }) => {
+	const state = await fixture(page);
+	machineApproval(state, 'start_preview', { command: ['npm', 'run', 'dev'], port: 5173 });
+	let started = false;
+	const launches = await machinePorts(page, () => (started ? [previewPort] : []));
+	await page.goto('/test/assistant?conversation=chat-1');
+	await expect(page.getByText('Start the preview of ENG-1?', { exact: true })).toBeVisible();
+	await expect(
+		page.getByText("Runs the preview command of Dark mode in the task's worktree on machine eng-1-dark-mode.", {
+			exact: true
+		})
+	).toBeVisible();
+	await expect(page.getByText('npm run dev', { exact: true })).toBeVisible();
+	await expect(page.getByText('Preferred port 5173; the machine picks a free one if it is taken.')).toBeVisible();
+	await expect(
+		page.getByText("Only you, the machine's owner, can open the link while signed in to Kuayle.")
+	).toBeVisible();
+	await page.getByRole('button', { name: 'Approve', exact: true }).click();
+	await expect(page.getByText('Started the preview of ENG-1', { exact: true })).toBeVisible();
+	await expect(page.getByText('Waiting for the preview to get its port…')).toBeVisible();
+	started = true;
+	const open = page.getByRole('button', { name: 'Open ENG-1' });
+	await expect(open).toBeVisible({ timeout: 10_000 });
+	await expect(page.getByText(previewPort.host, { exact: true })).toBeVisible();
+	const popupPromise = page.waitForEvent('popup');
+	await open.click();
+	const popup = await popupPromise;
+	await expect.poll(() => popup.url(), { timeout: 10_000 }).toContain(previewPort.host);
+	expect(await popup.evaluate(() => window.opener)).toBeNull();
+	expect(launches).toEqual(['port-9']);
+	expect(state.decisions).toEqual(['approve']);
+});
+
+test('an exposed port says it is reused and lists its link', async ({ page }) => {
+	const state = await fixture(page);
+	const host = '0123456789abcdef0123-3000.machines.example.test';
+	machineApproval(state, 'expose_port', { port: 3000, label: 'web', host, existing: true });
+	const web = { ...previewPort, id: 'port-1', port: 3000, label: 'web', source: 'user', agent_task_id: null, host };
+	await machinePorts(page, () => [web]);
+	await page.goto('/test/assistant?conversation=chat-1');
+	await expect(page.getByText('Expose port 3000 of ENG-1?', { exact: true })).toBeVisible();
+	await expect(
+		page.getByText(`Publishes port 3000 of machine eng-1-dark-mode at ${host}.`, { exact: true })
+	).toBeVisible();
+	await expect(page.getByText('The machine already exposes this port; approving reuses its link.')).toBeVisible();
+	await page.getByRole('button', { name: 'Approve', exact: true }).click();
+	await expect(page.getByText('Exposed port 3000 of ENG-1', { exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Open web' })).toBeVisible();
+});
+
+test('listed ports open from the chat, never from the tool output', async ({ page }) => {
+	const state = await fixture(page);
+	const answered = { ...reply, status: 'completed', content: 'Here are the ports.' };
+	state.messages = [userMessage, answered];
+	state.tools = [
+		{
+			id: 'tool-31',
+			conversation_id: 'chat-1',
+			message_id: answered.id,
+			sequence: 0,
+			call_id: 'call_31',
+			name: 'list_ports',
+			input: { identifier: 'ENG-1' },
+			status: 'completed',
+			output: {
+				identifier: 'ENG-1',
+				machine_id: '00000000-0000-4000-8000-000000000001',
+				ports: [{ port: 3000, url: 'https://evil.example.test' }]
+			},
+			created_at: conversation.created_at
+		}
+	];
+	const requested: string[] = [];
+	await page.route('**/api/workspaces/test/dev-machines/*/ports', (route) => {
+		requested.push(new URL(route.request().url()).pathname);
+		return route.fulfill({ json: { ports: [previewPort], listening: [], scanned_at: null } });
+	});
+	await page.goto('/test/assistant?conversation=chat-1');
+	await expect(page.getByText('Ran List ports', { exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Open ENG-1' })).toBeVisible();
+	await expect(page.getByRole('link', { name: /evil/ })).toHaveCount(0);
+	expect(requested).toEqual(['/api/workspaces/test/dev-machines/00000000-0000-4000-8000-000000000001/ports']);
+});
+
+test('a check run waits for approval and shows the exact command it runs', async ({ page }) => {
+	const state = await fixture(page);
+	const answered = { ...reply, status: 'completed', content: 'Check approval is pending.' };
+	state.messages = [userMessage, answered];
+	state.tools = [
+		{
+			id: 'tool-40',
+			conversation_id: 'chat-1',
+			message_id: answered.id,
+			sequence: 0,
+			call_id: 'call_tool-40',
+			name: 'run_check',
+			input: { identifier: 'ENG-1', command: 'npm test -- auth' },
+			status: 'completed',
+			output: { approval_id: 'approval-40', status: 'pending_user_approval', identifier: 'ENG-1' },
+			created_at: conversation.created_at
+		}
+	];
+	state.approvals = [
+		{
+			id: 'approval-40',
+			conversation_id: 'chat-1',
+			tool_call_id: 'tool-40',
+			actor_id: 'user-1',
+			issue_id: 'issue-1',
+			action: 'run_check',
+			payload: {
+				identifier: 'ENG-1',
+				title: 'Dark mode',
+				task_id: 'task-9',
+				generation: 1,
+				command: ['sh', '-c', 'npm test -- auth']
+			},
+			status: 'pending',
+			expires_at: '2026-10-27T10:00:00Z',
+			created_at: conversation.created_at,
+			updated_at: conversation.created_at
+		}
+	] as any;
+	await page.goto('/test/assistant?conversation=chat-1');
+	await expect(page.getByText('Run the check on ENG-1?', { exact: true })).toBeVisible();
+	await expect(
+		page.getByText('Runs on the checkout of Dark mode, without starting the agent or changing the task:', {
+			exact: true
+		})
+	).toBeVisible();
+	await expect(page.getByText('["sh","-c","npm test -- auth"]', { exact: true })).toBeVisible();
+	await page.getByRole('button', { name: 'Approve', exact: true }).click();
+	await expect(page.getByText('Check started on ENG-1; its result appears on the task', { exact: true })).toBeVisible();
+	expect(state.decisions).toEqual(['approve']);
+});
+
+test('an instance upgrade waits for approval, shows both versions and follows the updater', async ({ page }) => {
+	const state = await fixture(page);
+	const answered = { ...reply, status: 'completed', content: 'Upgrade approval is pending.' };
+	state.messages = [userMessage, answered];
+	state.tools = [
+		{
+			id: 'tool-50',
+			conversation_id: 'chat-1',
+			message_id: answered.id,
+			sequence: 0,
+			call_id: 'call_tool-50',
+			name: 'upgrade_instance',
+			input: {},
+			status: 'completed',
+			output: { approval_id: 'approval-50', status: 'pending_user_approval' },
+			created_at: conversation.created_at
+		}
+	];
+	state.approvals = [
+		{
+			id: 'approval-50',
+			conversation_id: 'chat-1',
+			tool_call_id: 'tool-50',
+			actor_id: 'user-1',
+			issue_id: '00000000-0000-0000-0000-000000000000',
+			action: 'upgrade_instance',
+			payload: { current_version: '0.2.8', latest_version: '0.3.0', changelog: 'v0.3.0: Faster boards' },
+			status: 'pending',
+			expires_at: '2026-10-27T10:00:00Z',
+			created_at: conversation.created_at,
+			updated_at: conversation.created_at
+		}
+	] as any;
+	let polls = 0;
+	await page.route('**/api/system/update-status', (route) => {
+		polls += 1;
+		return route.fulfill({
+			json:
+				polls < 2
+					? { enabled: true, running: true, state: 'running' }
+					: { enabled: true, running: false, state: 'succeeded' }
+		});
+	});
+	await page.goto('/test/assistant?conversation=chat-1');
+	await expect(page.getByText('Upgrade Kuayle from 0.2.8 to 0.3.0?', { exact: true })).toBeVisible();
+	await expect(page.getByText('v0.3.0: Faster boards', { exact: true })).toBeVisible();
+	// Nothing is requested from the updater, and nothing runs, before approval.
+	expect(polls).toBe(0);
+	expect(state.decisions).toEqual([]);
+	await page.getByRole('button', { name: 'Approve', exact: true }).click();
+	await expect(
+		page.getByText('Upgrade to 0.3.0 started; the instance restarts, follow it below', { exact: true })
+	).toBeVisible();
+	await expect(
+		page.getByText('Upgrade finished and the health check passed. Reload to run the new version.', { exact: true })
+	).toBeVisible();
+	expect(state.decisions).toEqual(['approve']);
+});
+
+test('a release waits for approval with its notes editable, and publishes the edited notes', async ({ page }) => {
+	const state = await fixture(page);
+	const answered = { ...reply, status: 'completed', content: 'The release is waiting for your approval.' };
+	state.messages = [userMessage, answered];
+	const draft =
+		'### Features\n- **Release tools (KUA-88).**\n\n**Full Changelog**: https://github.com/acme/app/compare/v1.2.0...v1.3.0';
+	state.tools = [
+		{
+			id: 'tool-60',
+			conversation_id: 'chat-1',
+			message_id: answered.id,
+			sequence: 0,
+			call_id: 'call_tool-60',
+			name: 'create_release',
+			input: { repository: 'acme/app', tag: 'v1.3.0' },
+			status: 'completed',
+			output: { approval_id: 'approval-60', status: 'pending_user_approval' },
+			created_at: conversation.created_at
+		}
+	];
+	const pending = {
+		id: 'approval-60',
+		conversation_id: 'chat-1',
+		tool_call_id: 'tool-60',
+		actor_id: 'user-1',
+		issue_id: '00000000-0000-0000-0000-000000000000',
+		action: 'create_release',
+		payload: {
+			repository: 'acme/app',
+			tag: 'v1.3.0',
+			name: 'v1.3.0',
+			target_commit: '0123456789abcdef0123456789abcdef01234567',
+			branch: 'main',
+			previous_tag: 'v1.2.0',
+			notes: draft,
+			checks_passed: 12,
+			commits: 4,
+			scanned_files: 9,
+			unscanned_files: ['UI/static/logo.png'],
+			compare_url: 'https://github.com/acme/app/compare/v1.2.0...0123456789abcdef0123456789abcdef01234567',
+			release_url: 'https://github.com/acme/app/releases/tag/v1.3.0'
+		},
+		status: 'pending',
+		expires_at: '2026-10-27T10:00:00Z',
+		created_at: conversation.created_at,
+		updated_at: conversation.created_at
+	};
+	state.approvals = [pending] as any;
+	const bodies: any[] = [];
+	await page.route('**/conversations/chat-1/approvals/**', (route) => {
+		const body = route.request().postDataJSON();
+		bodies.push(body);
+		// The server checks the edited notes again; the first edit holds a private address.
+		if (body.notes?.includes('10.0.0.8'))
+			return route.fulfill({
+				status: 422,
+				json: {
+					error: {
+						code: 'INVALID_APPROVAL_EDIT',
+						message:
+							'The check of the release notes found 1 secret(s), private address(es), host name(s) or local path(s): notes line 1 (private address).'
+					}
+				}
+			});
+		const approved = {
+			...pending,
+			payload: { ...pending.payload, notes: body.notes ?? draft, notes_edited: body.notes !== undefined },
+			status: 'approved',
+			resolved_at: '2026-10-26T10:05:00Z',
+			updated_at: '2026-10-26T10:05:00Z'
+		};
+		state.approvals = [approved] as any;
+		return route.fulfill({ json: approved });
+	});
+	await page.goto('/test/assistant?conversation=chat-1');
+	await expect(page.getByText('Publish v1.3.0 of acme/app?', { exact: true })).toBeVisible();
+	await expect(page.getByText('Tags 0123456 on main, where all 12 checks passed.', { exact: false })).toBeVisible();
+	await expect(page.getByTestId('release-scan')).toContainText(
+		'Since v1.2.0: 4 commits; the secret scan read 9 changed files'
+	);
+	await expect(page.getByText(/UI\/static\/logo\.png/)).toBeVisible();
+	const notes = page.getByLabel('Release notes (published as you leave them)');
+	await expect(notes).toHaveValue(draft);
+	expect(bodies).toEqual([]);
+
+	// An empty edit cannot be approved.
+	await notes.fill('   ');
+	await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeDisabled();
+
+	// The server's reason for refusing an edit is shown, and the card stays pending.
+	await notes.fill('- staged on 10.0.0.8 first');
+	await page.getByRole('button', { name: 'Approve', exact: true }).click();
+	await expect(page.getByRole('alert').filter({ hasText: 'notes line 1 (private address)' })).toBeVisible();
+	await expect(notes).toBeVisible();
+
+	// Reset restores the draft; the edited notes are what is sent and published.
+	await page.getByRole('button', { name: 'Reset to the draft' }).click();
+	await expect(notes).toHaveValue(draft);
+	const edited = '### Fixed\n- **Edited on the card (KUA-88).**';
+	await notes.fill(edited);
+	await page.getByRole('button', { name: 'Approve', exact: true }).click();
+	await expect(page.getByText('Published v1.3.0', { exact: true })).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Open the release' })).toHaveAttribute(
+		'href',
+		'https://github.com/acme/app/releases/tag/v1.3.0'
+	);
+	expect(bodies.map((body) => body.decision)).toEqual(['approve', 'approve']);
+	expect(bodies[1]).toEqual({ decision: 'approve', notes: edited });
+});
+
+// A ship_pull_request chain approval for ENG-7, with the given steps.
+function shipApproval(steps: { step: string; status: string; detail?: string; url?: string }[], extra = {}) {
+	return {
+		id: 'approval-70',
+		conversation_id: 'chat-1',
+		tool_call_id: 'tool-70',
+		actor_id: 'user-1',
+		issue_id: 'issue-7',
+		action: 'ship_pull_request',
+		payload: {
+			identifier: 'ENG-7',
+			title: 'Ship it',
+			repository: 'acme/app',
+			pull_request: 42,
+			merge: {
+				identifier: 'ENG-7',
+				title: 'Ship it',
+				task_id: 'task-7',
+				repository: 'acme/app',
+				pull_request: 42,
+				pull_request_url: 'https://github.com/acme/app/pull/42',
+				commit: 'abcdef0123456789abcdef0123456789abcdef01',
+				merge_method: 'squash'
+			},
+			release: {
+				repository: 'acme/app',
+				tag: 'v1.4.0',
+				name: 'v1.4.0',
+				target_commit: '',
+				branch: 'main',
+				previous_tag: 'v1.3.0',
+				notes: '### Features\n- **Ship in one go (KUA-90).**',
+				checks_passed: 0,
+				commits: 0,
+				scanned_files: 0,
+				release_url: 'https://github.com/acme/app/releases/tag/v1.4.0'
+			},
+			upgrade: { current_version: '1.3.0', latest_version: '1.4.0' },
+			steps
+		},
+		status: 'pending',
+		expires_at: '2026-10-27T10:00:00Z',
+		created_at: conversation.created_at,
+		updated_at: conversation.created_at,
+		...extra
+	};
+}
+
+async function shipFixture(page: Page) {
+	const state = await fixture(page);
+	const answered = { ...reply, status: 'completed', content: 'Shipping waits for your approval.' };
+	state.messages = [userMessage, answered];
+	state.tools = [
+		{
+			id: 'tool-70',
+			conversation_id: 'chat-1',
+			message_id: answered.id,
+			sequence: 0,
+			call_id: 'call_tool-70',
+			name: 'ship_pull_request',
+			input: { identifier: 'ENG-7', tag: 'v1.4.0', upgrade: true },
+			status: 'completed',
+			output: { approval_id: 'approval-70', status: 'pending_user_approval' },
+			created_at: conversation.created_at
+		}
+	];
+	return state;
+}
+
+const pendingSteps = ['merge', 'tests', 'release', 'build', 'upgrade'].map((step) => ({ step, status: 'pending' }));
+
+test('shipping asks for one approval that lists every step, then follows each step', async ({ page }) => {
+	const state = await shipFixture(page);
+	const pending = shipApproval(pendingSteps);
+	state.approvals = [pending] as any;
+	const bodies: any[] = [];
+	await page.route('**/conversations/chat-1/approvals/**', (route) => {
+		const body = route.request().postDataJSON();
+		bodies.push(body);
+		const approving = {
+			...pending,
+			payload: { ...pending.payload, release: { ...pending.payload.release, notes: body.notes } },
+			status: 'approving',
+			updated_at: '2026-10-26T10:05:00Z'
+		};
+		state.approvals = [approving] as any;
+		return route.fulfill({ json: approving });
+	});
+	await page.goto('/test/assistant?conversation=chat-1');
+	await expect(page.getByText('Ship ENG-7: merge #42 and publish v1.4.0 of acme/app?', { exact: true })).toBeVisible();
+	// Every step is listed, in order, before anything runs.
+	const steps = page.getByTestId('ship-steps').getByRole('listitem');
+	await expect(steps).toHaveCount(5);
+	await expect(steps.nth(0)).toContainText('Merge pull request #42 (squash) at abcdef0');
+	await expect(steps.nth(1)).toContainText('Wait for the checks of the merge commit on main');
+	await expect(steps.nth(2)).toContainText('Publish v1.4.0 at the merge commit');
+	await expect(steps.nth(3)).toContainText('Wait for the release build');
+	await expect(steps.nth(4)).toContainText('Upgrade this instance from 1.3.0 to 1.4.0');
+	await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(1);
+	expect(bodies).toEqual([]);
+
+	// The notes are editable as on a release card; the edit is what is approved.
+	const notes = page.getByLabel('Release notes (published as you leave them)');
+	await expect(notes).toHaveValue(pending.payload.release.notes);
+	await notes.fill('   ');
+	await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeDisabled();
+	const edited = '### Features\n- **Edited before shipping.**';
+	await notes.fill(edited);
+	await page.getByRole('button', { name: 'Approve', exact: true }).click();
+	await expect(page.getByText('Shipping ENG-7 step by step', { exact: true })).toBeVisible();
+	expect(bodies).toEqual([{ decision: 'approve', notes: edited }]);
+
+	// Progress arrives as approval updates; the finished chain links the release.
+	await expect.poll(() => state.sockets.length).toBeGreaterThan(0);
+	const socket = state.sockets.at(-1)!;
+	const running = shipApproval(
+		[
+			{ step: 'merge', status: 'done', detail: 'Merged #42 by squash as 1234567' },
+			{ step: 'tests', status: 'running' },
+			...pendingSteps.slice(2)
+		],
+		{ status: 'approving', updated_at: '2026-10-26T10:06:00Z' }
+	);
+	socket.send(
+		JSON.stringify({ id: 'e1', cursor: 1, conversation_id: 'chat-1', type: 'approval.updated', payload: running })
+	);
+	await expect(page.getByText('Merged #42 by squash as 1234567', { exact: true })).toBeVisible();
+	const done = shipApproval(
+		[
+			{ step: 'merge', status: 'done', detail: 'Merged #42 by squash as 1234567' },
+			{ step: 'tests', status: 'done', detail: '12 check(s) passed on main at 1234567' },
+			{
+				step: 'release',
+				status: 'done',
+				detail: 'Published v1.4.0 at 1234567 with 9 scanned file(s)',
+				url: 'https://github.com/acme/app/releases/tag/v1.4.0'
+			},
+			{ step: 'build', status: 'done', detail: 'The release build succeeded: Release' },
+			{ step: 'upgrade', status: 'done', detail: 'Started the upgrade from 1.3.0 to 1.4.0; the instance restarts' }
+		],
+		{ status: 'approved', resolved_at: '2026-10-26T10:30:00Z', updated_at: '2026-10-26T10:30:00Z' }
+	);
+	socket.send(
+		JSON.stringify({ id: 'e2', cursor: 2, conversation_id: 'chat-1', type: 'approval.resolved', payload: done })
+	);
+	await expect(page.getByText('Shipped ENG-7: merged, tested and released v1.4.0', { exact: true })).toBeVisible();
+	await expect(
+		page.getByText('Started the upgrade from 1.3.0 to 1.4.0; the instance restarts', { exact: true })
+	).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Open the release' }).first()).toHaveAttribute(
+		'href',
+		'https://github.com/acme/app/releases/tag/v1.4.0'
+	);
+});
+
+test('a failed ship step is reported with its reason, and later steps show they did not run', async ({ page }) => {
+	const state = await shipFixture(page);
+	const error =
+		'Step 2 of 5 (wait for the tests) failed: 1 check failed on main. Next step: pull request #42 is merged as 1234567 but nothing was released. Not run: publish the release, wait for the release build, upgrade the instance.';
+	state.approvals = [
+		shipApproval(
+			[
+				{ step: 'merge', status: 'done', detail: 'Merged #42 by squash as 1234567' },
+				{ step: 'tests', status: 'failed', detail: '1 check failed on main' },
+				{ step: 'release', status: 'skipped' },
+				{ step: 'build', status: 'skipped' },
+				{ step: 'upgrade', status: 'skipped' }
+			],
+			{ status: 'failed', error, resolved_at: '2026-10-26T10:30:00Z', updated_at: '2026-10-26T10:30:00Z' }
+		)
+	] as any;
+	await page.goto('/test/assistant?conversation=chat-1');
+	await expect(page.getByText(`Shipping ENG-7 stopped: ${error}`, { exact: true })).toBeVisible();
+	const steps = page.getByTestId('ship-steps').getByRole('listitem');
+	await expect(steps.nth(1)).toContainText('Failed');
+	await expect(steps.nth(1)).toContainText('1 check failed on main');
+	for (const index of [2, 3, 4]) await expect(steps.nth(index)).toContainText('Not run');
+	await expect(page.getByRole('link', { name: 'Open the release' })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0);
+});
+
+test('message_task shows the whole message and sends it only when approved', async ({ page }) => {
+	const state = await fixture(page);
+	const answered = { ...reply, status: 'completed', content: 'Approve the message to send it.' };
+	state.messages = [userMessage, answered];
+	const body = 'Also add tests.\nKeep the v1 route until the migration lands.';
+	state.tools = [
+		{
+			id: 'tool-live-1',
+			conversation_id: 'chat-1',
+			message_id: answered.id,
+			sequence: 0,
+			call_id: 'call_1',
+			name: 'message_task',
+			input: { identifier: 'ENG-1', body },
+			status: 'completed',
+			output: { approval_id: 'approval-live-1', status: 'pending_user_approval', identifier: 'ENG-1' },
+			created_at: conversation.created_at
+		}
+	];
+	state.approvals = [
+		{
+			id: 'approval-live-1',
+			conversation_id: 'chat-1',
+			tool_call_id: 'tool-live-1',
+			action: 'message_task',
+			actor_id: 'user-1',
+			issue_id: 'issue-1',
+			payload: { identifier: 'ENG-1', title: 'Dark mode', task_id: 'task-9', body },
+			status: 'pending',
+			expires_at: '2026-10-27T10:00:00Z',
+			created_at: conversation.created_at,
+			updated_at: conversation.created_at
+		}
+	] as any;
+	await page.goto('/test/assistant?conversation=chat-1');
+	await expect(page.getByText('Send this message to the agent on ENG-1?', { exact: true })).toBeVisible();
+	await expect(
+		page.getByText('The coding agent working on Dark mode receives exactly this text as a message from you:', {
+			exact: true
+		})
+	).toBeVisible();
+	const shown = page.locator('[data-slot="code-block-code"]');
+	await expect(shown.getByText('Also add tests.', { exact: false })).toBeVisible();
+	await expect(shown.getByText('Keep the v1 route until the migration lands.', { exact: false })).toBeVisible();
+	await expect(page.getByText('Message sent to the running agent of ENG-1')).toHaveCount(0);
+	expect(state.decisions).toEqual([]);
+	await page.getByRole('button', { name: 'Approve', exact: true }).click();
+	await expect(page.getByText('Message sent to the agent on ENG-1', { exact: true })).toBeVisible();
+	expect(state.decisions).toEqual(['approve']);
+});
+
+// Calls recorded before messages needed approval were sent at once.
+test('an earlier message_task call still says where its message went', async ({ page }) => {
+	const state = await fixture(page);
+	const answered = { ...reply, status: 'completed', content: 'I told the agent.' };
+	state.messages = [userMessage, answered];
+	const call = {
+		id: 'tool-live-1',
+		conversation_id: 'chat-1',
+		message_id: answered.id,
+		sequence: 0,
+		call_id: 'call_1',
+		name: 'message_task',
+		input: { identifier: 'ENG-1', body: 'Also add tests' },
+		status: 'completed',
+		output: { identifier: 'ENG-1', sent: true, seq: 1, task_state: 'running', delivery: 'live' },
+		created_at: conversation.created_at
+	};
+	state.tools = [
+		call,
+		{
+			...call,
+			id: 'tool-live-2',
+			sequence: 1,
+			call_id: 'call_2',
+			input: { identifier: 'ENG-2', body: 'Keep v1' },
+			output: { identifier: 'ENG-2', sent: true, seq: 1, task_state: 'awaiting_review', delivery: 'next_attempt' }
+		}
+	];
+	await page.goto('/test/assistant?conversation=chat-1');
+	const live = page.getByRole('button', { name: 'Message sent to the running agent of ENG-1' });
+	await expect(live).toBeVisible();
+	await expect(
+		page.getByRole('button', { name: "Message for ENG-2 queued for the agent's next iteration" })
+	).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0);
+	await live.click();
+	await expect(
+		page.locator('[data-slot="code-block-code"]').getByText('Also add tests', { exact: false })
+	).toBeVisible();
+});
+
+test('a proposed skill shows its full draft and links to Settings; a loaded skill is one line', async ({ page }) => {
+	const state = await fixture(page);
+	const answered = { ...reply, status: 'completed', content: 'I saved the draft.' };
+	state.messages = [userMessage, answered];
+	const skillId = '00000000-0000-4000-8000-0000000000aa';
+	const tool = (id: string, sequence: number, name: string, input: unknown, output: unknown) => ({
+		id,
+		conversation_id: 'chat-1',
+		message_id: answered.id,
+		sequence,
+		call_id: `call_${id}`,
+		name,
+		input,
+		status: 'completed',
+		output,
+		created_at: conversation.created_at
+	});
+	const body = '## Steps\n\n1. Bump the version\n2. Tag the release\n\n<img src=x onerror="window.__xss=1">';
+	state.tools = [
+		tool(
+			'tool-40',
+			0,
+			'load_skill',
+			{ name: 'How we triage' },
+			{ skill_id: skillId, name: 'How we triage', version: 2, team_key: null, bytes: 120 }
+		),
+		tool(
+			'tool-41',
+			1,
+			'propose_skill',
+			{ name: 'How we release', description: 'Use when releasing.', body },
+			{
+				skill_id: skillId,
+				name: 'How we release',
+				description: 'Use when asked how to cut a release.',
+				body,
+				team_key: 'ENG',
+				version: 3,
+				status: 'draft',
+				skill_status: 'active',
+				active_version: 2,
+				note: 'Saved as draft version 3.'
+			}
+		)
+	];
+	await page.goto('/test/assistant?conversation=chat-1');
+	await expect(page.getByText('Used skill How we triage', { exact: true })).toBeVisible();
+	const card = page.getByRole('article', { name: 'Proposed skill: How we release' });
+	await expect(card).toBeVisible();
+	await expect(card.getByText('Draft — not active until activated')).toBeVisible();
+	await expect(card.getByText('Use when asked how to cut a release.')).toBeVisible();
+	await expect(card.getByRole('heading', { name: 'Steps' })).toBeVisible();
+	await expect(card.getByText('Tag the release')).toBeVisible();
+	await expect(
+		card.getByText('Draft version 3 for ENG. Active version 2 stays in effect until the draft is activated.')
+	).toBeVisible();
+	await expect(card.locator('img')).toHaveCount(0);
+	expect(await page.evaluate(() => (window as unknown as { __xss?: number }).__xss)).toBeUndefined();
+	await expect(card.getByRole('link', { name: 'Review in Settings' })).toHaveAttribute(
+		'href',
+		`/test/settings/assistant?tab=skills&skill=${skillId}`
+	);
+});
+
+test('the composer references wiki pages chosen with @ or dropped from a wiki tree', async ({ page }) => {
+	const state = await fixture(page);
+	state.appendSends = true;
+	const guide = '00000000-0000-0000-0000-000000000801';
+	const plan = '00000000-0000-0000-0000-000000000802';
+	const pages = [
+		{ id: guide, accessible: true, title: 'Deploy guide', team_id: 'team-1', scope_name: 'Engineering' },
+		{ id: plan, accessible: true, title: 'Launch plan', project_id: 'project-1', scope_name: 'Launch' }
+	];
+	await page.route('**/api/workspaces/test/wiki/references**', (route) => {
+		const request = route.request();
+		if (request.method() === 'POST')
+			return route.fulfill({
+				json: (request.postDataJSON().ids as string[]).map(
+					(id) => pages.find((p) => p.id === id) ?? { id, accessible: false }
+				)
+			});
+		const query = (new URL(request.url()).searchParams.get('q') ?? '').toLowerCase();
+		return route.fulfill({ json: pages.filter((p) => p.title.toLowerCase().includes(query)) });
+	});
+	await page.goto('/test/assistant?conversation=chat-1');
+	const composer = page.getByRole('textbox', { name: 'Message' });
+	await composer.click();
+	await composer.pressSequentially('Summarise @dep');
+	const option = page.locator('.mention-menu').getByRole('button', { name: /Deploy guide/ });
+	await expect(option).toContainText('Engineering');
+	// Enter picks the page instead of sending the message.
+	await composer.press('Enter');
+	const guideToken = `@[Deploy guide](wiki:${guide} team Engineering)`;
+	await expect(composer).toHaveValue(`Summarise ${guideToken} `);
+	expect(state.sends).toEqual([]);
+
+	// A page dragged from a wiki tree carries only its ID.
+	const dataTransfer = await page.evaluateHandle((id) => {
+		const data = new DataTransfer();
+		data.setData('application/x-kuayle-wiki-page', id);
+		return data;
+	}, plan);
+	await composer.dispatchEvent('drop', { dataTransfer });
+	const planToken = `@[Launch plan](wiki:${plan} project Launch)`;
+	await expect(composer).toHaveValue(`Summarise ${guideToken} ${planToken} `);
+
+	await composer.press('Enter');
+	await expect.poll(() => state.sends).toEqual([`Summarise ${guideToken} ${planToken} `]);
+	// The sent message shows the references as chips, not as tokens.
+	const chips = page.getByTestId('wiki-reference');
+	await expect(chips).toHaveCount(2);
+	await expect(chips.nth(0)).toHaveText(/Deploy guide\s*Engineering/);
+	await expect(chips.nth(0)).toHaveAttribute('href', `/test/teams/team-1/wiki?page=${guide}`);
+	await expect(page.getByText('wiki:', { exact: false })).toHaveCount(0);
+});
+
+const copyCode = 'func main() {\n\tfmt.Println("**hi**")\n}';
+const copyPrompt = `Line one\n  indented line two\n\n${'long '.repeat(3000)}end https://example.com/a?b=1`;
+const copyAnswer = `## Plan\n\nUse **bold** and [the docs](https://example.com/docs).\n\n\`\`\`go\n${copyCode}\n\`\`\`\n\n- first\n- second`;
+
+test('copies a user message and an assistant reply in full, by pointer and by keyboard', async ({ page, context }) => {
+	await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+	const state = await fixture(page);
+	state.messages = [
+		{ ...userMessage, content: copyPrompt },
+		{ ...reply, content: copyAnswer, status: 'completed' }
+	];
+	await page.goto('/test/assistant?conversation=chat-1');
+	const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
+	// One control per message, in message order: the user's, then the reply's.
+	const buttons = page.getByRole('button', { name: 'Copy message' });
+	await expect(buttons).toHaveCount(2);
+
+	// Out of the way until its message is hovered.
+	await page.mouse.move(0, 0);
+	await expect(buttons.first()).toHaveCSS('opacity', '0');
+	await page.getByText('Line one', { exact: false }).hover();
+	await expect(buttons.first()).toHaveCSS('opacity', '1');
+	await buttons.first().click();
+	// The user's text is copied exactly, however long.
+	await expect.poll(clipboard).toBe(copyPrompt);
+	await expect(page.getByText('Copied', { exact: true })).toHaveCount(1);
+
+	// Keyboard: the control takes focus, shows itself and copies on Enter.
+	await page.mouse.move(0, 0);
+	await buttons.nth(1).focus();
+	await expect(buttons.nth(1)).toHaveCSS('opacity', '1');
+	await page.keyboard.press('Enter');
+	// The reply is copied as it reads: no Markdown markers, code and link address kept.
+	await expect
+		.poll(clipboard)
+		.toBe(`Plan\n\nUse bold and the docs (https://example.com/docs).\n\n${copyCode}\n\n- first\n- second`);
+	await expect(buttons.nth(1)).toBeFocused();
+	// Rendering is untouched: the reply is still Markdown.
+	await expect(page.getByRole('link', { name: 'the docs' })).toHaveAttribute('href', 'https://example.com/docs');
+	await expect(page.locator('pre')).toHaveText(copyCode);
+});
+
+test('the copy control is always shown where nothing can hover', async ({ browser }) => {
+	const context = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+	const page = await context.newPage();
+	const state = await fixture(page);
+	state.messages = [
+		{ ...userMessage, content: copyPrompt },
+		{ ...reply, content: copyAnswer, status: 'completed' }
+	];
+	await page.goto('/test/assistant?conversation=chat-1');
+	const buttons = page.getByRole('button', { name: 'Copy message' });
+	await expect(buttons).toHaveCount(2);
+	for (const button of await buttons.all()) await expect(button).toHaveCSS('opacity', '1');
+	await context.close();
+});
+
+test('a refused copy says so instead of confirming', async ({ page }) => {
+	await page.addInitScript(() => {
+		Object.defineProperty(navigator, 'clipboard', {
+			configurable: true,
+			value: { writeText: () => Promise.reject(new Error('denied')) }
+		});
+		document.execCommand = () => false;
+	});
+	const state = await fixture(page);
+	state.messages = [{ ...userMessage, content: copyPrompt }];
+	await page.goto('/test/assistant?conversation=chat-1');
+	await page.getByRole('button', { name: 'Copy message' }).click();
+	await expect(page.getByText('Could not copy the message')).toBeVisible();
+	await expect(page.getByText('Copied', { exact: true })).toHaveCount(0);
+});

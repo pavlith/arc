@@ -1,0 +1,369 @@
+<script lang="ts">
+	import { onMount } from 'svelte';
+	import { page } from '$app/state';
+	import { getCurrentWorkspace } from '$lib/features/workspaces/current-workspace.svelte';
+	import { ROLE_HIERARCHY, type Role } from '$lib/security/roles';
+	import { Button } from '$lib/components/ui/button';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import {
+		buildChangelog,
+		compareVersions,
+		currentReleaseUrl,
+		currentVersion,
+		currentVersionLabel,
+		fetchReleases,
+		isTrustedReleaseNoteUrl,
+		requiredUpgradeRelease as findRequiredUpgradeRelease,
+		visibleReleases as getVisibleReleases,
+		type GitHubRelease
+	} from '$lib/release';
+	import { authState } from '$lib/features/auth/auth.state.svelte';
+	import { renderMarkdown } from '$lib/markdown';
+	import Info from '@lucide/svelte/icons/info';
+	import { m, getLocale, setLocale } from '$lib/features/i18n/messages';
+
+	const DISMISSED_KEY = 'kuayle_release_notice_dismissed';
+	const PRERELEASE_KEY = 'kuayle_release_notice_include_prerelease';
+
+	let allReleases = $state<GitHubRelease[]>([]);
+	let latestRelease = $state<GitHubRelease | null>(null);
+	let requiredRelease = $state<GitHubRelease | null>(null);
+	let changelogHtml = $state('');
+	let dialogOpen = $state(false);
+	const currentWorkspace = getCurrentWorkspace();
+	const canSeeOrdinaryNotice = $derived(
+		!authState.loading && authState.authenticated &&
+		currentWorkspace.membership?.userId === authState.user?.id &&
+		currentWorkspace.membership?.workspace.slug === page.params.workspaceSlug &&
+		(ROLE_HIERARCHY[currentWorkspace.membership?.workspace.current_user_role as Role] ?? 0) >= ROLE_HIERARCHY.admin
+	);
+	let includePrerelease = $state(false);
+	let loaded = $state(false);
+
+	const releaseIsNewer = $derived(latestRelease ? compareVersions(latestRelease.tag_name, currentVersion) > 0 : false);
+	const requiredVersionLabel = $derived(requiredRelease?.minimum_supported_version || requiredRelease?.tag_name || '');
+	const upgradeUrl = $derived(requiredRelease?.upgrade_url || requiredRelease?.html_url || currentReleaseUrl);
+
+	function onDialogOpenChange(open: boolean) {
+		// Only a user-driven close dismisses a release. Permission/loading changes
+		// close it separately and must leave it available on the next eligible visit.
+		if (!open && dialogOpen && canSeeOrdinaryNotice && !requiredRelease && latestRelease) {
+			persistDismissed(latestRelease.tag_name);
+			latestRelease = null;
+			changelogHtml = '';
+		}
+		dialogOpen = open;
+	}
+
+	function isDismissed(tagName: string) {
+		if (typeof localStorage === 'undefined') return false;
+		try {
+			return localStorage.getItem(DISMISSED_KEY) === tagName;
+		} catch {
+			return false;
+		}
+	}
+
+	function persistDismissed(tagName: string) {
+		if (typeof localStorage === 'undefined') return;
+		try {
+			localStorage.setItem(DISMISSED_KEY, tagName);
+		} catch {
+			// Storage can be unavailable in restricted browser contexts.
+		}
+	}
+
+	function isPrereleaseEnabled() {
+		if (typeof localStorage === 'undefined') return false;
+		try {
+			return localStorage.getItem(PRERELEASE_KEY) === '1';
+		} catch {
+			return false;
+		}
+	}
+
+	function persistPrerelease(enabled: boolean) {
+		if (typeof localStorage === 'undefined') return;
+		try {
+			localStorage.setItem(PRERELEASE_KEY, enabled ? '1' : '0');
+		} catch {
+			// ignore
+		}
+	}
+
+	function visibleReleases(): GitHubRelease[] {
+		return getVisibleReleases(allReleases, includePrerelease);
+	}
+
+	function requiredUpgradeRelease(): GitHubRelease | null {
+		return findRequiredUpgradeRelease(allReleases);
+	}
+
+	function applyReleases(autoOpen: boolean) {
+		const visible = visibleReleases();
+		const latest = visible[0] ?? null;
+		latestRelease = latest;
+		requiredRelease = requiredUpgradeRelease();
+		changelogHtml = latest ? renderMarkdown(buildChangelog(visible), isTrustedReleaseNoteUrl) : '';
+
+		if (
+			autoOpen &&
+			canSeeOrdinaryNotice &&
+			!requiredRelease &&
+			latest &&
+			compareVersions(latest.tag_name, currentVersion) > 0 &&
+			!isDismissed(latest.tag_name)
+		) {
+			dialogOpen = true;
+		}
+	}
+
+	async function loadReleases(autoOpen = true) {
+		loaded = false;
+		try {
+			const releases = await fetchReleases();
+			if (releases.length === 0) return;
+
+			allReleases = releases;
+			applyReleases(autoOpen);
+		} catch {
+			// Silently ignore release lookup failures.
+		} finally {
+			loaded = true;
+		}
+	}
+
+	function togglePrerelease() {
+		includePrerelease = !includePrerelease;
+		persistPrerelease(includePrerelease);
+		if (allReleases.length > 0) {
+			// Re-evaluate with the new filter without an extra network request.
+			applyReleases(false);
+		} else {
+			void loadReleases(false);
+		}
+	}
+
+	onMount(() => {
+		includePrerelease = isPrereleaseEnabled();
+		void loadReleases(false);
+	});
+
+	$effect(() => {
+		if (!canSeeOrdinaryNotice || requiredRelease) {
+			dialogOpen = false;
+			return;
+		}
+
+		if (loaded && latestRelease && releaseIsNewer && !requiredRelease && !isDismissed(latestRelease.tag_name)) {
+			dialogOpen = true;
+		}
+	});
+</script>
+
+{#if requiredRelease}
+	<div class="fixed inset-0 z-[100] flex min-h-dvh items-center justify-center bg-background px-4 py-8 text-foreground">
+		<div
+			class="relative w-full max-w-md rounded-xl border border-border bg-card text-card-foreground shadow-lg"
+			role="alertdialog"
+			aria-modal="true"
+			aria-labelledby="upgrade-required-title"
+			aria-describedby="upgrade-required-description"
+			tabindex={-1}
+		>
+			<div class="space-y-6 p-6 pb-4">
+				<div class="flex items-center gap-2 text-sm font-semibold">
+					<img src="/favicon.svg" alt="" class="size-8 rounded-md" />
+					<span>Kuayle</span>
+				</div>
+
+				<div class="space-y-2">
+					<p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">{m['sharedComponents.release_notice.upgrade_required']()}</p>
+					<h1 id="upgrade-required-title" class="text-2xl leading-tight font-semibold tracking-tight">
+						{m['sharedComponents.release_notice.no_longer_supported']()}
+					</h1>
+				</div>
+			</div>
+			<div class="space-y-4 px-6 pb-6 text-sm leading-6 text-muted-foreground">
+				<p id="upgrade-required-description">
+					{m['sharedComponents.release_notice.current_version']()} <strong class="font-medium text-foreground">{currentVersionLabel}</strong>. {m['sharedComponents.release_notice.required_version']()}
+					<strong class="font-medium text-foreground">{requiredVersionLabel}</strong> {m['sharedComponents.release_notice.or_newer']()}
+				</p>
+				<p>
+					{requiredRelease.upgrade_message ||
+						m['sharedComponents.release_notice.upgrade_message']()}
+				</p>
+				<div class="rounded-lg border border-border bg-muted px-3 py-2 font-mono text-xs text-muted-foreground">
+					bash selfhosting/update.sh
+				</div>
+			</div>
+			<div class="flex flex-col-reverse gap-2 border-t border-border p-6 pt-4 sm:flex-row sm:justify-end">
+				<Button variant="outline" onclick={() => window.location.reload()}>{m['sharedComponents.release_notice.refresh_app']()}</Button>
+				<Button href={upgradeUrl} target="_blank" rel="noopener">{m['sharedComponents.release_notice.open_release']()}</Button>
+			</div>
+		</div>
+	</div>
+{:else if latestRelease && canSeeOrdinaryNotice}
+	<Dialog.Root open={dialogOpen} onOpenChange={onDialogOpenChange}>
+		<Dialog.Content
+			class="top-4 max-h-[calc(100dvh-2rem)] border-[var(--app-border)] bg-[var(--color-bg-secondary)] p-0 sm:top-[10dvh] sm:max-h-[80dvh] sm:max-w-xl"
+		>
+			<div class="flex max-h-[calc(100dvh-2rem)] flex-col sm:max-h-[80dvh]">
+				<Dialog.Header class="border-b border-[var(--app-border)] px-5 py-4 pr-12">
+					<p class="text-xs font-semibold tracking-widest text-[var(--app-accent-light)] uppercase">
+						{releaseIsNewer ? m['sharedComponents.release_notice.update_available']() : m['sharedComponents.release_notice.release']()}
+					</p>
+					<Dialog.Title class="flex items-center gap-2 text-[var(--color-text-primary)]">
+						<span aria-hidden="true">{releaseIsNewer ? '🚀' : 'ℹ️'}</span>
+						<span>{latestRelease.tag_name}</span>
+					</Dialog.Title>
+					<Dialog.Description class="flex items-center gap-1.5 text-[var(--color-text-secondary)]">
+						<Info class="size-3.5" />
+						<span
+							>{m['sharedComponents.release_notice.current_is']()} <strong class="font-semibold text-[var(--color-text-primary)]">{currentVersionLabel}</strong
+							></span
+						>
+					</Dialog.Description>
+				</Dialog.Header>
+
+				<div class="min-h-0 overflow-y-auto px-5 py-4">
+					<details open>
+						<summary
+							class="cursor-pointer text-sm font-medium text-[var(--color-text-primary)] outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0"
+						>
+							{m['sharedComponents.release_notice.changelog']()}
+						</summary>
+						<div class="mt-3 flex items-center justify-between gap-2 text-xs text-[var(--color-text-tertiary)]">
+							<span>
+								{m['sharedComponents.release_notice.showing_changes_from']()} <strong class="font-semibold text-[var(--color-text-secondary)]"
+									>{currentVersionLabel}</strong
+								>
+								{m['sharedComponents.release_notice.to']()} <strong class="font-semibold text-[var(--color-text-secondary)]">{latestRelease.tag_name}</strong>
+							</span>
+							<Button variant="plain" type="button"
+								class="cursor-pointer select-none rounded px-1.5 py-0.5 text-[var(--color-text-tertiary)] transition-colors hover:text-[var(--color-text-secondary)]"
+								onclick={togglePrerelease}
+								title={m['sharedComponents.release_notice.toggle_prerelease']()}
+							>
+								{includePrerelease ? m['sharedComponents.release_notice.hide_prereleases']() : m['sharedComponents.release_notice.show_prereleases']()}
+							</Button>
+						</div>
+						{#if changelogHtml}
+							<!-- eslint-disable svelte/no-at-html-tags -->
+							<div class="changelog-md mt-3 text-sm leading-relaxed text-[var(--color-text-secondary)]">
+								{@html changelogHtml}
+							</div>
+						{:else}
+							<p class="mt-3 text-sm text-[var(--color-text-secondary)]">{m['sharedComponents.release_notice.no_notes']()}</p>
+						{/if}
+					</details>
+				</div>
+
+				<div
+					class="flex flex-col-reverse gap-2 border-t border-[var(--app-border)] bg-[var(--color-bg)] px-5 py-4 sm:flex-row sm:flex-wrap sm:justify-end"
+				>
+					<Button variant="outline" onclick={() => void loadReleases(false)}>{m['sharedComponents.release_notice.check_again']()}</Button>
+					<Button variant="outline" onclick={() => onDialogOpenChange(false)}>{m['sharedComponents.release_notice.dismiss']()}</Button>
+					<Button variant="outline" href={latestRelease.html_url} target="_blank" rel="noopener">{m['sharedComponents.release_notice.release']()}</Button>
+					{#if releaseIsNewer}
+						<Button href={`/${page.params.workspaceSlug}/settings/version#system-update`} onclick={() => onDialogOpenChange(false)}>
+							{m['sharedComponents.release_notice.upgrade_now']()}
+						</Button>
+					{/if}
+				</div>
+			</div>
+		</Dialog.Content>
+	</Dialog.Root>
+{/if}
+
+<style>
+	.changelog-md :global(h1),
+	.changelog-md :global(h2),
+	.changelog-md :global(h3),
+	.changelog-md :global(h4) {
+		color: var(--color-text-primary);
+		font-weight: 600;
+		line-height: 1.3;
+		margin: 1rem 0 0.5rem;
+	}
+	.changelog-md :global(h1) {
+		font-size: 1.1rem;
+	}
+	.changelog-md :global(h2) {
+		font-size: 1rem;
+	}
+	.changelog-md :global(h3) {
+		font-size: 0.9rem;
+	}
+	.changelog-md :global(h4) {
+		font-size: 0.85rem;
+	}
+	.changelog-md :global(p) {
+		margin: 0.4rem 0;
+	}
+	.changelog-md :global(ul),
+	.changelog-md :global(ol) {
+		margin: 0.4rem 0;
+		padding-left: 1.25rem;
+	}
+	.changelog-md :global(ul) {
+		list-style: disc;
+	}
+	.changelog-md :global(ol) {
+		list-style: decimal;
+	}
+	.changelog-md :global(li) {
+		margin: 0.2rem 0;
+	}
+	.changelog-md :global(a) {
+		color: var(--app-accent-light);
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+	.changelog-md :global(a:hover) {
+		opacity: 0.85;
+	}
+	.changelog-md :global(code) {
+		font-family: var(--app-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+		font-size: 0.85em;
+		padding: 0.1rem 0.3rem;
+		border-radius: 4px;
+		background: var(--color-bg);
+		border: 1px solid var(--app-border);
+	}
+	.changelog-md :global(pre) {
+		margin: 0.5rem 0;
+		padding: 0.6rem 0.75rem;
+		overflow-x: auto;
+		border-radius: 6px;
+		background: var(--color-bg);
+		border: 1px solid var(--app-border);
+	}
+	.changelog-md :global(pre code) {
+		padding: 0;
+		border: none;
+		background: transparent;
+	}
+	.changelog-md :global(blockquote) {
+		margin: 0.5rem 0;
+		padding-left: 0.75rem;
+		border-left: 2px solid var(--app-border);
+		color: var(--color-text-tertiary);
+	}
+	.changelog-md :global(hr) {
+		margin: 1rem 0;
+		border: none;
+		border-top: 1px solid var(--app-border);
+	}
+	.changelog-md :global(img) {
+		max-width: 100%;
+		border-radius: 6px;
+	}
+	.changelog-md :global(h2:first-child),
+	.changelog-md :global(*:first-child) {
+		margin-top: 0;
+	}
+	.changelog-md :global(*:last-child) {
+		margin-bottom: 0;
+	}
+</style>

@@ -1,0 +1,185 @@
+<script lang="ts">
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { onMount, onDestroy } from 'svelte';
+	import type { SlashGroup, SlashMenuItem } from './slash-items';
+	import { m, getLocale, setLocale } from '$lib/features/i18n/messages';
+
+	let {
+		groups,
+		selectedIndex,
+		position,
+		onselect,
+		onclose
+	}: {
+		groups: SlashGroup[];
+		selectedIndex: number;
+		position: { x: number; y: number };
+		onselect: (item: SlashMenuItem) => void;
+		onclose: () => void;
+	} = $props();
+
+	let menuRef: HTMLElement | undefined = $state();
+	let menuPosition = $state({ left: 0, top: 0 });
+
+	// Build flat index for keyboard nav highlighting
+	const flatItems = $derived(groups.flatMap((g) => g.items));
+
+	// Scroll selected item into view
+	$effect(() => {
+		if (!menuRef || flatItems.length === 0) return;
+		const item = menuRef.querySelector(`[data-index="${selectedIndex}"]`);
+		item?.scrollIntoView({ block: 'nearest' });
+	});
+
+	function updateMenuPosition() {
+		if (!menuRef) return;
+
+		const margin = 8;
+		const menuWidth = menuRef.offsetWidth || 240;
+		const menuHeight = menuRef.offsetHeight || 340;
+		const left = Math.min(Math.max(position.x, margin), window.innerWidth - menuWidth - margin);
+		let top = position.y;
+
+		if (top + menuHeight > window.innerHeight - margin) {
+			top = position.y - menuHeight - 28;
+		}
+
+		menuPosition = {
+			left,
+			top: Math.min(Math.max(top, margin), window.innerHeight - menuHeight - margin)
+		};
+	}
+
+	$effect(() => {
+		position.x;
+		position.y;
+		menuRef;
+		requestAnimationFrame(updateMenuPosition);
+	});
+
+	// Close on click outside
+	function handlePointerDown(e: PointerEvent) {
+		if (menuRef && !menuRef.contains(e.target as Node)) {
+			onclose();
+		}
+	}
+
+	onMount(() => {
+		window.addEventListener('pointerdown', handlePointerDown, true);
+		if (menuRef) {
+			document.body.appendChild(menuRef);
+			requestAnimationFrame(updateMenuPosition);
+		}
+	});
+
+	onDestroy(() => {
+		window.removeEventListener('pointerdown', handlePointerDown, true);
+		menuRef?.remove();
+	});
+
+	let globalIdx = 0;
+</script>
+
+<div
+	bind:this={menuRef}
+	class="slash-command-menu"
+	style="position: fixed; left: {menuPosition.left}px; top: {menuPosition.top}px;"
+>
+	{#each groups as group}
+		<div class="slash-group">
+				{#each group.items as item}
+					{@const idx = flatItems.indexOf(item)}
+					{@const Icon = item.icon}
+					<Button variant="plain" type="button"
+						data-index={idx}
+						class={`slash-item ${idx === selectedIndex ? "selected" : ""}`}
+						onpointerdown={(e) => { e.preventDefault(); onselect(item); onclose(); }}
+					>
+						<span class="slash-item-icon">
+							<Icon size={16} />
+						</span>
+					<span class="slash-item-label">{item.label}</span>
+					{#if item.shortcut}
+						<span class="slash-item-shortcut">{item.shortcut}</span>
+					{/if}
+				</Button>
+			{/each}
+		</div>
+	{/each}
+	{#if flatItems.length === 0}
+		<div class="slash-empty">{m['sharedComponents.slash_command.no_results']()}</div>
+	{/if}
+</div>
+
+<style>
+	.slash-command-menu {
+		z-index: 100;
+		width: 240px;
+		max-height: 340px;
+		overflow-y: auto;
+		background: var(--color-bg-secondary);
+		border: 1px solid var(--app-border);
+		border-radius: 10px;
+		padding: 4px;
+		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+	}
+
+	.slash-group {
+		padding: 2px 0;
+	}
+
+	.slash-group + .slash-group {
+		border-top: 1px solid var(--app-border);
+		margin-top: 2px;
+		padding-top: 4px;
+	}
+
+	.slash-command-menu :global(.slash-item) {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		width: 100%;
+		padding: 6px 8px;
+		border: none;
+		border-radius: 6px;
+		background: transparent;
+		color: var(--color-text-primary);
+		font-size: 13px;
+		cursor: pointer;
+		text-align: left;
+	}
+
+	.slash-command-menu :global(.slash-item):hover,
+	.slash-command-menu :global(.slash-item.selected) {
+		background: var(--color-bg-hover);
+	}
+
+	.slash-item-icon {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 20px;
+		height: 20px;
+		color: var(--color-text-tertiary);
+		flex-shrink: 0;
+	}
+
+	.slash-item-label {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.slash-item-shortcut {
+		font-size: 11px;
+		color: var(--color-text-tertiary);
+		white-space: nowrap;
+		margin-left: auto;
+	}
+
+	.slash-empty {
+		padding: 12px;
+		text-align: center;
+		font-size: 12px;
+		color: var(--color-text-tertiary);
+	}
+</style>

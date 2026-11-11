@@ -1,0 +1,99 @@
+<script lang="ts">
+	import ComboboxPopover from '$lib/components/shared/ComboboxPopover.svelte';
+	import * as Command from '$lib/components/ui/command/index.js';
+	import { Checkbox } from '$lib/components/ui/checkbox';
+	import { createLabel } from '$lib/api/labels';
+	import type { Label } from '$lib/types/label';
+	import { labelAppliesTo } from '$lib/features/labels/label-scope';
+	import type { Snippet } from 'svelte';
+	import { Plus } from '@lucide/svelte';
+	import { appToast } from '$lib/features/toast/toast';
+	import { m, getLocale, setLocale } from '$lib/features/i18n/messages';
+
+	let {
+		open = $bindable(false),
+		labels,
+		value = [],
+		onchange,
+		trigger,
+		width = 'w-48',
+		align = 'start' as 'start' | 'center' | 'end',
+		shortcutKey,
+		slug,
+		oncreated,
+		projectId,
+	}: {
+		open?: boolean;
+		labels: Label[];
+		value: string[];
+		onchange: (labelId: string) => void;
+		trigger: Snippet<[Record<string, unknown>]>;
+		width?: string;
+		align?: 'start' | 'center' | 'end';
+		shortcutKey?: string;
+		slug?: string;
+		oncreated?: (label: Label) => void;
+		/** Project of the issue: hides other projects' labels. null = no project, undefined = no filtering. */
+		projectId?: string | null;
+	} = $props();
+
+	let creating = $state(false);
+	let createdLabels = $state<Label[]>([]);
+	let visibleLabels = $derived(
+		[
+			...createdLabels.filter((createdLabel) => !labels.some((label) => label.id === createdLabel.id)),
+			...labels,
+		].filter((label) => projectId === undefined || labelAppliesTo(label, projectId))
+	);
+
+	const presetColors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6', '#ec4899', '#6b7280'];
+
+	function randomPresetColor() {
+		return presetColors[Math.floor(Math.random() * presetColors.length)];
+	}
+
+	async function handleCreate(name: string) {
+		if (!slug || creating) return;
+		creating = true;
+		try {
+			const label = await createLabel(slug, { name, color: randomPresetColor() });
+			createdLabels = [label, ...createdLabels.filter((createdLabel) => createdLabel.id !== label.id)];
+			oncreated?.(label);
+			onchange(label.id);
+			open = false;
+		} catch (err: any) {
+			appToast.apiError(err, m['sharedComponents.selectors.create_label_failed']());
+		} finally {
+			creating = false;
+		}
+	}
+</script>
+
+<ComboboxPopover bind:open placeholder={m['sharedComponents.selectors.search_labels']()} emptyMessage={m['sharedComponents.selectors.no_labels']()} {width} {align} {shortcutKey} {trigger}>
+	{#snippet children(searchValue: string)}
+		{@const labelName = searchValue.trim()}
+		{@const canCreate = slug && labelName && !visibleLabels.some((label) => label.name.toLowerCase() === labelName.toLowerCase())}
+		{#if canCreate}
+			<Command.Item
+				value={labelName}
+				onSelect={() => handleCreate(labelName)}
+				class="flex items-center gap-2"
+			>
+				<Plus size={14} />
+				<span class="truncate">{creating ? m['common.creating']() : m['sharedComponents.selectors.create_label']({ name: labelName })}</span>
+			</Command.Item>
+		{/if}
+		{#each visibleLabels as label (label.id)}
+		{@const isSelected = value.includes(label.id)}
+		<Command.Item
+			value={label.name}
+			onSelect={() => onchange(label.id)}
+			class="flex items-center gap-2"
+		>
+			<Checkbox checked={isSelected} />
+			<div class="h-2.5 w-2.5 rounded-full shrink-0" style="background-color: {label.color}"></div>
+			<span class="truncate">{label.name}</span>
+		</Command.Item>
+		{/each}
+	{/snippet}
+</ComboboxPopover>

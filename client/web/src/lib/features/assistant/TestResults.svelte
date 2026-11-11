@@ -1,0 +1,169 @@
+<script lang="ts">
+	import { FlaskConical, CircleCheck, CircleAlert, CircleDashed, LoaderCircle, Download } from '@lucide/svelte';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { agentTasks, type ValidationArtifact } from '$lib/api/agent-tasks';
+	import * as Trace from '$lib/components/ui/trace/index.js';
+	import * as CodeBlock from '$lib/components/ui/code-block/index.js';
+	import type { ValidationStep } from '$lib/api/agent-tasks';
+	import { m } from '$lib/features/i18n/messages';
+	let {
+		step,
+		output,
+		slug,
+		taskId,
+		manual = false
+	}: {
+		step: ValidationStep | null;
+		output: string;
+		slug?: string;
+		taskId?: string;
+		// A check run on demand, shown apart from the attempt's independent check.
+		manual?: boolean;
+	} = $props();
+	let artifacts = $state<ValidationArtifact[]>([]);
+	// Reports, screenshots and traces the check left behind, once it finished.
+	$effect(() => {
+		const finished = step && (step.status === 'succeeded' || step.status === 'failed');
+		const run = step?.agent_run_id;
+		if (!finished || !run || !slug || !taskId) {
+			artifacts = [];
+			return;
+		}
+		void agentTasks
+			.artifacts(slug, taskId, run)
+			.then((list) => {
+				// An attempt can have several checks; show only this one's files.
+				if (step?.agent_run_id === run) artifacts = list.filter((artifact) => artifact.step_id === step?.id);
+			})
+			.catch(() => (artifacts = []));
+	});
+	// Always a file download: report HTML is untrusted and never rendered here.
+	async function download(artifact: ValidationArtifact) {
+		if (!slug || !taskId || !step) return;
+		const { blob, filename } = await agentTasks.artifact(slug, taskId, step.agent_run_id, artifact.id);
+		const url = URL.createObjectURL(new Blob([blob], { type: 'application/octet-stream' }));
+		const link = document.createElement('a');
+		link.href = url;
+		link.download = filename ?? artifact.path.split('/').pop() ?? 'artifact';
+		link.click();
+		setTimeout(() => URL.revokeObjectURL(url), 1000);
+	}
+	const size = (bytes: number) =>
+		bytes < 1024
+			? `${bytes} B`
+			: bytes < 1048576
+				? `${Math.round(bytes / 1024)} KB`
+				: `${(bytes / 1048576).toFixed(1)} MB`;
+	// Each command of the check with its result once recorded.
+	const commandRows = $derived(
+		step?.commands?.length
+			? step.commands.map((argv, index) => ({ argv, result: step?.command_results?.[index] }))
+			: []
+	);
+	const running = $derived(step?.status === 'queued' || step?.status === 'running');
+	const failed = $derived(step?.status === 'failed' || step?.status === 'cancelled');
+	const label = $derived(
+		!step
+			? m['tasks.check_unavailable']()
+			: manual
+				? {
+						queued: m['tasks.manual_check_queued'](),
+						running: m['tasks.manual_check_running'](),
+						succeeded: m['tasks.manual_check_passed'](),
+						failed: m['tasks.manual_check_failed'](),
+						cancelled: m['tasks.manual_check_cancelled'](),
+						skipped: m['tasks.manual_check']()
+					}[step.status]
+				: {
+					queued: m['tasks.check_queued'](),
+					running: m['tasks.check_running'](),
+					succeeded: m['tasks.check_passed'](),
+					failed: m['tasks.check_failed'](),
+					cancelled: m['tasks.check_cancelled'](),
+					skipped: m['tasks.check_skipped']()
+				}[step.status]
+	);
+</script>
+
+<!-- Official AI Elements Test Results composition: Trace + Code Block.
+     A configured command is one check; no suite counts are inferred from text. -->
+<section aria-label={manual ? m['tasks.manual_check']() : m['tasks.checks']()} class="min-w-0">
+	<Trace.Collapsible>
+		<Trace.CollapsibleTrigger>
+			<Trace.Line status={running ? 'running' : failed ? 'error' : undefined}>
+				<Trace.Icon
+					>{#if running}<LoaderCircle class="animate-spin" />{:else if failed}<CircleAlert
+						/>{:else if step?.status === 'succeeded'}<CircleCheck />{:else}<CircleDashed />{/if}</Trace.Icon
+				>
+				<Trace.Title class="whitespace-normal break-words">{label}</Trace.Title>
+			</Trace.Line>
+		</Trace.CollapsibleTrigger>
+		<Trace.CollapsibleContent class="space-y-2">
+			{#if step}
+				<CodeBlock.Root size="sm"
+					><CodeBlock.Header
+						><CodeBlock.Title
+							><FlaskConical class="size-4" />{manual ? m['tasks.manual_check']() : m['tasks.checks']()}</CodeBlock.Title
+						></CodeBlock.Header
+					><CodeBlock.Content code={JSON.stringify(commandRows.length > 1 ? step.commands : step.command_argv)} wrap /></CodeBlock.Root
+				>
+				{#if step.command_source === 'agent'}<p class="text-xs text-muted-foreground">{m['tasks.check_source_agent']()}</p>
+				{:else if step.command_source === 'configured'}<p class="text-xs text-muted-foreground">
+						{m['tasks.check_source_configured']()}
+					</p>{/if}
+				{#if commandRows.length > 1}
+					<ul class="space-y-1" aria-label={m['tasks.check_commands']()}>
+						{#each commandRows as row, index (index)}
+							<li class="flex min-w-0 items-start gap-2 text-xs">
+								{#if !row.result}<CircleDashed class="mt-0.5 size-3.5 shrink-0" />{:else if row.result.exit_code === 0}<CircleCheck
+										class="mt-0.5 size-3.5 shrink-0"
+									/>{:else}<CircleAlert class="mt-0.5 size-3.5 shrink-0 text-destructive" />{/if}
+								<code class="min-w-0 flex-1 break-all">{row.argv.join(' ')}</code>
+								<span class="shrink-0 text-muted-foreground"
+									>{!row.result
+										? m['tasks.check_command_pending']()
+										: row.result.exit_code === 0
+											? m['tasks.check_command_passed']()
+											: m['tasks.check_command_failed']({ code: row.result.exit_code })}</span
+								>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+				{#if step.agent_summary}
+					<div class="space-y-1">
+						<p class="text-xs font-medium text-muted-foreground">{m['tasks.check_agent_summary']()}</p>
+						<p class="text-xs break-words whitespace-pre-wrap">{step.agent_summary}</p>
+					</div>
+				{/if}
+				{#if step.status === 'skipped'}<p class="text-xs text-muted-foreground">{m['tasks.check_skipped_hint']()}</p>{/if}
+				{#if step.compose_file}<p class="text-xs text-muted-foreground">
+						{m['tasks.check_services']({ file: step.compose_file })}
+					</p>{/if}
+				{#if step.exit_code != null}<p class="text-xs">{m['tasks.check_exit']({ code: step.exit_code })}</p>
+				{:else if step.status === 'failed' && step.summary}<p class="text-xs break-words">{step.summary}</p>{/if}
+				{#if step.started_at}<p class="text-xs text-muted-foreground">
+						{m['tasks.check_started']({ time: new Date(step.started_at).toLocaleString() })}
+					</p>{/if}
+				{#if step.completed_at}<p class="text-xs text-muted-foreground">
+						{m['tasks.check_finished']({ time: new Date(step.completed_at).toLocaleString() })}
+					</p>{/if}
+			{/if}
+			{#if output}<CodeBlock.Root size="sm"
+					><CodeBlock.Content code={output} wrap class="max-h-64 text-xs" /></CodeBlock.Root
+				>{/if}
+			{#if artifacts.length}
+				<div class="space-y-1" aria-label={m['tasks.check_artifacts']()}>
+					<p class="text-xs font-medium text-muted-foreground">{m['tasks.check_artifacts']()}</p>
+					{#each artifacts as artifact (artifact.id)}
+						<Button variant="ghost" size="sm" class="h-7 w-full justify-start" onclick={() => void download(artifact)}
+							><Download /><span class="truncate">{artifact.path}</span><span
+								class="ml-auto shrink-0 text-muted-foreground">{size(artifact.size)}</span
+							></Button
+						>
+					{/each}
+				</div>
+			{/if}
+		</Trace.CollapsibleContent>
+	</Trace.Collapsible>
+</section>

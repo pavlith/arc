@@ -1,0 +1,294 @@
+<script lang="ts">
+	import Bot from '@lucide/svelte/icons/bot';
+	import PageTitle from '$lib/components/shared/PageTitle.svelte';
+	import { onMount } from 'svelte';
+	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
+	import { authState } from '$lib/features/auth/auth.state.svelte';
+	import { issuesState } from '$lib/features/issues/issues.state.svelte';
+	import { teamStatusesState } from '$lib/features/issues/team-statuses.state.svelte';
+	import IssueRow from '$lib/features/issues/IssueRow.svelte';
+	import KanbanBoard from '$lib/features/issues/KanbanBoard.svelte';
+	import FilterBuilder from '$lib/components/shared/FilterBuilder.svelte';
+	import ViewSwitcher from '$lib/components/shared/ViewSwitcher.svelte';
+	import EmptyState from '$lib/components/shared/EmptyState.svelte';
+	import IssueGroupHeader from '$lib/features/issues/IssueGroupHeader.svelte';
+	import IssueListLoadMore from '$lib/features/issues/IssueListLoadMore.svelte';
+	import SidebarToggle from '$lib/components/layout/SidebarToggle.svelte';
+	import * as Tabs from '$lib/components/ui/tabs';
+	import { listProjects } from '$lib/api/projects';
+	import { listLabels } from '$lib/api/labels';
+	import { listMembers } from '$lib/api/members';
+	import type { Project } from '$lib/types/project';
+	import type { Label } from '$lib/types/label';
+	import type { WorkspaceMember } from '$lib/types/workspace';
+	import type { ViewFilter, ViewLayout } from '$lib/types/view';
+	import { viewLayoutState } from '$lib/features/issues/view-layout.state.svelte';
+	import type { Issue, RelationType } from '$lib/types/issue';
+	import AddRelationDialog from '$lib/features/issues/AddRelationDialog.svelte';
+	import { CircleUser, PenLine } from '@lucide/svelte';
+	import { createKeyboardHandler } from '$lib/utils/keyboard';
+	import BulkActionBar from '$lib/features/issues/BulkActionBar.svelte';
+	import { m, getLocale, setLocale } from '$lib/features/i18n/messages';
+
+	const slug = $derived(page.params.workspaceSlug ?? '');
+
+	type MyTab = 'assigned' | 'created' | 'agents';
+	const DRILL_DOWN_FILTERS = [
+		'status',
+		'status_type',
+		'priority',
+		'assignee',
+		'project',
+		'cycle',
+		'team',
+		'label',
+		'creator'
+	] as const;
+
+	function initialFilters(): ViewFilter {
+		const filters: ViewFilter = {};
+		for (const key of DRILL_DOWN_FILTERS) {
+			const value = page.url.searchParams.get(key);
+			if (value) filters[key] = value;
+		}
+		return filters;
+	}
+
+	let activeTab = $state<MyTab>('assigned');
+	const initialDrillDownFilters = initialFilters();
+	let filters = $state<ViewFilter>(initialDrillDownFilters);
+	let drillDownMode = $state(Object.keys(initialDrillDownFilters).length > 0);
+	let layout = $state<ViewLayout>(viewLayoutState.layout);
+	let projects = $state<Project[]>([]);
+	let labels = $state<Label[]>([]);
+	let members = $state<WorkspaceMember[]>([]);
+	let collapsedGroups = $state<Set<string>>(new Set());
+	let lastSelectedId = $state<string | null>(null);
+	let relationDialogOpen = $state(false);
+	let relationIssue = $state<Issue | null>(null);
+	let relationDefaultType = $state<RelationType>('related');
+
+	function handleAddRelation(issue: Issue, type: RelationType) {
+		relationIssue = issue;
+		relationDefaultType = type;
+		relationDialogOpen = true;
+	}
+
+	onMount(() => {
+		void loadIssues();
+		void Promise.all([listProjects(slug), listLabels(slug), listMembers(slug)]).then(([p, l, m]) => {
+			projects = p;
+			labels = l;
+			members = m;
+		});
+	});
+
+	async function loadIssues() {
+		if (!authState.user) return;
+		const params: Record<string, string> = {};
+
+		// Tab-specific filter
+		if (!drillDownMode && activeTab === 'assigned') {
+			params.assignee = authState.user.id;
+		} else if (!drillDownMode && activeTab === 'agents') {
+			// Issues with an agent working on my behalf.
+			params.agent_assigned_by = authState.user.id;
+		} else if (!drillDownMode) {
+			params.creator = authState.user.id;
+		}
+
+		// Apply user filters
+		for (const [key, value] of Object.entries(filters)) {
+			if (value !== undefined && value !== '') {
+				params[key] = value;
+			}
+		}
+
+		// Keep server pagination aligned with the status-grouped rendering.
+		params.group_by = 'status';
+		params.sort = 'priority';
+		params.order = 'asc';
+
+		if (layout === 'board') {
+			params.per_page = '200';
+		}
+
+		issuesState.groupBy = 'status';
+		await issuesState.load(slug, params);
+
+		// Load team statuses from the first issue's team for status pickers
+		const firstTeamId = issuesState.issues[0]?.team_id;
+		if (firstTeamId) {
+			teamStatusesState.load(slug, firstTeamId);
+		}
+	}
+
+	function handleTabChange(tab: string) {
+		activeTab = tab as MyTab;
+		loadIssues();
+	}
+
+	function handleFilterChange(f: ViewFilter) {
+		filters = f;
+		if (!DRILL_DOWN_FILTERS.some((key) => !!f[key])) drillDownMode = false;
+		loadIssues();
+	}
+
+	function handleLayoutChange(l: ViewLayout) {
+		layout = l;
+		viewLayoutState.layout = l;
+		loadIssues();
+	}
+
+	function handleIssueClick(issue: Issue) {
+		lastSelectedId = issue.id;
+		goto(`/${slug}/issue/${issue.identifier}`);
+	}
+
+	const keyHandler = createKeyboardHandler([
+		{ key: 'a', ctrl: true, handler: () => issuesState.selectAll() },
+		{ key: 'Escape', handler: () => issuesState.clearSelection() }
+	]);
+
+	onMount(() => {
+		document.addEventListener('keydown', keyHandler);
+		return () => document.removeEventListener('keydown', keyHandler);
+	});
+
+	function toggleGroup(key: string) {
+		const next = new Set(collapsedGroups);
+		if (next.has(key)) {
+			next.delete(key);
+		} else {
+			next.add(key);
+		}
+		collapsedGroups = next;
+	}
+</script>
+
+<div class="flex h-full flex-col">
+	<!-- Header -->
+	<div class="flex h-[49px] items-center justify-between border-b border-[var(--app-border)] px-6">
+		<div class="flex items-center gap-2">
+			<SidebarToggle />
+			<h1 class="text-sm font-medium text-[var(--color-text-primary)]">{m['my_issues.title']()}</h1>
+		</div>
+		<ViewSwitcher bind:layout onchange={handleLayoutChange} />
+	</div>
+
+	<!-- Tabs -->
+	<Tabs.Root value={activeTab} onValueChange={handleTabChange}>
+		<Tabs.List class="w-full justify-start gap-1.5 rounded-none border-none bg-transparent px-2 pt-4 pb-2">
+			<Tabs.Trigger
+				value="assigned"
+				class="flex-none h-auto rounded-full border border-[var(--app-border)] px-2.5 py-1 text-xs text-[var(--color-text-tertiary)] shadow-none data-[state=active]:border-[var(--app-accent)]/30 data-[state=active]:bg-[var(--app-accent)]/10 data-[state=active]:text-[var(--app-accent-light)] data-[state=active]:shadow-none"
+			>
+				<CircleUser size={13} class="mr-1" />
+				{m['my_issues.tab.assigned']()}
+			</Tabs.Trigger>
+			<Tabs.Trigger
+				value="created"
+				class="flex-none h-auto rounded-full border border-[var(--app-border)] px-2.5 py-1 text-xs text-[var(--color-text-tertiary)] shadow-none data-[state=active]:border-[var(--app-accent)]/30 data-[state=active]:bg-[var(--app-accent)]/10 data-[state=active]:text-[var(--app-accent-light)] data-[state=active]:shadow-none"
+			>
+				<PenLine size={13} class="mr-1" />
+				{m['my_issues.tab.created']()}
+			</Tabs.Trigger>
+			<Tabs.Trigger
+					value="agents"
+					class="flex-none h-auto rounded-full border border-[var(--app-border)] px-2.5 py-1 text-xs text-[var(--color-text-tertiary)] shadow-none data-[state=active]:border-[var(--app-accent)]/30 data-[state=active]:bg-[var(--app-accent)]/10 data-[state=active]:text-[var(--app-accent-light)] data-[state=active]:shadow-none"
+				>
+					<Bot size={13} class="mr-1" />
+					{m['my_issues.tab.agents']()}
+			</Tabs.Trigger>
+		</Tabs.List>
+	</Tabs.Root>
+
+	<!-- Filter bar -->
+	<FilterBuilder bind:filters {projects} {labels} {members} onchange={handleFilterChange} />
+
+	<!-- Content -->
+	{#if layout === 'list'}
+		<div class="flex-1 overflow-y-auto">
+			{#if !issuesState.loading && issuesState.issues.length === 0}
+				<EmptyState
+					title={activeTab === 'assigned' ? m['my_issues.empty.assigned.title']() : m['my_issues.empty.created.title']()}
+					description={activeTab === 'assigned'
+						? m['my_issues.empty.assigned.description']()
+						: m['my_issues.empty.created.description']()}
+				/>
+			{:else if issuesState.groupBy}
+				{#each issuesState.groupedIssues as group (group.key)}
+					<section>
+						<IssueGroupHeader
+							groupKey={group.key}
+							groupBy={issuesState.groupBy}
+							groupLabel={group.label}
+							count={group.issues.length}
+							collapsed={collapsedGroups.has(group.key)}
+							ontoggle={() => toggleGroup(group.key)}
+						/>
+						{#if !collapsedGroups.has(group.key)}
+							{#each group.issues as issue (issue.id)}
+								<IssueRow
+									{issue}
+									{slug}
+									{members}
+									{labels}
+									{projects}
+									onclick={handleIssueClick}
+									{lastSelectedId}
+									onlastselected={(id) => (lastSelectedId = id)}
+									onaddrelation={handleAddRelation}
+								/>
+							{/each}
+						{/if}
+					</section>
+				{/each}
+			{:else}
+				{#each issuesState.issues as issue (issue.id)}
+					<IssueRow
+						{issue}
+						{slug}
+						{members}
+						{labels}
+						{projects}
+						onclick={handleIssueClick}
+						{lastSelectedId}
+						onlastselected={(id) => (lastSelectedId = id)}
+						onaddrelation={handleAddRelation}
+					/>
+				{/each}
+			{/if}
+
+			<IssueListLoadMore />
+
+			<BulkActionBar
+				{slug}
+				{labels}
+				{members}
+				onlabelcreated={(label) => (labels = [label, ...labels.filter((existing) => existing.id !== label.id)])}
+			/>
+		</div>
+	{:else if !issuesState.loading}
+		<div class="flex-1 overflow-hidden">
+			<KanbanBoard
+				issuesByStatus={issuesState.issuesByStatus}
+				{slug}
+				{members}
+				{labels}
+				onissueclick={handleIssueClick}
+			/>
+		</div>
+	{/if}
+</div>
+
+<AddRelationDialog
+	bind:open={relationDialogOpen}
+	{slug}
+	identifier={relationIssue?.identifier ?? ''}
+	defaultType={relationDefaultType}
+	oncreated={loadIssues}
+/>
+
+<PageTitle parts={[m['my_issues.title']()]} />

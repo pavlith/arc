@@ -1,0 +1,112 @@
+<script lang="ts">
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { m } from '$lib/features/i18n/messages';
+	import type { IssueStatus, IssuePriority } from '$lib/types/issue';
+	import { getPriorityLabel } from '$lib/types/issue';
+	import { teamStatusesState } from './team-statuses.state.svelte';
+	import type { WorkspaceMember } from '$lib/types/workspace';
+	import type { Project } from '$lib/types/project';
+	import IssueStatusIcon from './IssueStatusIcon.svelte';
+	import IssuePriorityIcon from './IssuePriorityIcon.svelte';
+	import type { GroupByField } from './issues.state.svelte';
+	import { ChevronDown, ChevronRight, User, Plus } from '@lucide/svelte';
+	import AgentAvatar from '$lib/features/agents/AgentAvatar.svelte';
+	import { groupAgentId } from '$lib/features/agents/agent-assignees';
+	import { agentIdentities } from '$lib/features/agents/agent-identities.state.svelte';
+
+	let {
+		groupKey,
+		groupBy,
+		groupLabel,
+		count,
+		collapsed = false,
+		members = [],
+		projects = [],
+		ontoggle,
+		onquickadd
+	}: {
+		groupKey: string;
+		groupBy: GroupByField;
+		groupLabel?: string;
+		count: number;
+		collapsed?: boolean;
+		members?: WorkspaceMember[];
+		projects?: Project[];
+		ontoggle: () => void;
+		onquickadd?: (groupKey: string) => void;
+	} = $props();
+
+	const label = $derived.by(() => {
+		switch (groupBy) {
+			case 'status': {
+				const ts = teamStatusesState.statusById.get(groupKey);
+				if (ts) return ts.name;
+				// Fall back to label from groupedIssues (derived from status_info)
+				return groupLabel ?? groupKey;
+			}
+			case 'priority':
+				return getPriorityLabel(Number(groupKey) as IssuePriority) ?? groupKey;
+			case 'assignee': {
+				if (groupKey === 'unassigned') return m['sharedComponents.filter_builder.unassigned']();
+				const agentId = groupAgentId(groupKey);
+				if (agentId) return m['sharedComponents.filter_builder.agent_suffix']({ name: agentIdentities.byId(agentId)?.name ?? groupLabel ?? agentId });
+				const member = members.find((m) => m.user_id === groupKey);
+				return member ? member.name || member.email : groupKey;
+			}
+			case 'project': {
+				if (groupKey === 'no-project') return m['sharedComponents.filter_builder.no_project']();
+				const project = projects.find((p) => p.id === groupKey);
+				return project ? project.name : groupKey;
+			}
+			default:
+				return groupKey;
+		}
+	});
+</script>
+
+<div class="sticky top-0 z-20 mx-2 mt-1 bg-[var(--color-bg)] first:mt-0">
+	<!-- The whole row shows the native focus ring, as when the row itself was the toggle. -->
+	<div class="flex w-full items-center gap-2 rounded-md bg-[var(--color-bg-secondary)] px-4 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] has-[[aria-expanded]:focus-visible]:[outline:auto]">
+		<Button variant="plain" class="flex min-w-0 flex-1 cursor-default items-center gap-2 text-left focus-visible:outline-none" aria-expanded={!collapsed} onclick={ontoggle}>
+		{#if collapsed}
+			<ChevronRight size={12} class="text-[var(--color-text-tertiary)]" />
+		{:else}
+			<ChevronDown size={12} class="text-[var(--color-text-tertiary)]" />
+		{/if}
+
+		{#if groupBy === 'status'}
+			{@const ts = teamStatusesState.statusById.get(groupKey)}
+			<IssueStatusIcon status={groupKey as IssueStatus} category={ts?.category} color={ts?.color} size={14} />
+		{:else if groupBy === 'priority'}
+			<IssuePriorityIcon priority={Number(groupKey) as IssuePriority} size={14} />
+		{:else if groupBy === 'assignee'}
+			{#if groupAgentId(groupKey)}
+				<AgentAvatar name={label} color={agentIdentities.byId(groupAgentId(groupKey) ?? '')?.avatar_color} size={16} />
+			{:else if groupKey !== 'unassigned'}
+				<div
+					class="flex h-4 w-4 items-center justify-center rounded-full bg-[var(--app-accent)] text-[8px] font-medium text-[var(--app-accent-foreground)]"
+				>
+					{label.charAt(0).toUpperCase()}
+				</div>
+			{:else}
+				<User size={14} class="text-[var(--color-text-tertiary)]" />
+			{/if}
+		{/if}
+
+		<span>{label}</span>
+		<span class="text-[10px] font-normal text-[var(--color-text-tertiary)]">{count}</span>
+		</Button>
+		{#if onquickadd}
+			<Button variant="plain"
+				aria-label={m['sidebar.new_issue']()}
+				onclick={(e) => {
+					e.stopPropagation();
+					onquickadd?.(groupKey);
+				}}
+				class="ml-auto rounded p-0.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
+			>
+				<Plus size={14} />
+			</Button>
+		{/if}
+	</div>
+</div>

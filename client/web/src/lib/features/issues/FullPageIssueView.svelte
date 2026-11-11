@@ -1,0 +1,1697 @@
+<script lang="ts">
+	import { decodeHtmlEntities, htmlToPlainText, parseInertHtml } from '$lib/security/plain-text';
+	import OpenIssueChatButton from '$lib/features/assistant/OpenIssueChatButton.svelte';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { onMount, onDestroy } from 'svelte';
+	import { m, getLocale, setLocale } from '$lib/features/i18n/messages';
+	import type { Issue, Comment, IssueHistory, IssueStatus, IssuePriority, RelationType } from '$lib/types/issue';
+	import { getPriorityLabel } from '$lib/types/issue';
+	import { teamStatusesState } from './team-statuses.state.svelte';
+	import type { WorkspaceMember } from '$lib/types/workspace';
+	import type { Label } from '$lib/types/label';
+	import type { Project } from '$lib/types/project';
+	import { listComments, createComment, resolveComment, reopenComment, getIssueHistory, getIssue, signIssuePromptAssets, createSubIssue, bulkCreateSubIssues, expandIssueDescription, subscribeToIssue, unsubscribeFromIssue } from '$lib/api/issues';
+	import { listMembers } from '$lib/api/members';
+	import { listLabels } from '$lib/api/labels';
+	import ProjectChip from '$lib/components/shared/ProjectChip.svelte';
+	import { listProjects } from '$lib/api/projects';
+	import { issuesState } from './issues.state.svelte';
+	import { authState } from '$lib/features/auth/auth.state.svelte';
+	import IssueStatusIcon from './IssueStatusIcon.svelte';
+	import IssuePriorityIcon from './IssuePriorityIcon.svelte';
+	import DatePickerPopover from '$lib/components/shared/DatePickerPopover.svelte';
+	import RichEditor from '$lib/components/shared/RichEditor.svelte';
+	import { formatRelativeTime } from '$lib/utils/format';
+	import { appToast } from '$lib/features/toast/toast';
+	import * as Popover from '$lib/components/ui/popover';
+	import * as ContextMenu from '$lib/components/ui/context-menu';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog';
+	import { Checkbox } from '$lib/components/ui/checkbox';
+	import { StatusSelector, PrioritySelector, AssigneeSelector, LabelSelector, ProjectSelector, CycleSelector } from './selectors';
+	import { createKeyboardHandler } from '$lib/utils/keyboard';
+	import { reworkDescriptionSelection } from './description-rework';
+	import {
+		ChevronUp, ChevronDown, ChevronRight, Plus, CalendarDays,
+		Copy, Link as LinkIcon, GitBranch, SquareMousePointer,
+		CircleDot, ArrowUpCircle, UserCircle, FolderKanban, Pencil, Layers,
+		Tag, RefreshCw, ArrowUp, MoreHorizontal, Check, Bell,
+		Trash2, CornerDownRight, Ban, ArrowRight, Bot, BookOpen, X
+	} from '@lucide/svelte';
+	import { listCycles } from '$lib/api/cycles';
+	import type { Cycle } from '$lib/types/cycle';
+	import IssueRelations from './IssueRelations.svelte';
+	import SubIssuesList from './SubIssuesList.svelte';
+	import IssueWikiReferences from './IssueWikiReferences.svelte';
+	import { isWikiPageDrag, wikiPageDragData } from '$lib/features/wiki/wiki-references';
+	import { getCurrentWorkspace } from '$lib/features/workspaces/current-workspace.svelte';
+	import { hasPermission } from '$lib/security/permissions';
+	import type { Role } from '$lib/security/roles';
+	import IssueGitHubActivity from './IssueGitHubActivity.svelte';
+	import { goto } from '$app/navigation';
+	import { sanitizeHtml } from '$lib/security/sanitize';
+	import { mentionInteractivity } from '$lib/components/shared/mention/mention-interactivity.action';
+	import { presenceState } from '$lib/features/presence/presence.state.svelte';
+	import CreateIssueDialog from './CreateIssueDialog.svelte';
+	import IssuePickerDialog from './IssuePickerDialog.svelte';
+	import AddRelationDialog from './AddRelationDialog.svelte';
+	import { showIssueCreatedToast } from './issue-created-toast';
+	import type { Team } from '$lib/types/team';
+	import { listTeams } from '$lib/api/teams';
+	import { getIssueCopyPrompt } from '$lib/api/ai-settings';
+	import HistoryAssignees from './HistoryAssignees.svelte';
+	import { agentsApi, type IssueAgentAssignee } from '$lib/api/agents';
+	import AgentAvatar from '$lib/features/agents/AgentAvatar.svelte';
+	import AgentAssigneeItems from '$lib/features/agents/AgentAssigneeItems.svelte';
+	import { agentIdentities } from '$lib/features/agents/agent-identities.state.svelte';
+	import { agentIsLive } from '$lib/features/agents/agent-assignees';
+	import { toggleIssueAgent } from '$lib/features/agents/issue-agents.svelte';
+	import { taskLabel } from '$lib/features/assistant/task-labels';
+	import { taskTone, toneText } from '$lib/features/assistant/task-tone';
+	import type { TaskState } from '$lib/api/agent-tasks';
+	import { historyActor } from './history-agent';
+	import IssueVersionHistory from './IssueVersionHistory.svelte';
+	import IssueMachineActions from '$lib/features/dev-machines/IssueMachineActions.svelte';
+	import IssueMachinePickerDialog, { type IssueMachineIntent } from '$lib/features/dev-machines/IssueMachinePickerDialog.svelte';
+	import CreateMachineDialog from '$lib/features/dev-machines/CreateMachineDialog.svelte';
+	import IssueRepositoryDialog from '$lib/features/dev-machines/IssueRepositoryDialog.svelte';
+
+	let {
+		issue,
+		slug,
+		onnavigate,
+		onupdated
+	}: {
+		issue: Issue;
+		slug: string;
+		onnavigate?: (direction: 'prev' | 'next') => void;
+		onupdated?: (issue: Issue) => void;
+	} = $props();
+
+	// AI agents assigned to the issue. Their status is live: a realtime event
+	// reloads it, and a slow poll covers a missed event while a task works.
+	let agentAssignees = $state<IssueAgentAssignee[]>([]);
+	$effect(() => {
+		agentAssignees = issue.agent_assignees ?? [];
+	});
+	// Agents are loaded when first needed (opening the assignee picker or
+	// typing @ in a comment), not with every issue.
+	const mentionAgents = $derived(agentIdentities.forTeam(issue.team_id));
+	async function refreshAgents() {
+		try {
+			const agents = await agentsApi.forIssue(slug, issue.identifier);
+			if (disposed) return;
+			agentAssignees = agents;
+			issuesState.setAgentAssignees(issue.identifier, agents);
+		} catch {
+			// Keep what is shown; the next event or poll retries.
+		}
+	}
+	$effect(() => {
+		if (!agentAssignees.some(agentIsLive)) return;
+		const timer = setInterval(refreshAgents, 10000);
+		return () => clearInterval(timer);
+	});
+	function onAgentsUpdated(e: Event) {
+		if ((e as CustomEvent).detail?.issue_id === issue.id) void refreshAgents();
+	}
+
+	let comments = $state<Comment[]>([]);
+	let history = $state<IssueHistory[]>([]);
+	let members = $state<WorkspaceMember[]>([]);
+	let labels = $state<Label[]>([]);
+	let projects = $state<Project[]>([]);
+	let newComment = $state('');
+	let commentVersion = $state(0);
+	let replyContents = $state<Record<string, string>>({});
+	let replyVersions = $state<Record<string, number>>({});
+	let editingTitle = $state(false);
+	let titleValue = $state('');
+	let statusOpen = $state(false);
+	let priorityOpen = $state(false);
+	let assigneeOpen = $state(false);
+	let labelsOpen = $state(false);
+	let cycles = $state<Cycle[]>([]);
+	let cycleOpen = $state(false);
+	let projectOpen = $state(false);
+	let loaded = $state(false);
+	let showAllActivity = $state(false);
+	let teams = $state<Team[]>([]);
+	let showCreateIssueDialog = $state(false);
+	let createIssueTitle = $state('');
+	let createDialogParentIssue = $state<Issue | null>(null);
+	let parentPickerOpen = $state(false);
+	let removeParentOpen = $state(false);
+	let relationDialogOpen = $state(false);
+	let relationType = $state<RelationType>('related');
+	let issueActionsOpen = $state(false);
+	let issueActionsCreateOpen = $state(false);
+	let issueActionsRepositoryOpen = $state(false);
+	let issueActionsMachinePickerOpen = $state(false);
+	let issueActionsMachineIntent = $state<IssueMachineIntent>('ide');
+	let isSubscribed = $state(false);
+	let subscriptionBusy = $state(false);
+
+	// Presence & real-time
+	let lastLocalUpdate = 0;
+	let descriptionSaveTimer: ReturnType<typeof setTimeout> | null = null;
+	let pendingDescriptionHtml = '';
+
+	// Collapsible sidebar sections
+	let detailsExpanded = $state(true);
+	// A wiki page dragged over the issue: dropping it outside an editor
+	// attaches it as a reference (an editor takes the drop as a chip instead).
+	let wikiReferences = $state<ReturnType<typeof IssueWikiReferences> | null>(null);
+	let wikiDropping = $state(false);
+	const currentWorkspace = getCurrentWorkspace();
+	const canUpdateIssue = $derived(
+		hasPermission((currentWorkspace?.membership?.workspace.current_user_role ?? 'guest') as Role, 'issue:update')
+	);
+	function onWikiDragOver(event: DragEvent) {
+		if (!canUpdateIssue || !isWikiPageDrag(event.dataTransfer)) return;
+		event.preventDefault();
+		if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+		wikiDropping = true;
+	}
+	function onWikiDragLeave(event: DragEvent) {
+		if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) wikiDropping = false;
+	}
+	function onWikiDrop(event: DragEvent) {
+		wikiDropping = false;
+		// An editor that took the drop has already handled the event.
+		if (event.defaultPrevented) return;
+		const pageId = canUpdateIssue ? wikiPageDragData(event.dataTransfer) : null;
+		if (!pageId) return;
+		event.preventDefault();
+		void wikiReferences?.attach(pageId);
+	}
+	let labelsExpanded = $state(true);
+	let projectExpanded = $state(true);
+	let cycleExpanded = $state(true);
+
+	const priorityValues: IssuePriority[] = [0, 1, 2, 3, 4];
+	const imageUploadUrl = $derived(`/api/workspaces/${slug}/upload?team_id=${issue.team_id}`);
+
+	let issueProject = $derived(projects.find(p => p.id === issue.project_id));
+	let issueCycle = $derived(cycles.find(c => c.id === issue.cycle_id));
+	let currentParentPreview = $derived(parentDescriptionPreview(issue.parent?.description));
+	let issueTeam = $derived(teams.find(t => t.id === issue.team_id));
+
+	// Get remote cursors for a specific field from presence state
+	function getRemoteCursors(field: string) {
+		return presenceState.getCursorsForField(field);
+	}
+	const descriptionCursors = $derived(getRemoteCursors('description'));
+	const newCommentViewers = $derived(presenceState.getViewersForField('new-comment'));
+
+	let disposed = false;
+	onMount(async () => {
+		try {
+		// Load team statuses (needed on direct navigation / refresh)
+		await teamStatusesState.load(slug, issue.team_id);
+		if (disposed) return;
+
+		const [c, h, m, l, p] = await Promise.all([
+			listComments(slug, issue.identifier),
+			getIssueHistory(slug, issue.identifier),
+			listMembers(slug),
+			listLabels(slug),
+			listProjects(slug)
+		]);
+		if (disposed) return;
+		comments = c ?? [];
+		history = h ?? [];
+		members = m ?? [];
+		labels = l ?? [];
+		projects = p ?? [];
+		loaded = true;
+		listCycles(slug, issue.team_id).then(c => cycles = c).catch(() => {});
+		listTeams(slug).then(t => teams = t).catch(() => {});
+
+		// Join presence AFTER members are loaded so names resolve correctly
+		presenceState.join(issue.id, m ?? []);
+		} catch {
+			if (!disposed) { comments = []; history = []; members = []; labels = []; projects = []; }
+		}
+	});
+
+	// --- Real-time event listeners ---
+	function matchesCurrentIssue(detail: any): boolean {
+		if (!detail) return false;
+		// Match on identifier, id, or issue_id (comment.created uses issue_id)
+		return detail.identifier === issue.identifier
+			|| detail.id === issue.id
+			|| detail.issue_id === issue.id;
+	}
+
+	function onIssueUpdated(e: Event) {
+		const detail = (e as CustomEvent).detail;
+		if (matchesCurrentIssue(detail) && Date.now() - lastLocalUpdate > 2000) {
+			refreshIssue();
+		}
+	}
+	function onIssueDeleted(e: Event) {
+		const detail = (e as CustomEvent).detail;
+		if (matchesCurrentIssue(detail)) {
+			goto(`/${slug}/teams/${issue.team_id}`);
+		}
+	}
+	function onCommentCreated(e: Event) {
+		const detail = (e as CustomEvent).detail;
+		if (matchesCurrentIssue(detail) && Date.now() - lastLocalUpdate > 2000) {
+			refreshActivity();
+		}
+	}
+	function onPresenceJoin(e: Event) { presenceState.handleJoin((e as CustomEvent).detail); }
+	function onPresenceLeave(e: Event) { presenceState.handleLeave((e as CustomEvent).detail); }
+	function onPresenceSync(e: Event) { presenceState.handleSync((e as CustomEvent).detail); }
+	function onFocusUpdate(e: Event) { presenceState.handleFocusUpdate((e as CustomEvent).detail); }
+	function onFocusLeaveEvent(e: Event) { presenceState.handleFocusLeave((e as CustomEvent).detail); }
+	function onReconnected() { if (loaded) presenceState.join(issue.id, members); }
+
+	const issueKeyHandler = createKeyboardHandler([
+		{ key: 's', handler: () => { statusOpen = true; } },
+		{ key: 'p', handler: () => { priorityOpen = true; } },
+		{ key: 'a', handler: () => { assigneeOpen = true; } },
+		{ key: 'l', handler: () => { labelsOpen = true; } },
+	]);
+
+	onMount(() => {
+		window.addEventListener('keydown', issueKeyHandler);
+		window.addEventListener('ws:issue-updated', onIssueUpdated);
+		window.addEventListener('ws:issue-deleted', onIssueDeleted);
+		window.addEventListener('ws:comment-created', onCommentCreated);
+		window.addEventListener('ws:issue-agents-updated', onAgentsUpdated);
+		window.addEventListener('ws:presence.join', onPresenceJoin);
+		window.addEventListener('ws:presence.leave', onPresenceLeave);
+		window.addEventListener('ws:presence.sync', onPresenceSync);
+		window.addEventListener('ws:focus.update', onFocusUpdate);
+		window.addEventListener('ws:focus.leave', onFocusLeaveEvent);
+		window.addEventListener('ws:reconnected', onReconnected);
+	});
+
+	onDestroy(() => {
+		disposed = true;
+		window.removeEventListener('keydown', issueKeyHandler);
+		presenceState.leave();
+		if (descriptionSaveTimer) {
+			clearTimeout(descriptionSaveTimer);
+			descriptionSaveTimer = null;
+			void flushDescriptionSave(pendingDescriptionHtml);
+		}
+		window.removeEventListener('ws:issue-updated', onIssueUpdated);
+		window.removeEventListener('ws:issue-deleted', onIssueDeleted);
+		window.removeEventListener('ws:comment-created', onCommentCreated);
+		window.removeEventListener('ws:issue-agents-updated', onAgentsUpdated);
+		window.removeEventListener('ws:presence.join', onPresenceJoin);
+		window.removeEventListener('ws:presence.leave', onPresenceLeave);
+		window.removeEventListener('ws:presence.sync', onPresenceSync);
+		window.removeEventListener('ws:focus.update', onFocusUpdate);
+		window.removeEventListener('ws:focus.leave', onFocusLeaveEvent);
+		window.removeEventListener('ws:reconnected', onReconnected);
+	});
+
+	$effect(() => {
+		titleValue = issue.title;
+	});
+
+	$effect(() => {
+		isSubscribed = issue.is_subscribed ?? false;
+	});
+
+	// Update presence with members when they load
+	$effect(() => {
+		if (members.length > 0) {
+			presenceState.setMembers(members);
+		}
+	});
+
+	async function saveTitle() {
+		editingTitle = false;
+		if (titleValue.trim() && titleValue !== issue.title) {
+			try {
+				lastLocalUpdate = Date.now();
+				const updated = await issuesState.update(slug, issue.identifier, { title: titleValue.trim() });
+				onupdated?.(updated);
+			} catch {
+				titleValue = issue.title;
+				appToast.error(m['issue.toast.failed_title']());
+			}
+		} else {
+			titleValue = issue.title;
+		}
+	}
+
+	function saveDescription(html: string) {
+		lastLocalUpdate = Date.now();
+		pendingDescriptionHtml = html;
+		if (descriptionSaveTimer) clearTimeout(descriptionSaveTimer);
+		descriptionSaveTimer = setTimeout(() => {
+			descriptionSaveTimer = null;
+			void flushDescriptionSave(pendingDescriptionHtml);
+		}, 2000);
+	}
+
+	async function flushDescriptionSave(html: string) {
+		if (html === (issue.description ?? '')) return;
+		try {
+			lastLocalUpdate = Date.now();
+			const updated = await issuesState.update(slug, issue.identifier, { description: html });
+			onupdated?.(updated);
+		} catch {
+			appToast.error(m['issue.toast.failed_description']());
+		}
+	}
+
+
+	function reworkSelectedDescriptionText(selectedText: string): Promise<string> {
+		return reworkDescriptionSelection(() => expandIssueDescription(slug, issue.identifier, { selected_text: selectedText }));
+	}
+
+	async function updateField(field: string, value: any) {
+		try {
+			lastLocalUpdate = Date.now();
+			await issuesState.update(slug, issue.identifier, { [field]: value });
+			await refreshIssue();
+		} catch {
+			appToast.error(m['issue.toast.failed_update_field']({ field }));
+		}
+	}
+
+	function openCreateIssueDialog(title = '') {
+		createIssueTitle = title;
+		createDialogParentIssue = null;
+		showCreateIssueDialog = true;
+	}
+
+	function openCreateSubIssueDialog() {
+		createIssueTitle = '';
+		createDialogParentIssue = issue;
+		showCreateIssueDialog = true;
+	}
+
+	async function changeParent(parent: Issue) {
+		try {
+			lastLocalUpdate = Date.now();
+			const updated = await issuesState.update(slug, issue.identifier, { parent_id: parent.id });
+			onupdated?.(updated);
+			await refreshIssue();
+			appToast.success(m['issue.toast.set_parent']({ id: parent.identifier }));
+		} catch (err: any) {
+			appToast.apiError(err, m['issue.toast.failed_set_parent']());
+		}
+	}
+
+	async function removeParent() {
+		try {
+			lastLocalUpdate = Date.now();
+			const updated = await issuesState.update(slug, issue.identifier, { parent_id: '' });
+			onupdated?.(updated);
+			await refreshIssue();
+			appToast.success(m['issue.toast.removed_parent']());
+		} catch (err: any) {
+			appToast.apiError(err, m['issue.toast.failed_remove_parent']());
+		}
+		removeParentOpen = false;
+	}
+
+	function goToParentIssue() {
+		if (issue.parent) goto(`/${slug}/issue/${issue.parent?.identifier}`);
+	}
+
+	function openAddRelation(type: RelationType = 'related') {
+		relationType = type;
+		relationDialogOpen = true;
+	}
+
+	function formatHistoryValue(field: string, value: string | null, displayValue?: string | null): string {
+		if (displayValue?.trim()) return displayValue;
+		if (!value) return m['issue.history.none']();
+		switch (field) {
+			case 'status':
+				return value;
+			case 'priority':
+				return getPriorityLabel(Number(value) as IssuePriority) ?? value;
+			case 'assignee':
+			case 'assignee_id': {
+				const member = members.find(m => m.user_id === value);
+				return member ? (member.name || member.email) : m['issue.history.unassigned']();
+			}
+			case 'project':
+			case 'project_id': {
+				const p = projects.find(p => p.id === value);
+				return p ? p.name : '-';
+			}
+			case 'cycle':
+			case 'cycle_id': {
+				const c = cycles.find(c => c.id === value);
+				return c ? c.name : '-';
+			}
+			case 'parent':
+			case 'parent_id':
+				return m['issue.history.unknown_issue']();
+			case 'due_date':
+				return value || '-';
+			case 'labels':
+				return value || '-';
+			default:
+				return value;
+		}
+	}
+
+	function historyFieldLabel(field: string): string {
+		switch (field) {
+			case 'assignee_id': return m['issue.history.assignee']();
+			case 'assignees': return m['issue.history.assignees']();
+			case 'agent_assignees': return m['issue.history.agent_assignees']();
+			case 'due_date': return m['issue.history.due_date']();
+			case 'parent_id': return m['issue.history.parent']();
+			case 'project_id': return m['issue.history.project']();
+			case 'cycle_id': return m['issue.history.cycle']();
+			case 'status_id': return m['issue.history.status']();
+			default: return field;
+		}
+	}
+
+	function historyIcon(field: string): typeof CircleDot {
+		switch (field) {
+			case 'status': case 'status_id': return CircleDot;
+			case 'priority': return ArrowUpCircle;
+			case 'assignee': case 'assignee_id': case 'assignees': return UserCircle;
+			case 'title': case 'description': return Pencil;
+			case 'due_date': return CalendarDays;
+			case 'labels': return Tag;
+			case 'project': case 'project_id': return FolderKanban;
+			case 'cycle': case 'cycle_id': return RefreshCw;
+			case 'parent': case 'parent_id': return CornerDownRight;
+			default: return CircleDot;
+		}
+	}
+
+	function historyColor(field: string): string {
+		switch (field) {
+			case 'status': case 'status_id': return 'text-blue-400';
+			case 'priority': return 'text-orange-400';
+			case 'assignee': case 'assignee_id': case 'assignees': return 'text-purple-400';
+			case 'due_date': return 'text-red-400';
+			case 'labels': return 'text-teal-400';
+			case 'project': case 'project_id': return 'text-indigo-400';
+			case 'cycle': case 'cycle_id': return 'text-cyan-400';
+			case 'parent': case 'parent_id': return 'text-sky-400';
+			case 'title': case 'description': return 'text-[var(--color-text-tertiary)]';
+			default: return 'text-[var(--color-text-tertiary)]';
+		}
+	}
+
+	async function handleAddComment() {
+		if (!newComment.trim() || newComment === '<p></p>') return;
+		try {
+			lastLocalUpdate = Date.now();
+			await createComment(slug, issue.identifier, newComment);
+			newComment = '';
+			commentVersion++;
+			refreshActivity();
+		} catch (err: any) {
+			appToast.apiError(err, m['issue.toast.failed_comment']());
+		}
+	}
+
+	async function handleReply(parentId: string) {
+		const content = replyContents[parentId] ?? '';
+		if (!content.trim() || content === '<p></p>') return;
+		try {
+			await createComment(slug, issue.identifier, content, parentId);
+			replyContents[parentId] = '';
+			replyVersions[parentId] = (replyVersions[parentId] ?? 0) + 1;
+			replyVersions = { ...replyVersions };
+			refreshActivity();
+		} catch (err: any) {
+			appToast.apiError(err, m['issue.toast.failed_reply']());
+		}
+	}
+
+	async function handleResolve(commentId: string) {
+		try {
+			await resolveComment(slug, issue.identifier, commentId);
+			refreshActivity();
+		} catch (err: any) {
+			appToast.apiError(err, m['issue.toast.failed_resolve']());
+		}
+	}
+
+	async function handleReopen(commentId: string) {
+		try {
+			await reopenComment(slug, issue.identifier, commentId);
+			refreshActivity();
+		} catch (err: any) {
+			appToast.apiError(err, m['issue.toast.failed_reopen']());
+		}
+	}
+
+	async function refreshIssue() {
+		try {
+			const fresh = await getIssue(slug, issue.identifier);
+			if (disposed) return;
+			const idx = issuesState.issues.findIndex(i => i.identifier === issue.identifier);
+			if (idx >= 0) issuesState.issues[idx] = fresh;
+			if (issuesState.selectedIssue?.identifier === issue.identifier) {
+				issuesState.selectedIssue = fresh;
+			}
+			onupdated?.(fresh);
+		} catch { /* ignore */ }
+		// Refresh activity in background
+		refreshActivity();
+	}
+
+	async function refreshActivity() {
+		try {
+			const [c, h] = await Promise.all([
+				listComments(slug, issue.identifier),
+				getIssueHistory(slug, issue.identifier)
+			]);
+			comments = c ?? [];
+			history = h ?? [];
+		} catch { /* ignore */ }
+	}
+
+	function copyToClipboard(text: string, toastKey: string) {
+		navigator.clipboard.writeText(text);
+		const dynamicMessage = m as unknown as Record<string, () => string>;
+		appToast.success(dynamicMessage[toastKey]());
+	}
+
+	async function toggleSubscription() {
+		if (subscriptionBusy) return;
+		subscriptionBusy = true;
+		const nextValue = !isSubscribed;
+		isSubscribed = nextValue;
+		try {
+			const res = nextValue
+				? await subscribeToIssue(slug, issue.identifier)
+				: await unsubscribeFromIssue(slug, issue.identifier);
+			isSubscribed = res.is_subscribed;
+			issuesState.setSubscription(issue.identifier, res.is_subscribed);
+			onupdated?.({ ...issue, is_subscribed: res.is_subscribed });
+			appToast.success(isSubscribed ? m['issue.toast.notifications_enabled']() : m['issue.toast.notifications_disabled']());
+		} catch (err: any) {
+			isSubscribed = !nextValue;
+			appToast.apiError(err, m['issue.toast.failed_notifications']());
+		} finally {
+			subscriptionBusy = false;
+		}
+	}
+
+	async function copyAIPrompt() {
+		try {
+			const [{ assets }, settings, copyTeams] = await Promise.all([
+				signIssuePromptAssets(slug, issue.identifier),
+				getIssueCopyPrompt(slug),
+				issueTeam ? Promise.resolve(teams) : listTeams(slug)
+			]);
+			if (!issueTeam) teams = copyTeams;
+			await navigator.clipboard.writeText(getAIPrompt(assets, settings.issue_copy_prompt, copyTeams.find(t => t.id === issue.team_id)));
+			appToast.success(m['issue.toast.ai_prompt_copied']());
+		} catch (error) {
+			appToast.apiError(error, m['issue.toast.failed_ai_prompt']());
+		}
+	}
+
+	function getUsername(): string {
+		const user = authState.user;
+		if (!user) return 'user';
+		// Use name or email prefix, lowercase, no spaces
+		const name = (user.name || user.email.split('@')[0])
+			.toLowerCase()
+			.replace(/[^a-z0-9]/g, '');
+		return name || 'user';
+	}
+
+	function getBranchName(): string {
+		const id = issue.identifier.toLowerCase();
+		const title = issue.title
+			.toLowerCase()
+			.replace(/[^a-z0-9\s-]/g, '')
+			.replace(/\s+/g, '-')
+			.slice(0, 50)
+			.replace(/-$/, '');
+		return `${getUsername()}/${id}-${title}`;
+	}
+
+	async function copyBranchAndMoveToProgress() {
+		const branch = getBranchName();
+		navigator.clipboard.writeText(branch);
+
+		// Move to "in progress" (started category)
+		const startedStatus = teamStatusesState.statuses.find(s => s.category === 'started');
+		if (startedStatus && issue.status_id !== startedStatus.id) {
+			try {
+				await issuesState.update(slug, issue.identifier, { status_id: startedStatus.id });
+				const fresh = await getIssue(slug, issue.identifier);
+			if (disposed) return;
+				onupdated?.(fresh);
+				appToast.success(m['issue.toast.branch_copied_moved']());
+			} catch {
+				appToast.success(m['issue.toast.branch_copied']());
+			}
+		} else {
+			appToast.success(m['issue.toast.branch_name_copied']());
+		}
+	}
+
+	function parentDescriptionPreview(description: string | null | undefined): string {
+		const text = htmlToPlainText(description);
+		return text.length > 180 ? `${text.slice(0, 177)}...` : text;
+	}
+
+	function getPromptAssetUrl(src: string): string {
+		try {
+			return new URL(src, window.location.origin).href;
+		} catch {
+			return src;
+		}
+	}
+
+	function getSignedPromptAssetUrl(src: string, signedAssets: Record<string, string>): string {
+		const signed = signedAssets[src];
+		if (signed) return signed;
+
+		try {
+			const path = new URL(src, window.location.origin).pathname;
+			return signedAssets[path] ?? src;
+		} catch {
+			return src;
+		}
+	}
+
+	function htmlToPromptMarkdown(html: string, signedAssets: Record<string, string>): string {
+		// An inert document: walking it loads no image and runs no handler.
+		const root = parseInertHtml(html)?.body;
+		if (!root) return htmlToPlainText(html);
+
+		const parts: string[] = [];
+		const blockTags = new Set([
+			'ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'DIV', 'H1', 'H2', 'H3',
+			'H4', 'H5', 'H6', 'LI', 'OL', 'P', 'PRE', 'SECTION', 'UL'
+		]);
+
+		function appendBreak() {
+			if (parts.length === 0 || parts[parts.length - 1].endsWith('\n')) return;
+			parts.push('\n');
+		}
+
+		function walk(node: Node) {
+			if (node.nodeType === Node.TEXT_NODE) {
+				parts.push(node.textContent ?? '');
+				return;
+			}
+
+			if (!(node instanceof HTMLElement)) return;
+
+			if (node.tagName === 'BR') {
+				appendBreak();
+				return;
+			}
+
+			if (node.tagName === 'IMG') {
+				const src = node.getAttribute('src');
+				if (!src) return;
+				const alt = (node.getAttribute('alt') ?? 'Image').replace(/[\[\]\r\n]+/g, ' ').trim() || 'Image';
+				appendBreak();
+				parts.push(`![${alt}](${getPromptAssetUrl(getSignedPromptAssetUrl(src, signedAssets))})`);
+				appendBreak();
+				return;
+			}
+
+			const isBlock = blockTags.has(node.tagName);
+			if (isBlock) appendBreak();
+
+			if (node.tagName === 'LI') parts.push('- ');
+			for (const child of node.childNodes) walk(child);
+
+			if (isBlock) appendBreak();
+		}
+
+		for (const child of root.childNodes) walk(child);
+
+		return parts.join('')
+			.replace(/[ \t]+\n/g, '\n')
+			.replace(/\n{3,}/g, '\n\n')
+			.trim();
+	}
+
+	function applyIssueCopyTemplate(template: string, issueXml: string, teamKey: string, selectedTeam: Team | undefined): string {
+		const values: Record<string, string> = {
+			issue_identifier: issue.identifier,
+			issue_title: decodeHtmlEntities(issue.title),
+			team_key: teamKey,
+			team_name: selectedTeam?.name ?? teamKey,
+			issue_xml: issueXml
+		};
+		return template.replace(/{{\s*(issue_identifier|issue_title|team_key|team_name|issue_xml)\s*}}/g, (_, key) => values[key] ?? '');
+	}
+
+	function getAIPrompt(signedAssets: Record<string, string> = {}, workspaceTemplate = '', selectedTeam = issueTeam): string {
+		let issueXml = `<issue identifier="${issue.identifier}">\n`;
+		issueXml += `<title>${decodeHtmlEntities(issue.title)}</title>\n`;
+		const teamKey = issue.identifier.split('-')[0];
+		issueXml += `<team name="${teamKey}"/>\n`;
+		if (issue.labels && issue.labels.length > 0) {
+			for (const l of issue.labels) {
+				issueXml += `<label>${decodeHtmlEntities(l.name)}</label>\n`;
+			}
+		}
+		if (issueProject) {
+			issueXml += `<project name="${decodeHtmlEntities(issueProject.name)}">${decodeHtmlEntities(issueProject.description ?? '')}</project>\n`;
+		}
+		if (issue.description) {
+			issueXml += `<description>${htmlToPromptMarkdown(issue.description, signedAssets)}</description>\n`;
+		}
+		issueXml += `</issue>`;
+		const template = selectedTeam?.issue_copy_prompt?.trim() || workspaceTemplate.trim() || 'Work on issue {{issue_identifier}}:\n\n{{issue_xml}}';
+		return applyIssueCopyTemplate(template, issueXml, teamKey, selectedTeam);
+	}
+
+	function formatDueDate(dateStr: string): { label: string; colorClass: string } {
+		const due = new Date(dateStr);
+		const now = new Date();
+		const diffDays = Math.ceil((due.getTime() - now.getTime()) / 86400000);
+		let label: string;
+		if (diffDays === 0) label = m['issue.today']();
+		else if (diffDays === 1) label = m['issue.tomorrow']();
+		else if (diffDays === -1) label = m['issue.yesterday']();
+		else label = due.toLocaleDateString(getLocale(), { month: 'short', day: 'numeric' });
+
+		const colorClass = diffDays < 0
+			? 'text-red-400'
+			: diffDays <= 1
+				? 'text-orange-400'
+				: 'text-[var(--color-text-primary)]';
+
+		return { label, colorClass };
+	}
+
+	let issueCount = $derived(issuesState.issues.length);
+	let currentIndex = $derived(issuesState.issues.findIndex(i => i.identifier === issue.identifier));
+</script>
+
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+	class="flex h-full min-w-0 flex-col"
+	ondragover={onWikiDragOver}
+	ondragleave={onWikiDragLeave}
+	ondrop={onWikiDrop}
+>
+	<!-- Top bar — matches sidebar h-[49px] -->
+	<div class="flex min-h-[49px] items-center justify-between gap-2 border-b border-[var(--app-border)] px-3 sm:px-4">
+		<div class="flex min-w-0 items-center gap-1.5 text-xs">
+			<a
+				href="/{slug}/teams/{issue.team_id}"
+				class="shrink-0 text-[var(--color-text-tertiary)] transition-colors hover:text-[var(--color-text-primary)]"
+			>
+				{issue.identifier.split('-')[0]}
+			</a>
+			<span class="shrink-0 text-[var(--color-text-tertiary)]">&rsaquo;</span>
+			<span class="truncate font-medium text-[var(--color-text-primary)]">{issue.identifier}</span>
+			{#if issueProject}
+				<a href="/{slug}/projects/{issueProject.id}" class="ml-1 flex min-w-0 shrink-0 hover:opacity-80"><ProjectChip project={issueProject} /></a>
+			{/if}
+		</div>
+		<div class="no-scrollbar flex shrink-0 items-center gap-0.5 overflow-x-auto">
+			<!-- Actions -->
+			<OpenIssueChatButton {slug} issueId={issue.id} class="mr-1" />
+			<Button variant="plain" onclick={toggleSubscription}
+				disabled={subscriptionBusy}
+				aria-pressed={isSubscribed}
+				class="rounded p-1.5 transition-colors disabled:opacity-50 {isSubscribed ? 'bg-[var(--app-accent)] text-[var(--app-accent-foreground)]' : 'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
+				title={isSubscribed ? m['issue.disable_notifications']() : m['issue.enable_notifications']()}
+			>
+				<Bell size={14} />
+			</Button>
+			<Button variant="plain" onclick={() => { navigator.clipboard.writeText(issue.identifier); appToast.success(m['issue.toast.label_copied']({ label: 'ID' })) }}
+				class="rounded p-1.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] transition-colors"
+				title={m['issue.copy_id']()}
+			>
+				<Copy size={14} />
+			</Button>
+			<Button variant="plain" onclick={() => { navigator.clipboard.writeText(window.location.href); appToast.success(m['issue.toast.label_copied']({ label: 'Link' })) }}
+				class="rounded p-1.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] transition-colors"
+				title={m['issue.copy_link']()}
+			>
+				<LinkIcon size={14} />
+			</Button>
+			<Button variant="plain" onclick={copyBranchAndMoveToProgress}
+				class="rounded p-1.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] transition-colors"
+				title={m['issue.copy_branch_move']()}
+			>
+				<GitBranch size={14} />
+			</Button>
+			<Button variant="plain" onclick={copyAIPrompt}
+				class="rounded p-1.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] transition-colors"
+				title={m['issue.copy_ai_prompt']()}
+			>
+				<SquareMousePointer size={14} />
+			</Button>
+			<Popover.Root bind:open={issueActionsOpen}>
+				<Popover.Trigger>
+					{#snippet child({ props })}
+						<Button {...props} variant="plain"
+							type="button"
+							class="rounded p-1.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] transition-colors"
+							title={m['issue.issue_actions']()}
+						>
+							<MoreHorizontal size={14} />
+						</Button>
+					{/snippet}
+				</Popover.Trigger>
+				<Popover.Content class="w-64 max-w-[calc(100vw-1rem)] p-1" align="end">
+					<IssueMachineActions {slug} {issue} bind:repositoryOpen={issueActionsRepositoryOpen} bind:pickerOpen={issueActionsMachinePickerOpen} bind:pickerIntent={issueActionsMachineIntent} onaction={() => (issueActionsOpen = false)} />
+					<div class="my-1 h-px bg-[var(--app-border)]"></div>
+					<Button variant="plain" type="button"
+						onclick={() => { issueActionsOpen = false; parentPickerOpen = true; }}
+						class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"
+					>
+						<CornerDownRight size={14} />
+						{issue.parent ? m['issue.change_parent']() : m['issue.add_parent']()}
+					</Button>
+					<div class="my-1 h-px bg-[var(--app-border)]"></div>
+					{#if canUpdateIssue}
+						<Button variant="plain" type="button"
+							onclick={() => { issueActionsOpen = false; wikiReferences?.openPicker(); }}
+							class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"
+						>
+							<BookOpen size={14} />
+							{m['wiki.reference.add']()}
+						</Button>
+					{/if}
+					<Button variant="plain" type="button"
+						onclick={() => { issueActionsOpen = false; openAddRelation('related'); }}
+						class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"
+					>
+						<LinkIcon size={14} />
+						{m['issue.add_relation']()}
+					</Button>
+					<Button variant="plain" type="button"
+						onclick={() => { issueActionsOpen = false; openAddRelation('blocked_by'); }}
+						class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"
+					>
+						<Ban size={14} />
+						{m['issue.blocked_by']()}
+					</Button>
+					<Button variant="plain" type="button"
+						onclick={() => { issueActionsOpen = false; openAddRelation('blocking'); }}
+						class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"
+					>
+						<ArrowRight size={14} />
+						{m['issue.blocking']()}
+					</Button>
+					<Button variant="plain" type="button"
+						onclick={() => { issueActionsOpen = false; openAddRelation('duplicate'); }}
+						class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"
+					>
+						<Copy size={14} />
+						{m['issue.duplicate']()}
+					</Button>
+				</Popover.Content>
+			</Popover.Root>
+
+			{#if presenceState.activeViewers.length > 0}
+				<div class="ml-1 flex items-center -space-x-1.5 border-l border-[var(--app-border)] pl-2">
+					{#each presenceState.activeViewers.slice(0, 5) as viewer (viewer.user_id)}
+						<div
+							class="relative flex h-6 w-6 items-center justify-center rounded-full border-2 border-[var(--color-bg)] text-[8px] font-medium text-white"
+							style="background-color: {viewer.color};"
+							title="{viewer.name} is viewing"
+						>
+							{viewer.name.charAt(0).toUpperCase()}
+						</div>
+					{/each}
+					{#if presenceState.activeViewers.length > 5}
+						<div class="flex h-6 w-6 items-center justify-center rounded-full border-2 border-[var(--color-bg)] bg-[var(--color-bg-tertiary)] text-[9px] text-[var(--color-text-tertiary)]">
+							+{presenceState.activeViewers.length - 5}
+						</div>
+					{/if}
+				</div>
+			{/if}
+
+			{#if onnavigate && issueCount > 0}
+				<div class="ml-1 flex items-center gap-0.5 border-l border-[var(--app-border)] pl-2">
+					<span class="text-[11px] text-[var(--color-text-tertiary)] mr-1">{currentIndex + 1}/{issueCount}</span>
+					<Button variant="plain" onclick={() => onnavigate?.('prev')}
+						class="rounded p-1 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] transition-colors"
+						title={m['issue.previous_issue']()}
+					>
+						<ChevronUp size={16} />
+					</Button>
+					<Button variant="plain" onclick={() => onnavigate?.('next')}
+						class="rounded p-1 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] transition-colors"
+						title={m['issue.next_issue']()}
+					>
+						<ChevronDown size={16} />
+					</Button>
+				</div>
+			{/if}
+		</div>
+	</div>
+
+	<!-- Main content -->
+	<div class="min-h-0 flex-1 overflow-y-auto md:flex md:overflow-hidden">
+		<!-- Left column — main content -->
+		<div class="min-w-0 md:min-h-0 md:flex-1 md:overflow-y-auto">
+			<div class="mx-auto max-w-[840px] px-4 py-5 sm:px-10 sm:py-6">
+				<!-- Title -->
+				<!-- svelte-ignore a11y_autofocus -->
+				<div class="relative">
+					{#if editingTitle}
+						<Input variant="plain"
+							type="text"
+							bind:value={titleValue}
+							onblur={() => { saveTitle(); presenceState.sendFocusLeave(issue.id); }}
+							onfocus={() => presenceState.sendFocus(issue.id, 'title', 0)}
+							oninput={(e) => presenceState.sendFocus(issue.id, 'title', (e.currentTarget as HTMLInputElement).selectionStart ?? 0)}
+							onkeydown={(e) => { if (e.key === 'Enter') saveTitle(); if (e.key === 'Escape') { titleValue = issue.title; editingTitle = false; } }}
+							autofocus
+							class="w-full bg-transparent text-lg font-semibold text-[var(--color-text-primary)] outline-none"
+						/>
+					{:else}
+						<Button variant="plain" onclick={() => (editingTitle = true)}
+							class="w-full text-left text-lg font-semibold text-[var(--color-text-primary)] hover:text-[var(--color-text-primary)] transition-colors"
+						>
+							{issue.title}
+						</Button>
+					{/if}
+				</div>
+
+				{#if issue.parent}
+					<div class="mt-2 flex min-w-0 items-center gap-1.5 text-xs">
+						<span class="shrink-0 text-[var(--color-text-tertiary)]">{m['issue.sub_issue_of']()}</span>
+						<ContextMenu.Root>
+							<div class="group/parent relative inline-flex max-w-full">
+								<ContextMenu.Trigger>
+									{#snippet child({ props })}
+										<Button {...props} variant="plain"
+											type="button"
+											onclick={goToParentIssue}
+											class="inline-flex max-w-full items-center gap-1.5 rounded-md border border-transparent px-1.5 py-1 text-[var(--color-text-secondary)] transition-colors hover:border-[var(--app-border)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
+										>
+											<IssueStatusIcon status={issue.parent?.status ?? 'backlog'} category={issue.parent?.status_info?.category} color={issue.parent?.status_info?.color} size={13} />
+											<span class="shrink-0 tabular-nums text-[var(--color-text-tertiary)]">{issue.parent?.identifier}</span>
+											<span class="min-w-0 truncate">{issue.parent?.title}</span>
+										</Button>
+									{/snippet}
+								</ContextMenu.Trigger>
+								<div class="pointer-events-none absolute left-0 top-full z-40 mt-2 hidden w-72 rounded-lg border border-[var(--app-border)] bg-[var(--color-bg-secondary)] p-3 shadow-xl group-hover/parent:block">
+									<div class="flex items-start gap-2">
+										<IssueStatusIcon status={issue.parent?.status ?? 'backlog'} category={issue.parent?.status_info?.category} color={issue.parent?.status_info?.color} size={14} />
+										<div class="min-w-0 flex-1">
+											<div class="text-xs text-[var(--color-text-tertiary)]">{issue.parent?.identifier}</div>
+											<div class="mt-0.5 text-sm font-medium leading-5 text-[var(--color-text-primary)]">{issue.parent?.title}</div>
+											{#if currentParentPreview}
+												<p class="mt-2 line-clamp-3 text-xs leading-5 text-[var(--color-text-tertiary)]">{currentParentPreview}</p>
+											{/if}
+										</div>
+									</div>
+								</div>
+							</div>
+							<ContextMenu.Content class="w-44">
+								<ContextMenu.Item onclick={() => (parentPickerOpen = true)}>
+									<span class="flex items-center gap-2"><CornerDownRight size={14} />{m['issue.change_parent']()}</span>
+								</ContextMenu.Item>
+								<ContextMenu.Item class="text-red-500 focus:text-red-500" onclick={() => (removeParentOpen = true)}>
+									<span class="flex w-full items-center justify-between gap-2"><span>{m['issue.remove_parent']()}</span><Trash2 size={14} /></span>
+								</ContextMenu.Item>
+							</ContextMenu.Content>
+						</ContextMenu.Root>
+					</div>
+				{/if}
+
+				<!-- Description -->
+				<div class="mt-3">
+					<RichEditor
+						content={issue.description ?? ''}
+						workspaceSlug={slug}
+						placeholder={m['issue.add_description']()}
+						bubbleMenu={true}
+						borderless={true}
+						uploadUrl={imageUploadUrl}
+						{members}
+						issues={issuesState.issues}
+						onupdate={saveDescription}
+						remoteCursors={descriptionCursors}
+						onfocus={() => presenceState.sendFocus(issue.id, 'description', 0)}
+						onblur={() => presenceState.sendFocusLeave(issue.id)}
+						oncursorchange={(pos, anchor) => presenceState.sendFocus(issue.id, 'description', pos, anchor)}
+						oncreateissue={(text) => openCreateIssueDialog(text)}
+						onreworkselection={reworkSelectedDescriptionText}
+					/>
+				</div>
+
+				<!-- Sub-issues -->
+				<div class="mt-4">
+					{#if (issue.sub_issue_count ?? 0) > 0}
+						<SubIssuesList
+							{slug}
+							identifier={issue.identifier}
+							subIssueCount={issue.sub_issue_count ?? 0}
+							subIssueDone={issue.sub_issue_done ?? 0}
+							{members}
+							onaddsubissue={openCreateSubIssueDialog}
+							onclickissue={(sub) => goto(`/${slug}/issue/${sub.identifier}`)}
+							onupdated={refreshIssue}
+						/>
+					{:else}
+						<Button variant="plain" onclick={openCreateSubIssueDialog}
+							class="flex items-center gap-2 text-xs text-[var(--color-text-tertiary)] transition-colors hover:text-[var(--color-text-secondary)]"
+						>
+							<span class="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--app-border)] bg-[var(--color-bg-secondary)]">
+								<Plus size={12} />
+							</span>
+							{m['issue.add_sub_issue']()}
+						</Button>
+					{/if}
+				</div>
+
+			<!-- Relations -->
+			<div class="mt-2">
+				<IssueRelations {slug} identifier={issue.identifier} bind:dialogOpen={relationDialogOpen} bind:dialogType={relationType} />
+			</div>
+
+			<!-- Attached wiki pages -->
+			<div class="mt-2">
+				<IssueWikiReferences bind:this={wikiReferences} {slug} identifier={issue.identifier} dropping={wikiDropping} />
+			</div>
+
+				<!-- GitHub Activity -->
+				<div class="mt-2">
+					<IssueGitHubActivity {slug} identifier={issue.identifier} />
+				</div>
+
+			<div class="mt-5"><IssueVersionHistory {slug} identifier={issue.identifier} {members} /></div>
+
+				<!-- Activity -->
+				<div class="mt-6 border-t border-[var(--app-border)] pt-4">
+					<h3 class="text-xs font-medium text-[var(--color-text-tertiary)] uppercase tracking-wide mb-3">{m['issue.activity']()}</h3>
+
+					{#if loaded}
+						{@const GROUP_THRESHOLD_MS = 5000}
+						{@const historyGroups = [...history].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()).reduce<Array<{ items: IssueHistory[]; time: string }>>((acc, h) => {
+							const prev = acc[acc.length - 1];
+							if (prev && Math.abs(new Date(h.created_at).getTime() - new Date(prev.time).getTime()) < GROUP_THRESHOLD_MS) {
+								prev.items.push(h);
+							} else {
+								acc.push({ items: [h], time: h.created_at });
+							}
+							return acc;
+						}, [])}
+
+						{@const RECENT_COUNT = 3}
+						{@const visibleHistory = showAllActivity ? historyGroups : historyGroups.slice(-RECENT_COUNT)}
+						{@const hiddenCount = historyGroups.length - visibleHistory.length}
+
+						<div class="relative">
+							{#if visibleHistory.length > 0}
+								<div class="absolute left-[9px] top-3 bottom-0 w-px bg-[var(--app-border)]"></div>
+							{/if}
+
+							{#if hiddenCount > 0}
+								<Button variant="plain" onclick={() => showAllActivity = true}
+									class="relative z-10 mb-2 rounded-full border border-[var(--app-border)] bg-[var(--color-bg)] px-2.5 py-1 text-xs text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)] transition-colors"
+								>
+									{m['issue.show_earlier']({ n: hiddenCount })}
+								</Button>
+							{/if}
+
+							<div>
+								{#each visibleHistory as entry}
+									{@const items = entry.items}
+									{@const firstField = items[0].field}
+									{@const IconComponent = items.length > 1 ? Layers : historyIcon(firstField)}
+									{@const iconColor = items.length > 1 ? 'text-[var(--color-text-tertiary)]' : historyColor(firstField)}
+									{@const textFields = [...new Set(items.filter(c => c.field === 'title' || c.field === 'description').map(c => c.field))]}
+									{@const valueItems = items.filter((c, i, arr) => c.field !== 'title' && c.field !== 'description' && arr.findIndex(x => x.field === c.field) === i)}
+									{@const actor = historyActor(items.find((c) => c.agent_name) ?? items.find((c) => c.agent) ?? {}, members)}
+									<div class="relative flex items-center gap-3 pb-2.5">
+										<div class="relative z-10 flex h-5 w-5 shrink-0 items-center justify-center ring-2 ring-[var(--color-bg)] rounded-full bg-[var(--color-bg)] {iconColor}">
+											<IconComponent size={12} />
+										</div>
+										<div class="flex items-center gap-1.5 text-xs text-[var(--color-text-tertiary)] min-w-0 overflow-hidden">
+											{#if textFields.length > 0}
+												<span>{m['issue.updated']()} <strong class="text-[var(--color-text-secondary)]">{textFields.map(f => historyFieldLabel(f)).join(', ')}</strong></span>
+												{#if valueItems.length > 0}<span class="text-[var(--app-border)]">|</span>{/if}
+											{/if}
+											{#each valueItems as change, idx}
+												{#if idx > 0}<span class="text-[var(--app-border)]">|</span>{/if}
+												<strong class="text-[var(--color-text-secondary)]">{historyFieldLabel(change.field)}</strong>
+												<span>&rarr;</span>
+												{#if change.field === 'labels' && change.new_value}
+													{#each change.new_value.split(', ') as labelName}
+														{@const label = labels.find(l => l.name === labelName)}
+														<code class="shrink-0 inline-flex items-center gap-1 rounded bg-[var(--color-bg-tertiary)] px-1 py-0.5 text-[11px] text-[var(--color-text-secondary)]">
+															<span class="inline-block h-2 w-2 rounded-full shrink-0" style="background-color: {label?.color ?? 'var(--color-text-tertiary)'}"></span>
+															{labelName}
+														</code>
+													{/each}
+												{:else if change.field === 'assignee' || change.field === 'assignee_id' || change.field === 'assignees'}
+													<HistoryAssignees value={change.new_value} displayValue={change.new_display_value} {members} />
+												{:else}
+													<code class="shrink-0 rounded bg-[var(--color-bg-tertiary)] px-1 py-0.5 text-[11px] text-[var(--color-text-secondary)]">{formatHistoryValue(change.field, change.new_value, change.new_display_value)}</code>
+												{/if}
+											{/each}
+											{#if actor}<span class="shrink-0 text-[var(--color-text-secondary)]" data-history-actor>{actor.kind === 'identity' ? m['issue.by_agent_for']({ agent: actor.agent, user: actor.user }) : m['issue.via_agent']({ agent: actor.agent })}</span>{/if}
+											<span>&middot;</span>
+											<span class="shrink-0">{formatRelativeTime(entry.time, getLocale())}</span>
+										</div>
+									</div>
+								{/each}
+							</div>
+						</div>
+
+						{#if showAllActivity && historyGroups.length > RECENT_COUNT}
+							<Button variant="plain" onclick={() => showAllActivity = false}
+								class="relative z-10 mt-2 rounded-full border border-[var(--app-border)] bg-[var(--color-bg)] px-2.5 py-1 text-xs text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)] transition-colors"
+							>
+								{m['issue.show_less']()}
+							</Button>
+						{/if}
+
+						{#if historyGroups.length === 0}
+							<p class="text-xs text-[var(--color-text-tertiary)]">{m['issue.no_activity']()}</p>
+						{/if}
+					{/if}
+				</div>
+
+				<!-- Comments -->
+				<div class="mt-4 space-y-3">
+					{#each comments as comment (comment.id)}
+						{@const replyViewers = presenceState.getViewersForField(`reply-${comment.id}`)}
+						<div class="rounded-lg border border-[var(--app-border)] bg-[var(--color-bg-secondary)]">
+							<!-- Comment header + body -->
+							<div class="group/comment p-4">
+								<div class="flex items-center gap-2">
+									<div class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--app-accent)] text-[8px] font-medium text-[var(--app-accent-foreground)]">
+										{(comment.user?.name ?? 'U').charAt(0).toUpperCase()}
+									</div>
+									<span class="text-[13px] font-medium text-[var(--color-text-primary)]">{comment.user?.name ?? 'User'}</span>
+									{#if comment.agent_task_id}<Badge variant="outline" class="h-5 gap-1 px-1.5 text-[10px]"><Bot size={10} aria-hidden="true" />{m['agent_messages.agent_comment']()}</Badge>{/if}
+									<span class="text-[11px] text-[var(--color-text-tertiary)]">{formatRelativeTime(comment.created_at, getLocale())}</span>
+									{#if comment.resolved_at}
+										<span class="text-[11px] font-medium text-green-400">{m['issue.resolved']()}</span>
+									{/if}
+									{#if replyViewers.length > 0}
+										<span class="flex items-center gap-1 ml-1">
+											{#each replyViewers as rv (rv.name)}
+												<span class="flex items-center gap-1 text-[10px] font-medium text-white px-1.5 py-0.5 rounded-full" style="background: {rv.color};">
+													{m['issue.typing']({ name: rv.name })}
+												</span>
+											{/each}
+										</span>
+									{/if}
+									<div class="ml-auto opacity-0 group-hover/comment:opacity-100 transition-opacity">
+										{#if comment.resolved_at}
+											<Button variant="plain" onclick={() => handleReopen(comment.id)} class="flex items-center gap-1 rounded-full border border-[var(--app-border)] px-2 py-0.5 text-[11px] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors" title={m['issue.reopen_thread']()}>
+												{m['issue.reopen_thread']()}
+											</Button>
+										{:else}
+											<Button variant="plain" onclick={() => handleResolve(comment.id)} class="rounded p-1 text-[var(--color-text-tertiary)] hover:text-green-400 hover:bg-[var(--color-bg-hover)]" title={m['issue.resolve_thread']()}>
+												<Check size={14} />
+											</Button>
+										{/if}
+									</div>
+								</div>
+								<div class="prose prose-invert prose-sm max-w-none mt-2.5 text-[13px] text-[var(--color-text-primary)] [&>p:first-child]:mt-0 [&>p:last-child]:mb-0" use:mentionInteractivity={{ slug, members, issues: issuesState.issues }}>
+									{@html sanitizeHtml(comment.body ?? '')}
+								</div>
+							</div>
+
+							<!-- Replies -->
+							{#if comment.replies && comment.replies.length > 0}
+								{#each comment.replies as reply (reply.id)}
+									<div class="group/reply border-t border-[var(--app-border)] px-4 py-3 pl-4">
+										<div class="flex items-center gap-2">
+											<div class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--app-accent)] text-[8px] font-medium text-[var(--app-accent-foreground)]">
+												{(reply.user?.name ?? 'U').charAt(0).toUpperCase()}
+											</div>
+											<span class="text-[13px] font-medium text-[var(--color-text-primary)]">{reply.user?.name ?? 'User'}</span>
+											<span class="text-[11px] text-[var(--color-text-tertiary)]">{formatRelativeTime(reply.created_at, getLocale())}</span>
+										</div>
+										<div class="prose prose-invert prose-sm max-w-none mt-2.5 text-[13px] text-[var(--color-text-primary)] [&>p:first-child]:mt-0 [&>p:last-child]:mb-0" use:mentionInteractivity={{ slug, members, issues: issuesState.issues }}>
+											{@html sanitizeHtml(reply.body ?? '')}
+										</div>
+									</div>
+								{/each}
+							{/if}
+
+							<!-- Reply input (hidden when resolved) -->
+							{#if !comment.resolved_at}
+								<div class="border-t border-[var(--app-border)] px-4 py-3 flex items-start gap-3">
+									<div class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--app-accent)] text-[8px] font-medium text-[var(--app-accent-foreground)]">
+										{(authState.user?.name ?? 'U').charAt(0).toUpperCase()}
+									</div>
+									<div class="min-w-0 flex-1 flex items-end gap-1.5">
+										<div class="min-w-0 flex-1 my-auto">
+											{#key replyVersions[comment.id] ?? 0}
+												<RichEditor
+													content=""
+													workspaceSlug={slug}
+													placeholder={m['issue.leave_reply']()}
+													minimal={true}
+													borderless={true}
+													bubbleMenu={true}
+													uploadUrl={imageUploadUrl}
+													{members}
+													agents={mentionAgents}
+													issues={issuesState.issues}
+													onupdate={(html) => { replyContents[comment.id] = html; replyContents = replyContents; }}
+													onsubmit={() => handleReply(comment.id)}
+													remoteCursors={getRemoteCursors(`reply-${comment.id}`)}
+													onmentionstart={() => void agentIdentities.ensure(slug)}
+													onfocus={() => presenceState.sendFocus(issue.id, `reply-${comment.id}`, 0)}
+													onblur={() => presenceState.sendFocusLeave(issue.id)}
+													oncursorchange={(pos, anchor) => presenceState.sendFocus(issue.id, `reply-${comment.id}`, pos, anchor)}
+												/>
+											{/key}
+										</div>
+										<div class="flex shrink-0 items-center gap-1.5">
+											<Button variant="plain" onclick={() => handleReply(comment.id)}
+												disabled={!(replyContents[comment.id]?.trim()) || replyContents[comment.id] === '<p></p>'}
+												class="rounded-full bg-[var(--app-accent)] p-1.5 text-[var(--app-accent-foreground)] hover:bg-[var(--app-accent-hover)] disabled:opacity-30 transition-colors"
+												title={m['issue.send']()}
+											>
+												<ArrowUp size={12} />
+											</Button>
+										</div>
+									</div>
+								</div>
+							{/if}
+						</div>
+					{/each}
+
+					<!-- New comment input -->
+					{#if newCommentViewers.length > 0}
+						<div class="flex items-center gap-1.5 px-1">
+							{#each newCommentViewers as nv (nv.name)}
+								<span class="flex items-center gap-1 text-[10px] font-medium text-white px-1.5 py-0.5 rounded-full" style="background: {nv.color};">
+									{m['issue.typing']({ name: nv.name })}
+								</span>
+							{/each}
+						</div>
+					{/if}
+					<div class="flex items-end gap-1.5 rounded-lg border border-[var(--app-border)] bg-[var(--color-bg-secondary)] focus-within:border-[var(--color-text-tertiary)] transition-colors p-3">
+						<div class="min-w-0 flex-1 my-auto">
+							{#key commentVersion}
+							<RichEditor
+								content=""
+								workspaceSlug={slug}
+								placeholder={m['issue.leave_comment']()}
+								minimal={true}
+								borderless={true}
+								bubbleMenu={true}
+								uploadUrl={imageUploadUrl}
+								{members}
+								agents={mentionAgents}
+								issues={issuesState.issues}
+								onupdate={(html) => newComment = html}
+								onsubmit={handleAddComment}
+								remoteCursors={getRemoteCursors('new-comment')}
+								onmentionstart={() => void agentIdentities.ensure(slug)}
+								onfocus={() => presenceState.sendFocus(issue.id, 'new-comment', 0)}
+								onblur={() => presenceState.sendFocusLeave(issue.id)}
+								oncursorchange={(pos, anchor) => presenceState.sendFocus(issue.id, 'new-comment', pos, anchor)}
+							/>
+							{/key}
+						</div>
+						<div class="flex shrink-0 items-center gap-1.5">
+							<Button variant="plain" onclick={handleAddComment}
+								disabled={!newComment.trim() || newComment === '<p></p>'}
+								class="rounded-full bg-[var(--app-accent)] p-1.5 text-[var(--app-accent-foreground)] hover:bg-[var(--app-accent-hover)] disabled:opacity-30 transition-colors"
+								title={m['issue.send']()}
+							>
+								<ArrowUp size={14} />
+							</Button>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Right column — card-based sidebar, sized in rem so it grows with the font size setting -->
+		<div class="w-full space-y-2 border-t border-[var(--app-border)] p-3 md:w-[18.75rem] md:shrink-0 md:overflow-y-auto md:border-t-0">
+			<!-- Details card -->
+			<div class="rounded-lg border border-[var(--app-border)] bg-[var(--color-bg-secondary)]">
+				<Button variant="plain" onclick={() => detailsExpanded = !detailsExpanded}
+					class="flex w-full items-center gap-1.5 px-3 py-2.5 text-[11px] font-medium uppercase tracking-wider text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors"
+				>
+					<ChevronRight size={12} class="transition-transform {detailsExpanded ? 'rotate-90' : ''}" />
+						{m['issue.details']()}
+				</Button>
+				{#if detailsExpanded}
+					<div class="px-1.5 pb-2 space-y-0.5">
+						<!-- Status row -->
+						<div class="flex items-center gap-3 rounded-md px-2 py-1.5 hover:bg-[var(--color-bg-hover)] transition-colors">
+							<span class="w-20 shrink-0 text-xs text-[var(--color-text-tertiary)]">{m['issue.status']()}</span>
+							<StatusSelector
+								bind:open={statusOpen}
+								statuses={teamStatusesState.statusOrder}
+								value={issue.status_id}
+								onchange={(id) => updateField('status_id', id)}
+								shortcutKey="S"
+							>
+								{#snippet trigger(props)}
+									<Button {...props} variant="plain" class="flex items-center gap-1.5 text-sm text-[var(--color-text-primary)]">
+										<IssueStatusIcon status={issue.status} category={issue.status_info?.category} color={issue.status_info?.color} size={14} />
+										{issue.status_info?.name ?? issue.status}
+									</Button>
+								{/snippet}
+							</StatusSelector>
+						</div>
+
+						<!-- Priority row -->
+						<div class="flex items-center gap-3 rounded-md px-2 py-1.5 hover:bg-[var(--color-bg-hover)] transition-colors">
+							<span class="w-20 shrink-0 text-xs text-[var(--color-text-tertiary)]">{m['issue.priority']()}</span>
+							<PrioritySelector
+								bind:open={priorityOpen}
+								value={issue.priority}
+								onchange={(p) => updateField('priority', p)}
+								shortcutKey="P"
+							>
+								{#snippet trigger(props)}
+									<Button {...props} variant="plain" class="flex items-center gap-1.5 text-sm text-[var(--color-text-primary)]">
+										<IssuePriorityIcon priority={issue.priority} size={14} />
+										{getPriorityLabel(issue.priority)}
+									</Button>
+								{/snippet}
+							</PrioritySelector>
+						</div>
+
+						<!-- Assignee row -->
+						<div class="flex items-start gap-3 rounded-md px-2 py-1.5 hover:bg-[var(--color-bg-hover)] transition-colors">
+							<span class="w-20 shrink-0 text-xs text-[var(--color-text-tertiary)] pt-0.5">{m['issue.assignee']()}</span>
+							<div class="flex-1">
+								<AssigneeSelector
+									bind:open={assigneeOpen}
+									{members}
+									value={(issue.assignees ?? []).map(a => a.id)}
+									shortcutKey="A"
+									onchange={async (userId) => {
+										const currentIds = (issue.assignees ?? []).map(a => a.id);
+										const newIds = currentIds.includes(userId)
+											? currentIds.filter(id => id !== userId)
+											: [...currentIds, userId];
+										try {
+											await issuesState.update(slug, issue.identifier, { assignee_ids: newIds });
+											await refreshIssue();
+										} catch { appToast.error(m['issue.toast.failed_assignees']()); }
+									}}
+								>
+									{#snippet extra()}
+										<AgentAssigneeItems {slug} teamId={issue.team_id} issue={{ id: issue.id, identifier: issue.identifier, agent_assignees: agentAssignees }} onchanged={(agents) => (agentAssignees = agents)} />
+									{/snippet}
+									{#snippet trigger(props)}
+										<!-- inline-flex keeps the line box the former nested trigger button produced. -->
+										<Button {...props} variant="plain" class="inline-flex min-h-5 flex-wrap items-center gap-1 rounded-md text-left align-baseline transition-colors">
+											{#if issue.assignees && issue.assignees.length > 0}
+												{#each issue.assignees as a}
+													<span class="flex items-center gap-1.5 rounded-full bg-[var(--color-bg-tertiary)] px-2 py-0.5 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]">
+														<div class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[var(--app-accent)] text-[8px] text-[var(--app-accent-foreground)]">
+															{(a.name ?? 'U').charAt(0).toUpperCase()}
+														</div>
+														{a.name}
+													</span>
+												{/each}
+												<span class="flex h-5 w-5 items-center justify-center rounded-full text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors">
+													<Plus size={14} />
+												</span>
+											{:else if issue.assignee}
+												<span class="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]">
+													<div class="flex h-4 w-4 items-center justify-center rounded-full bg-[var(--app-accent)] text-[8px] text-[var(--app-accent-foreground)]">
+														{(issue.assignee.name ?? 'U').charAt(0).toUpperCase()}
+													</div>
+													{issue.assignee.name}
+												</span>
+											{:else}
+												<span class="text-sm text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">{m['issue.assignee']()}</span>
+											{/if}
+										</Button>
+									{/snippet}
+								</AssigneeSelector>
+							</div>
+						</div>
+
+						{#if agentAssignees.length > 0}
+							<!-- Agents row: each assigned agent with its task's live status -->
+							<div class="flex items-start gap-3 rounded-md px-2 py-1.5" data-testid="issue-agents">
+								<span class="w-20 shrink-0 pt-0.5 text-xs text-[var(--color-text-tertiary)]">{m['agents.assignee.label']()}</span>
+								<ul class="flex min-w-0 flex-1 flex-col gap-1.5">
+									{#each agentAssignees as agent (agent.id)}
+										<li class="flex min-w-0 items-start gap-2" data-agent-assignee={agent.name}>
+											<AgentAvatar name={agent.name} color={agent.avatar_color} size={18} class="mt-0.5" />
+											<div class="min-w-0 flex-1">
+												<div class="flex flex-wrap items-center gap-x-2 text-sm text-[var(--color-text-primary)]">
+													<span class="truncate">{agent.name}</span>
+													{#if agent.error}
+														<span class="text-xs text-[var(--status-error)]" data-agent-status>{agent.error}</span>
+													{:else if agent.task_state}
+														<span class="text-xs {toneText[taskTone(agent.task_state)]}" data-agent-status aria-live="polite">{taskLabel(agent.task_state as TaskState)}</span>
+													{:else}
+														<span class="text-xs text-[var(--color-text-tertiary)]" data-agent-status aria-live="polite">{m['agents.assignee.starting']()}</span>
+													{/if}
+												</div>
+												{#if agent.task_reason && !agent.error}
+													<p class="text-xs break-words text-[var(--color-text-tertiary)]">{agent.task_reason}</p>
+												{/if}
+												{#if agent.assigned_by_name}
+													<p class="text-[11px] text-[var(--color-text-tertiary)]">{m['agents.assignee.assigned_by']({ name: agent.assigned_by_name })}</p>
+												{/if}
+											</div>
+											<Button
+												variant="plain"
+												aria-label={m['agents.assignee.unassign_title']({ name: agent.name })}
+												title={m['agents.assignee.unassign_title']({ name: agent.name })}
+												onclick={async () => {
+													const agents = await toggleIssueAgent(slug, { id: issue.id, identifier: issue.identifier, agent_assignees: agentAssignees }, agent.id);
+													if (agents) agentAssignees = agents;
+												}}
+												class="rounded p-0.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]"
+											>
+												<X size={12} />
+											</Button>
+										</li>
+									{/each}
+								</ul>
+							</div>
+						{/if}
+
+						<!-- Due date row -->
+						<div class="flex items-center gap-3 rounded-md px-2 py-1.5 hover:bg-[var(--color-bg-hover)] transition-colors">
+							<span class="w-20 shrink-0 text-xs text-[var(--color-text-tertiary)]">{m['issue.due_date']()}</span>
+							<div class="min-w-0 flex-1">
+								<DatePickerPopover
+									value={issue.due_date}
+									onchange={(d) => updateField('due_date', d ?? '')}
+									placeholder={m['issue.set_date']()}
+									colorClass={issue.due_date ? formatDueDate(issue.due_date).colorClass : ''}
+									dueDateMode
+								/>
+							</div>
+						</div>
+
+					</div>
+				{/if}
+			</div>
+
+			<!-- Labels card -->
+			<div class="rounded-lg border border-[var(--app-border)] bg-[var(--color-bg-secondary)]">
+				<Button variant="plain" onclick={() => labelsExpanded = !labelsExpanded}
+					class="flex w-full items-center gap-1.5 px-3 py-2.5 text-[11px] font-medium uppercase tracking-wider text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors"
+				>
+					<ChevronRight size={12} class="transition-transform {labelsExpanded ? 'rotate-90' : ''}" />
+						{m['issue.labels']()}
+				</Button>
+				{#if labelsExpanded}
+					<div class="px-3 pb-3">
+						<div class="flex flex-wrap items-center gap-1">
+							{#if issue.labels && issue.labels.length > 0}
+								{#each issue.labels as lbl}
+									<Button variant="plain" onclick={() => labelsOpen = true} class="flex items-center gap-1.5 rounded-full bg-[var(--color-bg-tertiary)] px-2.5 py-1 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors cursor-pointer">
+										<span class="h-2.5 w-2.5 rounded-full shrink-0" style="background-color: {lbl.color}"></span>
+										{lbl.name}
+									</Button>
+								{/each}
+							{/if}
+							<LabelSelector
+								bind:open={labelsOpen}
+								{labels}
+								projectId={issue.project_id}
+								value={(issue.labels ?? []).map(l => l.id)}
+								shortcutKey="L"
+								oncreated={(label) => (labels = [label, ...labels.filter((existing) => existing.id !== label.id)])}
+								{slug}
+								onchange={async (labelId) => {
+									const currentIds = (issue.labels ?? []).map(l => l.id);
+									const newIds = currentIds.includes(labelId)
+										? currentIds.filter(id => id !== labelId)
+										: [...currentIds, labelId];
+									try {
+										await issuesState.update(slug, issue.identifier, { label_ids: newIds });
+										await refreshIssue();
+									} catch { appToast.error(m['issue.toast.failed_labels']()); }
+								}}
+							>
+								{#snippet trigger(props)}
+									{#if issue.labels && issue.labels.length > 0}
+										<Button {...props} aria-label={m['issue.add_label']()} variant="plain" class="flex h-6 w-6 items-center justify-center rounded-full hover:bg-[var(--color-bg-hover)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors">
+											<Plus size={14} />
+										</Button>
+									{:else}
+										<Button {...props} variant="plain" class="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)] transition-colors">
+											<Plus size={12} />
+											{m['issue.add_label']()}
+										</Button>
+									{/if}
+								{/snippet}
+							</LabelSelector>
+						</div>
+					</div>
+				{/if}
+			</div>
+
+			<!-- Project card -->
+			<div class="rounded-lg border border-[var(--app-border)] bg-[var(--color-bg-secondary)]">
+				<Button variant="plain" onclick={() => projectExpanded = !projectExpanded}
+					class="flex w-full items-center gap-1.5 px-3 py-2.5 text-[11px] font-medium uppercase tracking-wider text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors"
+				>
+					<ChevronRight size={12} class="transition-transform {projectExpanded ? 'rotate-90' : ''}" />
+						{m['issue.project']()}
+				</Button>
+				{#if projectExpanded}
+					<div class="px-3 pb-3">
+						<ProjectSelector
+							bind:open={projectOpen}
+							{projects}
+							value={issue.project_id}
+							onchange={(id) => { updateField('project_id', id ?? ''); if (!id && issue.cycle_id) updateField('cycle_id', ''); }}
+						>
+							{#snippet trigger(props)}
+								{#if issueProject}
+									<Button {...props} variant="plain" class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors w-full text-left">
+										<FolderKanban size={14} class="text-[var(--color-text-tertiary)] shrink-0" />
+										<span class="truncate">{issueProject.name}</span>
+									</Button>
+								{:else}
+									<Button {...props} variant="plain" class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] transition-colors">
+										<FolderKanban size={14} />
+										{m['issue.add_project']()}
+									</Button>
+								{/if}
+							{/snippet}
+						</ProjectSelector>
+						{#if issueProject?.description}
+							<p class="mt-1 px-2 text-xs text-[var(--color-text-tertiary)] leading-relaxed">{issueProject.description}</p>
+						{/if}
+
+						<!-- Cycle as sub-item of project (only when project is selected) -->
+						{#if issueProject}
+						<div class="ml-3 flex">
+							<svg class="shrink-0 mr-1" width="14" height="100%" viewBox="0 0 14 28" preserveAspectRatio="xMinYMin" fill="none">
+								<path d="M1 0 L1 18 C1 23, 5 23, 9 23 L14 23" stroke="var(--color-text-tertiary)" stroke-width="1.5" opacity="0.4" fill="none"/>
+							</svg>
+							<div class="flex-1 min-w-0 mt-2.5">
+								<CycleSelector
+									bind:open={cycleOpen}
+									{cycles}
+									value={issue.cycle_id}
+									onchange={(id) => updateField('cycle_id', id ?? '')}
+								>
+									{#snippet trigger(props)}
+										<Button {...props} variant="plain" class="flex items-center gap-2 rounded-md px-2 py-1 text-xs hover:bg-[var(--color-bg-hover)] transition-colors {issueCycle ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-tertiary)]'}">
+											<RefreshCw size={12} class="shrink-0 text-[var(--color-text-tertiary)]" />
+											{issueCycle ? issueCycle.name : m['issue.no_cycle']()}
+										</Button>
+									{/snippet}
+								</CycleSelector>
+							</div>
+						</div>
+						{/if}
+					</div>
+				{/if}
+			</div>
+		</div>
+	</div>
+</div>
+
+<CreateIssueDialog
+	bind:open={showCreateIssueDialog}
+	{slug}
+	{teams}
+	{projects}
+	{labels}
+	{members}
+	{cycles}
+	parentIssue={createDialogParentIssue}
+	defaultTeamId={createDialogParentIssue ? issue.team_id : issue.team_id}
+	defaultPriority={createDialogParentIssue ? issue.priority : undefined}
+	defaultProjectId={createDialogParentIssue ? issue.project_id : undefined}
+	defaultCycleId={createDialogParentIssue ? issue.cycle_id : undefined}
+	defaultTitle={createIssueTitle}
+	onlabelcreated={(label) => (labels = [label, ...labels.filter((existing) => existing.id !== label.id)])}
+	onbulkcreate={async (titles) => {
+		if (!createDialogParentIssue) return;
+		try {
+			const created = await bulkCreateSubIssues(slug, createDialogParentIssue.identifier, titles.map((title) => ({ title })));
+			appToast.success(m['issue.toast.created_sub_issues']({ n: created.length }));
+			await refreshIssue();
+			createIssueTitle = '';
+			createDialogParentIssue = null;
+		} catch (err: any) {
+			appToast.apiError(err, m['issue.toast.failed_sub_issues']());
+		}
+	}}
+	onsubmit={async (req) => {
+		try {
+			const parentForCreate = createDialogParentIssue;
+			const created = parentForCreate
+				? await createSubIssue(slug, parentForCreate.identifier, req)
+				: await issuesState.create(slug, req);
+			showIssueCreatedToast(slug, created);
+			if (parentForCreate) await refreshIssue();
+			createIssueTitle = '';
+			createDialogParentIssue = null;
+		} catch (err: any) {
+			appToast.apiError(err, m['issue.toast.failed_create_issue']());
+		}
+	}}
+/>
+
+<IssuePickerDialog
+	bind:open={parentPickerOpen}
+	{slug}
+	title={m['issue.change_parent_title']()}
+	description={m['issue.change_parent_desc']({ id: issue.identifier })}
+	actionLabel={m['issue.set_parent']()}
+	excludeIds={[issue.id]}
+	onselect={changeParent}
+/>
+
+<AlertDialog.Root bind:open={removeParentOpen}>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>{m['issue.remove_parent_question']({ id: issue.identifier })}</AlertDialog.Title>
+			<AlertDialog.Description>{m['issue.remove_parent_desc']()}</AlertDialog.Description>
+		</AlertDialog.Header>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel variant="outline">Cancel</AlertDialog.Cancel>
+			<AlertDialog.Action variant="destructive" onclick={removeParent}>{m['issue.remove_parent']()}</AlertDialog.Action>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>
+
+<CreateMachineDialog bind:open={issueActionsCreateOpen} {slug} {issue} oncreated={(machine) => goto(`/${slug}/machines/${machine.id}`)} />
+<IssueRepositoryDialog bind:open={issueActionsRepositoryOpen} {slug} {issue} />
+<IssueMachinePickerDialog
+	bind:open={issueActionsMachinePickerOpen}
+	{slug}
+	{issue}
+	intent={issueActionsMachineIntent}
+	oncreate={() => (issueActionsCreateOpen = true)}
+	onrepository={() => (issueActionsRepositoryOpen = true)}
+/>

@@ -1,0 +1,25 @@
+import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+	testDir: 'tests/e2e',
+	forbidOnly: !!process.env.CI,
+	retries: 0,
+	workers: process.env.CI ? 2 : undefined,
+	reporter: process.env.CI ? [['dot'], ['html', { open: 'never' }]] : 'list',
+	webServer: {
+		// PLAYWRIGHT_PORT lets parallel worktrees run browser tests side by side.
+		command: `npm run build && npm run preview -- --port ${process.env.PLAYWRIGHT_PORT ?? 4174}`,
+		port: Number(process.env.PLAYWRIGHT_PORT ?? 4174),
+		reuseExistingServer: false,
+		timeout: 480_000
+	},
+	use: {
+		baseURL: `http://localhost:${process.env.PLAYWRIGHT_PORT ?? 4174}`,
+		trace: 'retain-on-failure',
+		screenshot: 'only-on-failure',
+		video: 'retain-on-failure',
+		// Headless Chromium has no WebGL2 by default; SwiftShader matches the GPU-backed
+		// terminal renderer real browsers use.
+		launchOptions: { args: ['--enable-unsafe-swiftshader'] }
+	}
+});

@@ -1,0 +1,99 @@
+<script lang="ts">
+	import { Button } from '$lib/components/ui/button/index.js';
+	import * as Popover from '$lib/components/ui/popover';
+	import { Calendar } from '$lib/components/ui/calendar';
+	import DueDatePickerPanel from './DueDatePickerPanel.svelte';
+	import { CalendarDate } from '@internationalized/date';
+	import type { DateValue } from '@internationalized/date';
+	import { CalendarIcon, X } from '@lucide/svelte';
+	import { m, getLocale, setLocale } from '$lib/features/i18n/messages';
+
+	let {
+		value = null,
+		onchange,
+		placeholder = 'Set date',
+		colorClass = '',
+		dueDateMode = false
+	}: {
+		value: string | null;
+		onchange: (date: string | null) => void;
+		placeholder?: string;
+		colorClass?: string;
+		dueDateMode?: boolean;
+	} = $props();
+
+	let open = $state(false);
+
+	const displayDate = $derived.by(() => {
+		if (!value) return null;
+		try {
+			return new Date(value).toLocaleDateString(getLocale(), {
+				month: 'short',
+				day: 'numeric',
+				year: 'numeric'
+			});
+		} catch {
+			return null;
+		}
+	});
+
+	const calendarValue = $derived.by(() => {
+		if (!value) return undefined;
+		try {
+			const d = new Date(value);
+			return new CalendarDate(d.getFullYear(), d.getMonth() + 1, d.getDate());
+		} catch {
+			return undefined;
+		}
+	});
+
+	function handleSelect(dateValue: DateValue | undefined) {
+		if (dateValue) {
+			const date = `${dateValue.year}-${String(dateValue.month).padStart(2, '0')}-${String(dateValue.day).padStart(2, '0')}`;
+			onchange(date);
+			open = false;
+		}
+	}
+
+	function handleClear(e: MouseEvent) {
+		e.stopPropagation();
+		onchange(null);
+		open = false;
+	}
+</script>
+
+<Popover.Root bind:open>
+	<!-- The clear action sits inside the original pill frame as a sibling, never nested in the trigger. -->
+	<div class="inline-flex max-w-full items-center rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)] text-xs hover:bg-[var(--color-bg-hover)] {displayDate && colorClass ? colorClass : 'text-[var(--color-text-secondary)]'}">
+	<Popover.Trigger>
+		{#snippet child({ props })}
+			<Button {...props} variant="plain" title={displayDate ?? placeholder} class="flex min-w-0 items-center gap-1 whitespace-nowrap py-1 pl-1.5 {displayDate ? 'pr-0' : 'pr-1.5'}">
+				<CalendarIcon size={12} class="shrink-0" />
+				<span class="truncate">
+					{#if displayDate}
+						{displayDate}
+					{:else}
+						{placeholder}
+					{/if}
+				</span>
+			</Button>
+		{/snippet}
+	</Popover.Trigger>
+	{#if displayDate}
+		<Button variant="plain" aria-label={m['insights.clear']()} onclick={handleClear} class="mx-0.5 inline-flex shrink-0 rounded p-0.5 hover:bg-[var(--color-bg-hover)]"><X size={10} /></Button>
+	{/if}
+	</div>
+	<Popover.Content class="w-auto p-0" align="start">
+		{#if dueDateMode}
+			<DueDatePickerPanel {value} {onchange} close={() => (open = false)} />
+		{:else}
+			{#key value}
+				<Calendar
+					type="single"
+					value={calendarValue}
+					onValueChange={handleSelect}
+				/>
+			{/key}
+		{/if}
+	</Popover.Content>
+</Popover.Root>

@@ -1,0 +1,236 @@
+import { m, getLocale, setLocale } from '$lib/features/i18n/messages';
+
+import type { Label } from './label';
+import type { User } from './auth';
+import type { IssueAgentAssignee } from '$lib/api/agents';
+
+export type IssueStatus = 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'cancelled';
+export type IssuePriority = 0 | 1 | 2 | 3 | 4;
+
+export interface StatusInfo {
+	id: string;
+	name: string;
+	category: string;
+	color: string | null;
+	position: number;
+}
+
+export interface Issue {
+	id: string;
+	identifier: string;
+	title: string;
+	description: string | null;
+	status: IssueStatus;
+	status_id?: string;
+	status_info?: StatusInfo;
+	priority: IssuePriority;
+	team_id: string;
+	project_id: string | null;
+	cycle_id: string | null;
+	creator_id: string;
+	assignee_id: string | null;
+	parent_id: string | null;
+	due_date: string | null;
+	sort_order: number;
+	labels?: Label[];
+	creator?: User;
+	assignee?: User;
+	assignees?: User[];
+	/** AI agents assigned to the issue, with their task's live state. */
+	agent_assignees?: IssueAgentAssignee[];
+	parent?: IssueSummary;
+	sub_issue_count?: number;
+	sub_issue_done?: number;
+	relation_counts?: IssueRelationCounts;
+	relation_summary?: IssueRelationSummary;
+	is_subscribed?: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface IssueRelationCounts {
+	related: number;
+	blocked_by: number;
+	blocking: number;
+	duplicate: number;
+}
+
+export interface IssueRelationSummary {
+	related?: IssueSummary[];
+	blocked_by?: IssueSummary[];
+	blocking?: IssueSummary[];
+	duplicate?: IssueSummary[];
+}
+
+export interface IssueSummary {
+	id: string;
+	identifier: string;
+	title: string;
+	description?: string | null;
+	status?: IssueStatus;
+	status_id?: string;
+	status_info?: StatusInfo;
+	priority?: IssuePriority;
+	assignee?: User;
+}
+
+export interface CreateIssueRequest {
+	title: string;
+	description?: string;
+	status?: IssueStatus;
+	status_id?: string;
+	priority?: IssuePriority;
+	team_id: string;
+	project_id?: string;
+	assignee_id?: string;
+	assignee_ids?: string[];
+	label_ids?: string[];
+	parent_id?: string;
+	due_date?: string;
+	cycle_id?: string;
+}
+
+export interface UpdateIssueRequest {
+	title?: string;
+	description?: string;
+	status?: IssueStatus;
+	status_id?: string;
+	priority?: IssuePriority;
+	assignee_id?: string;
+	assignee_ids?: string[];
+	project_id?: string;
+	cycle_id?: string;
+	label_ids?: string[];
+	parent_id?: string;
+	due_date?: string;
+	sort_order?: number;
+}
+
+export interface IssueHistory {
+	id: string;
+	issue_id: string;
+	user_id: string | null;
+	field: string;
+	old_value: string | null;
+	new_value: string | null;
+	old_display_value?: string | null;
+	new_display_value?: string | null;
+	agent?: string | null;
+	/** The agent identity that acted for the user, when its task made the change. */
+	agent_name?: string | null;
+	created_at: string;
+}
+
+export type RelationType = 'related' | 'blocked_by' | 'blocking' | 'duplicate';
+
+export interface IssueRelation {
+	id: string;
+	issue_id: string;
+	related_issue_id: string;
+	type: RelationType;
+	related_issue?: Issue;
+	created_at: string;
+}
+
+export interface IssueTemplate {
+	id: string;
+	workspace_id: string;
+	team_id: string | null;
+	title: string;
+	default_issue_title: string | null;
+	description: string | null;
+	status: IssueStatus | null;
+	priority: IssuePriority | null;
+	label_ids: string[];
+	assignee_id: string | null;
+	recurrence_rule?: unknown;
+	next_run_at: string | null;
+	is_active: boolean;
+	created_by: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface CreateIssueTemplateRequest {
+	title: string;
+	default_issue_title?: string;
+	description?: string;
+	status?: IssueStatus;
+	priority?: IssuePriority;
+	label_ids?: string[];
+	assignee_id?: string;
+	team_id?: string;
+}
+
+export interface UpdateIssueTemplateRequest {
+	title?: string;
+	default_issue_title?: string | null;
+	description?: string;
+	status?: IssueStatus | null;
+	priority?: IssuePriority | null;
+	label_ids?: string[];
+	assignee_id?: string | null;
+	team_id?: string | null;
+	is_active?: boolean;
+}
+
+export interface Comment {
+	id: string;
+	issue_id: string;
+	user_id: string;
+	body: string;
+	parent_id?: string;
+	resolved_at?: string;
+	// Set when Kuayle posted the comment for that coding task's agent.
+	agent_task_id?: string;
+	user?: User;
+	replies?: Comment[];
+	created_at: string;
+	updated_at: string;
+}
+
+export const STATUS_ORDER: IssueStatus[] = ['in_progress', 'in_review', 'todo', 'backlog', 'done', 'cancelled'];
+
+export function getStatusLabel(status: IssueStatus): string {
+	const labels: Record<IssueStatus, string> = {
+		backlog: m['common.status.backlog'](),
+		todo: m['common.status.todo'](),
+		in_progress: m['common.status.in_progress'](),
+		in_review: m['common.status.in_review'](),
+		done: m['common.status.done'](),
+		cancelled: m['common.status.cancelled']()
+	};
+	return labels[status];
+}
+
+export function getStatusLabels(): Record<IssueStatus, string> {
+	return {
+		backlog: m['common.status.backlog'](),
+		todo: m['common.status.todo'](),
+		in_progress: m['common.status.in_progress'](),
+		in_review: m['common.status.in_review'](),
+		done: m['common.status.done'](),
+		cancelled: m['common.status.cancelled']()
+	};
+}
+
+export function getPriorityLabel(priority: IssuePriority): string {
+	const labels: Record<IssuePriority, string> = {
+		0: m['common.priority.no_priority'](),
+		1: m['common.priority.urgent'](),
+		2: m['common.priority.high'](),
+		3: m['common.priority.medium'](),
+		4: m['common.priority.low']()
+	};
+	return labels[priority];
+}
+
+export function getPriorityLabels(): Record<IssuePriority, string> {
+	return {
+		0: m['common.priority.no_priority'](),
+		1: m['common.priority.urgent'](),
+		2: m['common.priority.high'](),
+		3: m['common.priority.medium'](),
+		4: m['common.priority.low']()
+	};
+}

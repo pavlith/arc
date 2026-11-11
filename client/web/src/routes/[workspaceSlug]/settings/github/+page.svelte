@@ -1,0 +1,479 @@
+<script lang="ts">
+	import PageTitle from '$lib/components/shared/PageTitle.svelte';
+	import { onMount } from 'svelte';
+	import { page } from '$app/state';
+	import {
+		getGitHubStatus,
+		getManifestSetup,
+		handleManifestCallback,
+		getInstallURL,
+		handleGitHubCallback,
+		disconnectGitHub,
+		deleteGitHubApp,
+		listGitHubRepos,
+		linkGitHubRepos,
+		unlinkGitHubRepo,
+		listAutoTransitions,
+		updateAutoTransitions
+	} from '$lib/api/github';
+	import { getWorkspace } from '$lib/api/workspaces';
+	import { githubRepositoryHomeUrl } from '$lib/security/github-url';
+	import GitHubAppSetupCard from '$lib/features/github/GitHubAppSetupCard.svelte';
+	import { GITHUB_APP_LOGO_PATH } from '$lib/features/github/app-setup';
+	import GitHubBotSettings from '$lib/features/github/GitHubBotSettings.svelte';
+	import type { GitHubStatus, GitHubAvailableRepo, GitHubAutoTransition } from '$lib/types/github';
+	import { Button } from '$lib/components/ui/button';
+	import { Badge } from '$lib/components/ui/badge';
+	import { Switch } from '$lib/components/ui/switch';
+	import { Input } from '$lib/components/ui/input';
+	import { Checkbox } from '$lib/components/ui/checkbox';
+	import { appToast } from '$lib/features/toast/toast';
+	import { Download, ExternalLink, Plus, Trash2, Loader2, Search } from '@lucide/svelte';
+	import { GithubLogoIcon } from 'phosphor-svelte';
+	import { m, getLocale, setLocale } from '$lib/features/i18n/messages';
+
+	const slug = $derived(page.params.workspaceSlug ?? '');
+	let status = $state<GitHubStatus | null>(null);
+	let loading = $state(true);
+	let availableRepos = $state<GitHubAvailableRepo[]>([]);
+	let loadingRepos = $state(false);
+	let showRepoSelector = $state(false);
+	let selectedRepoIds = $state<Set<number>>(new Set());
+	let transitions = $state<GitHubAutoTransition[]>([]);
+	let settingUp = $state(false);
+	let repoSearch = $state('');
+	let savingRepos = $state(false);
+	// Matches the API's workspace:manage permission; the API enforces it.
+	let canManage = $state(false);
+
+	const filteredRepos = $derived(
+		repoSearch
+			? availableRepos.filter((r) =>
+					r.full_name.toLowerCase().includes(repoSearch.toLowerCase())
+				)
+			: availableRepos
+	);
+
+	const allFilteredSelected = $derived(
+		filteredRepos.length > 0 && filteredRepos.every((r) => selectedRepoIds.has(r.github_repo_id))
+	);
+
+	const someFilteredSelected = $derived(
+		!allFilteredSelected && filteredRepos.some((r) => selectedRepoIds.has(r.github_repo_id))
+	);
+
+	function toggleSelectAll() {
+		const next = new Set(selectedRepoIds);
+		if (allFilteredSelected) {
+			for (const r of filteredRepos) next.delete(r.github_repo_id);
+		} else {
+			for (const r of filteredRepos) next.add(r.github_repo_id);
+		}
+		selectedRepoIds = next;
+	}
+
+	onMount(async () => {
+		const params = new URLSearchParams(window.location.search);
+		const code = params.get('code');
+		const installationId = params.get('installation_id');
+
+		// Clean URL immediately to prevent re-execution on HMR reload
+		if (code || installationId) {
+			const cleanPath = window.location.pathname;
+			window.history.replaceState(null, '', cleanPath);
+		}
+
+		void getWorkspace(slug)
+			.then((workspace) => {
+				canManage = workspace.current_user_role === 'owner';
+			})
+			.catch(() => undefined);
+
+		try {
+			// An installation redirect also carries the installing user's OAuth code.
+			if (installationId) {
+				await handleGitHubCallback(slug, parseInt(installationId), code);
+				appToast.success(m['settings.github.connected_toast']());
+			} else if (code) {
+				// Prevent double exchange: check if already handled
+				const key = `gh_code_${code}`;
+				if (sessionStorage.getItem(key)) {
+					// Already processed — just load status
+				} else {
+					sessionStorage.setItem(key, '1');
+					await handleManifestCallback(slug, code);
+					appToast.success(m['settings.github.app_created']());
+				}
+			}
+
+			// Load current status
+			status = await getGitHubStatus(slug);
+			if (status.installed) {
+				transitions = await listAutoTransitions(slug);
+			}
+		} catch (err: any) {
+			console.error('GitHub setup error:', err);
+			if (code || installationId) {
+				appToast.apiError(err, m['settings.github.setup_failed']());
+			}
+		} finally {
+			loading = false;
+		}
+	});
+
+	function handleSetup() {
+		settingUp = true;
+		// Navigate directly to the backend — it serves an HTML page that auto-posts to GitHub
+		window.location.href = `/api/workspaces/${slug}/github/setup`;
+	}
+
+	async function handleInstall() {
+		try {
+			const { url } = await getInstallURL(slug);
+			if (!url) throw new Error('Invalid GitHub install URL');
+			window.location.href = url;
+		} catch {
+			appToast.error(m['settings.github.failed_install_url']());
+		}
+	}
+
+	async function handleDisconnect() {
+		try {
+			await disconnectGitHub(slug);
+			status = await getGitHubStatus(slug);
+			transitions = [];
+			appToast.success(m['settings.github.disconnected']());
+		} catch {
+			appToast.error(m['settings.github.failed_disconnect']());
+		}
+	}
+
+	async function handleDeleteApp() {
+		try {
+			await deleteGitHubApp(slug);
+			status = await getGitHubStatus(slug);
+			transitions = [];
+			appToast.success(m['settings.github.app_removed']());
+		} catch {
+			appToast.error(m['settings.github.failed_remove_app']());
+		}
+	}
+
+	async function loadAvailableRepos() {
+		loadingRepos = true;
+		showRepoSelector = true;
+		repoSearch = '';
+		try {
+			availableRepos = await listGitHubRepos(slug);
+			selectedRepoIds = new Set(availableRepos.filter(r => r.linked).map(r => r.github_repo_id));
+		} catch {
+			appToast.error(m['settings.github.failed_load_repos']());
+		} finally {
+			loadingRepos = false;
+		}
+	}
+
+	function toggleRepo(repoId: number) {
+		const next = new Set(selectedRepoIds);
+		if (next.has(repoId)) {
+			next.delete(repoId);
+		} else {
+			next.add(repoId);
+		}
+		selectedRepoIds = next;
+	}
+
+	async function saveRepoSelection() {
+		savingRepos = true;
+		try {
+			const newIds = [...selectedRepoIds].filter(id => !availableRepos.find(r => r.github_repo_id === id && r.linked));
+			if (newIds.length > 0) {
+				try {
+					await linkGitHubRepos(slug, newIds);
+					appToast.success(m['settings.github.repos_linked']());
+				} catch {
+					appToast.error(m['settings.github.failed_link_repos']());
+				}
+			}
+			for (const repo of availableRepos.filter(r => r.linked)) {
+				if (!selectedRepoIds.has(repo.github_repo_id)) {
+					const linked = status?.repos.find(r => r.github_repo_id === repo.github_repo_id);
+					if (linked) {
+						try { await unlinkGitHubRepo(slug, linked.id); } catch { /* ignore */ }
+					}
+				}
+			}
+			status = await getGitHubStatus(slug);
+			showRepoSelector = false;
+			repoSearch = '';
+		} finally {
+			savingRepos = false;
+		}
+	}
+
+	async function handleTransitionToggle(event: string, active: boolean) {
+		const updated = transitions.map(t => t.event === event ? { ...t, is_active: active } : t);
+		transitions = updated;
+		try {
+			await updateAutoTransitions(slug, updated);
+		} catch {
+			appToast.error(m['settings.github.failed_update']());
+		}
+	}
+
+	const TRANSITION_LABELS: Record<string, { label: string; description: string }> = $derived({
+		branch_created: { label: m['settings.github.branch_created'](), description: m['settings.github.branch_created_desc']() },
+		pr_opened: { label: m['settings.github.pr_opened'](), description: m['settings.github.pr_opened_desc']() },
+		pr_merged: { label: m['settings.github.pr_merged'](), description: m['settings.github.pr_merged_desc']() },
+	});
+</script>
+
+<div class="mx-auto max-w-2xl space-y-8 p-6">
+	<div>
+		<h2 class="text-lg font-semibold text-[var(--color-text-primary)]">{m['settings.github.title']()}</h2>
+		<p class="mt-1 text-sm text-[var(--color-text-tertiary)]">
+			{m['settings.github.desc']()}
+		</p>
+	</div>
+
+	{#if loading}
+		<div class="flex items-center justify-center py-12">
+			<Loader2 size={20} class="animate-spin text-[var(--color-text-tertiary)]" />
+		</div>
+	{:else if !status?.configured}
+		<!-- State 1: No app configured — show setup button -->
+		<div class="rounded-lg border border-[var(--app-border)] p-6">
+			<div class="flex items-center gap-3">
+				<div class="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--color-bg-tertiary)]">
+					<GithubLogoIcon size={20} class="text-[var(--color-text-secondary)]" />
+				</div>
+				<div class="flex-1">
+					<h3 class="text-sm font-medium text-[var(--color-text-primary)]">{m['settings.github.setup_app']()}</h3>
+					<p class="text-xs text-[var(--color-text-tertiary)]">{m['settings.github.setup_desc']()}</p>
+				</div>
+				<Button size="sm" onclick={handleSetup} disabled={settingUp}>
+					{#if settingUp}
+						<Loader2 size={14} class="animate-spin" />
+					{:else}
+						{m['settings.github.set_up']()}
+					{/if}
+				</Button>
+			</div>
+		</div>
+
+		<div class="rounded-md bg-[var(--color-bg-secondary)] px-4 py-3">
+			<p class="text-xs text-[var(--color-text-tertiary)]">
+				{m['settings.github.setup_note']()}
+			</p>
+			<p class="mt-2 text-xs text-[var(--color-text-tertiary)]">
+				{m['settings.github.logo_setup_note']()}
+			</p>
+			<Button class="mt-2" size="sm" variant="outline" href={GITHUB_APP_LOGO_PATH} download="kuayle-logo.png">
+				<Download size={14} />{m['settings.github.logo_download']()}
+			</Button>
+		</div>
+	{:else if !status?.installed}
+		<!-- State 2: App configured but not installed -->
+		<div class="space-y-4">
+			<div class="rounded-lg border border-[var(--app-border)] p-4">
+				<div class="flex items-center justify-between">
+					<div class="flex items-center gap-3">
+						<div class="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--color-bg-tertiary)]">
+							<GithubLogoIcon size={16} class="text-[var(--color-text-secondary)]" />
+						</div>
+						<div>
+							<span class="text-sm font-medium text-[var(--color-text-primary)]">{m['settings.github.app_ready']()}</span>
+							<p class="text-xs text-[var(--color-text-tertiary)]">{m['settings.github.app_ready_desc']()}</p>
+						</div>
+					</div>
+					<Button size="sm" onclick={handleInstall}>
+						{m['settings.github.install']()}
+					</Button>
+				</div>
+			</div>
+
+			{#if !status?.global_app}
+				<Button variant="plain" onclick={handleDeleteApp}
+					class="text-xs text-[var(--color-text-tertiary)] hover:text-[var(--color-error)]"
+				>
+					{m['settings.github.remove_app']()}
+				</Button>
+			{/if}
+		</div>
+	{:else}
+		<!-- State 3: Fully connected -->
+		<div class="space-y-6">
+			<!-- Connection info -->
+			<div class="rounded-lg border border-[var(--app-border)] p-4">
+				<div class="flex items-center justify-between">
+					<div class="flex items-center gap-3">
+						<div class="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--color-bg-tertiary)]">
+							<GithubLogoIcon size={16} class="text-[var(--color-text-secondary)]" />
+						</div>
+						<div>
+							<div class="flex items-center gap-2">
+								<span class="text-sm font-medium text-[var(--color-text-primary)]">{status.installation?.account_login}</span>
+								<Badge variant="outline" class="text-[10px]">{status.installation?.account_type}</Badge>
+							</div>
+							<p class="text-xs text-[var(--color-text-tertiary)]">{m['settings.github.connected']()}</p>
+						</div>
+					</div>
+					<Button variant="destructive" size="sm" onclick={handleDisconnect}>
+						{m['settings.github.disconnect']()}
+					</Button>
+				</div>
+			</div>
+
+			{#if canManage}
+				<GitHubAppSetupCard {slug} />
+			{/if}
+
+			<!-- Linked repos -->
+			<div>
+				<div class="flex items-center justify-between">
+					<h3 class="text-sm font-medium text-[var(--color-text-primary)]">{m['settings.github.linked_repos']()}</h3>
+					{#if !showRepoSelector}
+						<Button variant="plain" onclick={loadAvailableRepos}
+							class="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] transition-colors"
+						>
+							<Plus size={13} />
+							{m['settings.github.manage']()}
+						</Button>
+					{/if}
+				</div>
+
+				{#if showRepoSelector}
+					<div class="mt-3 rounded-lg border border-[var(--app-border)] p-3">
+						{#if loadingRepos}
+							<div class="flex items-center justify-center py-8">
+								<Loader2 size={18} class="animate-spin text-[var(--color-text-tertiary)]" />
+							</div>
+						{:else}
+							<!-- Search -->
+							<div class="relative">
+								<Search size={14} class="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
+								<Input
+									type="text"
+									placeholder={m['settings.github.search_repos']()}
+									bind:value={repoSearch}
+									class="pl-8 h-8"
+								/>
+							</div>
+
+							<!-- Select all -->
+							<Button variant="plain" onclick={toggleSelectAll}
+								class="mt-2 flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]"
+							>
+								<Checkbox
+									checked={allFilteredSelected}
+									indeterminate={someFilteredSelected}
+									class="pointer-events-none"
+								/>
+								<span class="text-xs">{repoSearch ? m['settings.github.select_all_filtered']({ n: filteredRepos.length }) : m['settings.github.select_all']()} ({filteredRepos.length})</span>
+							</Button>
+
+							<!-- Repo list -->
+							<div class="mt-1 max-h-64 space-y-0.5 overflow-y-auto">
+								{#each filteredRepos as repo}
+									<Button variant="plain" onclick={() => toggleRepo(repo.github_repo_id)}
+										class="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-sm hover:bg-[var(--color-bg-hover)] {selectedRepoIds.has(repo.github_repo_id) ? 'bg-[var(--color-bg-hover)]/50' : ''}"
+									>
+										<Checkbox
+											checked={selectedRepoIds.has(repo.github_repo_id)}
+											class="pointer-events-none"
+										/>
+										<GithubLogoIcon size={14} class="shrink-0 text-[var(--color-text-tertiary)]" />
+										<span class="truncate text-[var(--color-text-primary)]">{repo.full_name}</span>
+										{#if repo.private}
+											<Badge variant="outline" class="ml-auto shrink-0 text-[9px]">{m['settings.github.private']()}</Badge>
+										{/if}
+									</Button>
+								{:else}
+									<p class="py-4 text-center text-xs text-[var(--color-text-tertiary)]">
+										{repoSearch ? m['settings.github.no_repos_match']() : m['settings.github.no_repos_available']()}
+									</p>
+								{/each}
+							</div>
+
+							<!-- Actions -->
+							<div class="mt-3 flex items-center justify-between border-t border-[var(--app-border)] pt-3">
+								<span class="text-xs text-[var(--color-text-tertiary)]">
+									{m['settings.github.n_selected']({ n: selectedRepoIds.size })}
+								</span>
+								<div class="flex gap-2">
+									<Button variant="outline" size="sm" onclick={() => { showRepoSelector = false; repoSearch = ''; }}>{m['settings.cancel']()}</Button>
+									<Button size="sm" onclick={saveRepoSelection} disabled={savingRepos}>
+										{#if savingRepos}
+											<Loader2 size={14} class="animate-spin" />
+										{:else}
+											{m['settings.github.save']()}
+										{/if}
+									</Button>
+								</div>
+							</div>
+						{/if}
+					</div>
+				{:else if status.repos.length === 0}
+					<p class="mt-3 text-sm text-[var(--color-text-tertiary)]">{m['settings.github.no_repos_linked']()}</p>
+				{:else}
+					<div class="mt-3 space-y-1">
+						{#each status.repos as repo}
+							{@const repositoryUrl = githubRepositoryHomeUrl(repo.full_name)}
+							<div class="flex items-center justify-between rounded-md border border-[var(--app-border)] px-3 py-2">
+								<div class="flex items-center gap-2">
+									<GithubLogoIcon size={14} class="text-[var(--color-text-tertiary)]" />
+									<span class="text-sm text-[var(--color-text-primary)]">{repo.full_name}</span>
+									<span class="text-xs text-[var(--color-text-tertiary)]">{repo.default_branch}</span>
+								</div>
+								{#if repositoryUrl}
+									<a href={repositoryUrl} target="_blank" rel="noopener noreferrer" class="text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">
+										<ExternalLink size={14} />
+									</a>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				{/if}
+			</div>
+
+			<!-- Bot identity and abilities -->
+			<GitHubBotSettings {slug} {canManage} />
+
+			<!-- Auto-transitions -->
+			{#if transitions.length > 0}
+				<div>
+					<h3 class="text-sm font-medium text-[var(--color-text-primary)]">{m['settings.github.automations']()}</h3>
+					<p class="mt-1 text-xs text-[var(--color-text-tertiary)]">{m['settings.github.automations_desc']()}</p>
+					<div class="mt-3 space-y-2">
+						{#each transitions as t}
+							{@const info = TRANSITION_LABELS[t.event]}
+							{#if info}
+								<div class="flex items-center justify-between rounded-md border border-[var(--app-border)] px-3 py-2.5">
+									<div>
+										<span class="text-sm text-[var(--color-text-primary)]">{info.label}</span>
+										<p class="text-xs text-[var(--color-text-tertiary)]">{info.description}</p>
+									</div>
+									<Switch checked={t.is_active} onCheckedChange={(v) => handleTransitionToggle(t.event, v)} />
+								</div>
+							{/if}
+						{/each}
+					</div>
+				</div>
+			{/if}
+
+			<!-- Danger zone -->
+			{#if !status?.global_app}
+				<div class="border-t border-[var(--app-border)] pt-4">
+					<Button variant="plain" onclick={handleDeleteApp}
+						class="flex items-center gap-1.5 text-xs text-[var(--color-text-tertiary)] hover:text-[var(--color-error)]"
+					>
+						<Trash2 size={12} />
+						{m['settings.github.remove_app_entirely']()}
+					</Button>
+				</div>
+			{/if}
+		</div>
+	{/if}
+</div>
+
+<PageTitle parts={[m['settings.github.title'](), m['settings.title']()]} />

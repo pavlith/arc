@@ -1,0 +1,123 @@
+<script lang="ts">
+	import TestCommandField from '$lib/features/dev-machines/TestCommandField.svelte';
+	import ComposeFileField from '$lib/features/dev-machines/ComposeFileField.svelte';
+	import PreviewSettingField from '$lib/features/dev-machines/PreviewSettingField.svelte';
+	import { previewSettingPayload } from '$lib/features/dev-machines/preview-setting';
+	import AgentDefaultsField from '$lib/features/dev-machines/AgentDefaultsField.svelte';
+	import { parseTestCommand, formatTestCommand } from '$lib/features/dev-machines/test-command';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import * as Select from '$lib/components/ui/select';
+	import * as Command from '$lib/components/ui/command';
+	import { Button } from '$lib/components/ui/button';
+	import { Label } from '$lib/components/ui/label';
+	import ComboboxPopover from '$lib/components/shared/ComboboxPopover.svelte';
+	import { ChevronsUpDown, GitBranch } from '@lucide/svelte';
+	import { getGitHubStatus } from '$lib/api/github';
+	import { deleteDevMachineScopeSetting, getDevMachineRepositoryDefaults, getDevMachineScopeSetting, listDevMachineEnvironments, updateDevMachineScopeSetting } from '$lib/api/dev-machines';
+	import { repositorySourceLabel } from '$lib/features/dev-machines/repository-source';
+	import type { GitHubRepo } from '$lib/types/github';
+	import type { DevMachineEnvironment, DevelopmentRepository } from '$lib/types/dev-machine';
+	import type { Issue } from '$lib/types/issue';
+	import { appToast } from '$lib/features/toast/toast';
+	import { m, getLocale, setLocale } from '$lib/features/i18n/messages';
+
+	let { open = $bindable(false), slug, issue }: { open: boolean; slug: string; issue: Issue } = $props();
+	let repositories = $state<GitHubRepo[]>([]);
+	let environments = $state<DevMachineEnvironment[]>([]);
+	let repositoryId = $state('inherit');
+	let environmentId = $state('inherit');
+	let testCommand = $state('');
+	let agentProvider = $state('inherit');
+	let agentInstructions = $state('');
+	let composeFile = $state('');
+	let previewCommand = $state('');
+	let previewPort = $state('');
+	let loading = $state(false);
+	let saving = $state(false);
+	let repositoryOpen = $state(false);
+	let inheritedRepository = $state<DevelopmentRepository | null>(null);
+
+	const selectedRepository = $derived(repositories.find((item) => item.id === repositoryId));
+	const selectedEnvironment = $derived(environments.find((item) => item.id === environmentId));
+	// Name what "inherit" resolves to, so a team or project repository is visibly used.
+	const inheritLabel = $derived(
+		inheritedRepository
+			? m['machines.inherit_repository']({ repository: inheritedRepository.full_name, source: repositorySourceLabel(inheritedRepository.source) })
+			: m['machines.use_workspace_default']()
+	);
+
+	$effect(() => {
+		if (!open) return;
+		void load();
+	});
+
+	async function load() {
+		loading = true;
+		try {
+			const [github, setting, availableEnvironments, defaults] = await Promise.all([
+				getGitHubStatus(slug), getDevMachineScopeSetting(slug, 'issue', issue.id), listDevMachineEnvironments(slug),
+				getDevMachineRepositoryDefaults(slug, { issueId: issue.id }).catch(() => null)
+			]);
+			inheritedRepository = defaults?.inherited_repository ?? null;
+			repositories = github.repos ?? [];
+			environments = (availableEnvironments ?? []).filter((item) => item.status === 'ready');
+			repositoryId = setting.github_repo_id ?? 'inherit';
+			environmentId = setting.environment_id ?? 'inherit';
+			testCommand = formatTestCommand(setting.test_command); agentProvider = setting.agent_provider ?? 'inherit'; agentInstructions = setting.agent_instructions ?? ''; composeFile = setting.compose_file ?? ''; previewCommand = setting.preview_command ? JSON.stringify(setting.preview_command) : ''; previewPort = setting.preview_port ? String(setting.preview_port) : '';
+		} catch (error) {
+			appToast.apiError(error, 'Failed to load issue development defaults');
+		} finally {
+			loading = false;
+		}
+	}
+
+	async function save() {
+		saving = true;
+		try {
+			const command = parseTestCommand(testCommand);
+			if (repositoryId === 'inherit' && environmentId === 'inherit' && command === undefined && agentProvider === 'inherit' && !agentInstructions.trim() && !composeFile.trim() && !previewCommand.trim()) {
+				await deleteDevMachineScopeSetting(slug, 'issue', issue.id);
+			} else {
+				await updateDevMachineScopeSetting(slug, {
+					scope_type: 'issue', scope_id: issue.id,
+					github_repo_id: selectedRepository?.id,
+					base_branch: selectedRepository?.default_branch,
+					environment_id: selectedEnvironment?.id,
+					test_command: command, agent_provider: agentProvider === 'inherit' ? undefined : agentProvider, agent_instructions: agentInstructions.trim() || undefined, compose_file: composeFile.trim() || undefined, ...previewSettingPayload(previewCommand, previewPort)
+				});
+			}
+			appToast.success('Issue development defaults saved');
+			open = false;
+		} catch (error) {
+			appToast.apiError(error, 'Failed to save issue development defaults');
+		} finally {
+			saving = false;
+		}
+	}
+</script>
+
+<Dialog.Root bind:open>
+	<Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-md">
+		<Dialog.Header><Dialog.Title>{m['machines.issue_defaults_title']()}</Dialog.Title><Dialog.Description>{m['machines.issue_defaults_desc']({ identifier: issue.identifier })}</Dialog.Description></Dialog.Header>
+		<div class="space-y-4">
+			<div class="space-y-1.5">
+				<Label>{m['machines.repository']()}</Label>
+				<ComboboxPopover bind:open={repositoryOpen} placeholder={m['machines.search_repositories']()} emptyMessage={m['machines.no_repositories']()} width="w-[min(28rem,calc(100vw-2rem))]">
+					{#snippet trigger(props)}
+						<Button {...props} type="button" variant="outline" class="w-full justify-between gap-2 font-normal" disabled={loading} aria-label={m['machines.repository']()}>
+							<span class="flex min-w-0 items-center gap-2"><GitBranch class="size-3.5 shrink-0 text-[var(--color-text-tertiary)]" /><span class="truncate">{selectedRepository?.full_name ?? inheritLabel}</span></span>
+							<ChevronsUpDown class="size-3.5 shrink-0 text-[var(--color-text-tertiary)]" />
+						</Button>
+					{/snippet}
+					<Command.Item value={inheritLabel} data-checked={repositoryId === 'inherit'} onSelect={() => { repositoryId = 'inherit'; repositoryOpen = false; }} class="text-[var(--color-text-tertiary)]">{inheritLabel}</Command.Item>
+					{#each repositories as repository (repository.id)}
+						<Command.Item value={repository.full_name} data-checked={repositoryId === repository.id} onSelect={() => { repositoryId = repository.id; repositoryOpen = false; }} class="flex items-center gap-2"><GitBranch class="size-3.5 text-[var(--color-text-tertiary)]" /><span class="truncate">{repository.full_name}</span></Command.Item>
+					{/each}
+				</ComboboxPopover>
+			</div>
+			<div class="space-y-1.5"><Label>{m['machines.environment']()}</Label><Select.Root type="single" value={environmentId} disabled={loading} onValueChange={(value) => value && (environmentId = value)}><Select.Trigger class="w-full">{selectedEnvironment?.name ?? m['machines.use_workspace_default']()}</Select.Trigger><Select.Content><Select.Item value="inherit" label={m['machines.use_inherited_default']()}>{m['machines.use_inherited_default']()}</Select.Item>{#each environments as environment}<Select.Item value={environment.id} label={environment.name}>{environment.name}</Select.Item>{/each}</Select.Content></Select.Root></div>
+			<TestCommandField bind:value={testCommand} disabled={loading || saving} /><ComposeFileField bind:value={composeFile} disabled={loading || saving} /><PreviewSettingField bind:command={previewCommand} bind:port={previewPort} disabled={loading || saving} /><AgentDefaultsField bind:provider={agentProvider} bind:instructions={agentInstructions} disabled={loading || saving} />
+		</div>
+		<Dialog.Footer><Button variant="outline" onclick={() => (open = false)}>{m['common.cancel']()}</Button><Button onclick={save} disabled={loading || saving}>{saving ? m['common.saving']() : m['machines.save_defaults']()}</Button></Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

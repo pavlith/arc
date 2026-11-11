@@ -52,6 +52,22 @@ When updating only config or credentials, restart `arc-agent.service`.
 - Broker publish: Identity service exchange and the node's three concrete subjects.
   Subscribe only `_INBOX.runtime.<node-id>.>`; Agent sets that InboxPrefix.
 
+### Core-approved read-only package preview
+
+After an administrator approves a NodeProfile in Core and a node has
+successfully reported its host inventory, run on that enrolled Ubuntu node:
+
+```sh
+arc-agent -config /etc/arc-agent/config.json -preview-profile standard -profile-revision 1
+```
+
+The Agent authenticates through its existing Identity/NATS credentials, retrieves
+a node-specific short-lived profile, verifies Core's signature and only runs
+`apt-get -s` to preview pinned package changes. Core must have the
+`runtime.v1.node.profile.plan` permission and
+`ctl.runtime.v1.node.<node-id>.profile.plan` NATS subject enabled for the node.
+The CLI **never installs or removes packages**; no profile execution API exists yet.
+
 ## Host inventory and APT planning
 
 `arc-agent -host-info` prints bounded read-only JSON host facts without requiring

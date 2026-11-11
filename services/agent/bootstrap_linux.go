@@ -2,8 +2,6 @@ package agent
 
 import (
 	"context"
-	"crypto/ed25519"
-	"encoding/json"
 	"io"
 	"log/slog"
 	"os"
@@ -13,13 +11,11 @@ import (
 
 	"github.com/pavlith/arc/sdk"
 	contract "github.com/pavlith/arc/sdk/agent"
-	"github.com/pavlith/arc/sdk/rpc"
 	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/agent/modules/docker"
 	"github.com/pavlith/arc/services/agent/modules/host"
 	"github.com/pavlith/arc/services/agent/modules/journal"
 	"github.com/pavlith/arc/services/agent/modules/systemd"
-	"github.com/pavlith/arc/services/core/modules/identity"
 )
 
 // FileConfig contains references to independent Agent credentials, never keys.
@@ -104,27 +100,6 @@ func RunFile(ctx context.Context, path string) error {
 	if err != nil {
 		return ErrInvalid
 	}
-	seed, err := readOwned(cfg.KeyFile, true, ed25519.SeedSize)
-	if err != nil || len(seed) != ed25519.SeedSize {
-		return ErrInvalid
-	}
-	key := ed25519.NewKeyFromSeed(seed)
-	for i := range seed {
-		seed[i] = 0
-	}
-	defer func() {
-		for i := range key {
-			key[i] = 0
-		}
-	}()
-	public, err := readOwned(cfg.CoreSnapshotKeyFile, false, 4096)
-	if err != nil {
-		return ErrInvalid
-	}
-	var coreKey ed25519.PublicKey
-	if json.Unmarshal(public, &coreKey) != nil || len(coreKey) != ed25519.PublicKeySize {
-		return ErrInvalid
-	}
 	store, err := journal.Open(cfg.StateDirectory)
 	if err != nil {
 		return ErrInvalid
@@ -143,30 +118,13 @@ func RunFile(ctx context.Context, path string) error {
 			drivers[t.Kind] = driver
 		}
 	}
-	cfg.NATS.Name = "arc-agent-" + cfg.NodeID
-	cfg.NATS.InboxPrefix = "_INBOX.runtime." + cfg.NodeID
-	brokerSeed, err := readOwned(cfg.NATS.NKeySeedFile, true, 4096)
+	link, err := openNodeClient(ctx, cfg)
 	if err != nil {
-		return ErrInvalid
+		return err
 	}
-	for i := range brokerSeed {
-		brokerSeed[i] = 0
-	}
-	nc, err := sdk.Connect(ctx, cfg.NATS)
-	if err != nil {
-		return ErrUnavailable
-	}
-	defer nc.Close()
-	rpcClient, err := rpc.NewClient(nc)
-	if err != nil {
-		return ErrUnavailable
-	}
-	provider, err := contract.NewNodeClient(rpcClient, cfg.NodeID, Credentials(identity.Client{RPC: rpcClient, ServiceID: cfg.ServiceID, Kid: cfg.Kid, PrivateKey: key}))
-	if err != nil {
-		return ErrInvalid
-	}
+	defer link.Close()
 	service, err := New(Config{
-		NodeID: cfg.NodeID, Provider: provider, CoreKey: coreKey, Templates: templates,
+		NodeID: cfg.NodeID, Provider: link.provider, CoreKey: link.coreKey, Templates: templates,
 		Journal: store, Drivers: drivers, PollInterval: time.Duration(cfg.PollSeconds) * time.Second, HostFacts: host.Collect,
 		Observe: func(resource, code string) { slog.Warn("agent reconciliation", "resource_id", resource, "code", code) },
 	})

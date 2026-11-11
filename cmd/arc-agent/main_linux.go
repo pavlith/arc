@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/pavlith/arc/services/agent"
 	"github.com/pavlith/arc/services/agent/modules/apt"
@@ -21,7 +22,23 @@ func main() {
 	checkConfig := flag.Bool("check-config", false, "validate the local configuration and exit")
 	hostInfo := flag.Bool("host-info", false, "print read-only host facts as JSON (no config required)")
 	aptPlan := flag.String("apt-plan", "", "simulate package installation (comma-separated names, no changes)")
+	previewProfile := flag.String("preview-profile", "", "preview a Core-approved profile by ID (read-only)")
+	profileRevision := flag.Int64("profile-revision", 0, "approved profile revision for preview")
 	flag.Parse()
+	if *previewProfile != "" {
+		if *profileRevision < 1 || *hostInfo || *checkConfig || *aptPlan != "" {
+			slog.Error("invalid profile preview options")
+			os.Exit(2)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+		defer cancel()
+		plan, err := agent.PreviewProfileFile(ctx, *config, *previewProfile, *profileRevision)
+		if err != nil || json.NewEncoder(os.Stdout).Encode(plan) != nil {
+			slog.Error("approved profile preview unavailable")
+			os.Exit(1)
+		}
+		return
+	}
 	if *hostInfo {
 		facts, err := host.Collect(context.Background())
 		if err != nil || json.NewEncoder(os.Stdout).Encode(facts) != nil {

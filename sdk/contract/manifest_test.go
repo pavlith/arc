@@ -37,7 +37,7 @@ func TestArtifactGuardrails(t *testing.T) {
 		"executable_selector":    func(m *contract.Manifest) { m.Operations[0].Auth.ResourceFrom = "sql:select root" },
 		"command_without_replay": func(m *contract.Manifest) { m.Operations[1].Idempotency = "none" },
 		"reserved_route":         func(m *contract.Manifest) { m.Operations[0].HTTP.Path = "/api/v1/identity/login" },
-		"unbound_path":          func(m *contract.Manifest) { m.Operations[0].HTTP.Bindings = nil },
+		"unbound_path":           func(m *contract.Manifest) { m.Operations[0].HTTP.Bindings = nil },
 		"conflicting_routes":     func(m *contract.Manifest) { m.Operations[1].HTTP.Path = "/api/v1/books/read/{other}" },
 	}
 	for name, mut := range tests {

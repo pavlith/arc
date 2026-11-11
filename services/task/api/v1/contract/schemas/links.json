@@ -1,0 +1,40 @@
+{
+  "type": "object",
+  "properties": {
+    "links": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "target_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "related",
+              "blocks",
+              "duplicate_of"
+            ]
+          }
+        },
+        "required": [
+          "source_id",
+          "target_id",
+          "kind"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "links"
+  ],
+  "additionalProperties": false
+}

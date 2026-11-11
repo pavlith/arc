@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "service": {
     "name": "task",
-    "build_version": "0.5.0",
+    "build_version": "0.6.0",
     "api_major": 1
   },
   "resources": [
@@ -2015,6 +2015,90 @@
         "expose": true,
         "method": "POST",
         "path": "/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/work/{task_id}/parent",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "task_id",
+            "field": "task_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "task.work.links.change",
+      "subject": "rpc.task.v1.work.links.change",
+      "kind": "command",
+      "request_schema": "schemas/link-change.json",
+      "response_schema": "schemas/link-result.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "task.workspace",
+        "action": "task.create",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/work/{task_id}/links",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "task_id",
+            "field": "task_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "task.work.links.list",
+      "subject": "rpc.task.v1.work.links.list",
+      "kind": "query",
+      "request_schema": "schemas/get.json",
+      "response_schema": "schemas/links.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "task.workspace",
+        "action": "task.read",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/work/{task_id}/links",
         "success_status": 200,
         "bindings": [
           {

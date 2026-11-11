@@ -134,3 +134,12 @@ and subtree height in the command transaction, uses the child's revision and
 updated timestamp, and writes metadata-only audit/invalidation. Archive retains
 edges and never cascades; active children can detach from an archived parent.
 Legacy proof tasks require explicit Team adoption before hierarchy attachment.
+
+### Links
+
+Links are scoped to the existing workspace/ACL root. `related` is symmetric;
+`blocks` and `duplicate_of` are directed and acyclic within their kind. Duplicate
+marking has at most one outgoing target; it does not merge data. A task has at
+most 100 incident links. Link mutation advances both work revisions and emits
+metadata-only invalidations in the same transaction. Archived endpoints retain
+links, are hidden from link lists and may be removed from an active source.

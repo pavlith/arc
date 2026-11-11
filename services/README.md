@@ -4,7 +4,7 @@
 |---|---|---|
 | `core/` | `cmd/arc-core`, owner SQLite, private RPC and signed approval for Identity profile, workspace lifecycle and invitations, member/group management and administrator provisioning | Runtime policy and adapter #13 |
 | `gate/` | `cmd/arc-gate`, browser cookies, CLI tokens, signed domain routes, Identity routes and optional UI assets | WS/DAV adapters |
-| `task/` | `cmd/arc-task`, scoped Teams/workflow, shared work items, projects/labels, comments/history, saved-view APIs and atomic replay/outbox | Subtasks/links/templates/bulk and UI adaptation #10 |
+| `task/` | `cmd/arc-task`, scoped Teams/workflow, shared work items, projects/labels, comments/history, subtasks/links, saved-view APIs and atomic replay/outbox | Templates/bulk and UI adaptation #10 |
 | `notify/` | `cmd/arc-notify`, personal Inbox/subscriptions and persisted fake outbound intents | Realtime and real channels #9/#12 |
 | `agent/` | `cmd/arc-agent`, private node RPC, durable journal, restricted systemd and Docker drivers | Admin/Gate/UI, live Docker acceptance, LXD and Core reconcile #13 |
 
@@ -357,3 +357,20 @@ silently reparent children; archived parents can be detached using the active
 child's revision. Ordinary work edits preserve the parent. Apply migration
 `000006_subtasks` and replace the signed Task artifact/routes and Notify producer
 digest. Rich-text rendering and UI hierarchy interactions remain client work.
+
+## Task links
+
+Task 0.6.0 adds `GET` and `POST .../work/{task_id}/links`. POST requires
+`target_id`, `kind` (`related`, `blocks`, `duplicate_of`), `remove` boolean,
+source `revision` and `expected_updated_at`. Related links are symmetric and
+stored once; directed links are source-to-target, with cycles rejected per kind.
+A task has at most one outgoing duplicate target and 100 incident links total.
+Both endpoints must be product work items in the same workspace/root. Creation
+requires active endpoints; removal can clean up an archived target. Listing hides
+archived tasks and Teams. Archive retains links without cascading changes.
+
+A write requires `task.create` and atomically increments both endpoint revisions
+and timestamps, records both history changes and emits both root-scoped catalog
+hints. Output contains IDs and versions only. Reads require `task.read`. Apply
+`000007_links`, replace signed Task routes/artifact approval and update Notify's
+producer digest. This API does not merge duplicate tasks or propagate statuses.

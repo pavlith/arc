@@ -54,5 +54,5 @@ func SQLite() []*gormigrate.Migration {
 			}
 			return nil
 		},
-	}, teams(), workItems(), projects(), collaboration(), subtasks()}
+	}, teams(), workItems(), projects(), collaboration(), subtasks(), links()}
 }

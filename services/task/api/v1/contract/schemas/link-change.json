@@ -1,0 +1,51 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "task_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "expected_updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "target_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "related",
+        "blocks",
+        "duplicate_of"
+      ]
+    },
+    "remove": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "acl_root_id",
+    "task_id",
+    "revision",
+    "expected_updated_at",
+    "target_id",
+    "kind",
+    "remove"
+  ],
+  "additionalProperties": false
+}

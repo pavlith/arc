@@ -24,11 +24,11 @@ func TestRealtimeEventValidationAndRecipientIsolation(t *testing.T) {
 	h := &realtimeHub{task: task, notify: notify}
 	const (
 		workspace = "00000000-0000-4000-8000-000000000001"
-		root = "00000000-0000-4000-8000-000000000002"
-		user = "00000000-0000-4000-8000-000000000003"
-		other = "00000000-0000-4000-8000-000000000004"
-		entity = "00000000-0000-4000-8000-000000000005"
-		eventID = "00000000-0000-4000-8000-000000000006"
+		root      = "00000000-0000-4000-8000-000000000002"
+		user      = "00000000-0000-4000-8000-000000000003"
+		other     = "00000000-0000-4000-8000-000000000004"
+		entity    = "00000000-0000-4000-8000-000000000005"
+		eventID   = "00000000-0000-4000-8000-000000000006"
 	)
 	encode := func(kind, aggregate string, v any) []byte {
 		t.Helper()
@@ -46,7 +46,7 @@ func TestRealtimeEventValidationAndRecipientIsolation(t *testing.T) {
 		return raw
 	}
 	raw := encode(taskv1.CatalogChangedName, entity, taskv1.CatalogChanged{
-		Scope: taskv1.Scope{WorkspaceID: workspace, RootID: root},
+		Scope:      taskv1.Scope{WorkspaceID: workspace, RootID: root},
 		EntityKind: "work", EntityID: entity, Revision: 2,
 	})
 	item, ok := h.parse(taskv1.CatalogChangedSubject, raw)
@@ -71,7 +71,7 @@ func TestRealtimeEventValidationAndRecipientIsolation(t *testing.T) {
 	defer cancel()
 	c := &realtimeClient{
 		ctx: ctx, cancel: cancel, userID: user,
-		subs: map[string]liveSubscription{"only": {channel: "inbox"}},
+		subs:  map[string]liveSubscription{"only": {channel: "inbox"}},
 		queue: make(chan queuedInvalidation, 32),
 	}
 	c.enqueue(invalidation{channel: "inbox", recipient: other, kind: "inbox", id: entity})

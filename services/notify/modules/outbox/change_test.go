@@ -22,7 +22,7 @@ func TestNotifyOutboxJoinsTransaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	const (
-		user = "00000000-0000-4000-8000-000000000001"
+		user         = "00000000-0000-4000-8000-000000000001"
 		notification = "00000000-0000-4000-8000-000000000002"
 	)
 	abort := errors.New("rollback")

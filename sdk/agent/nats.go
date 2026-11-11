@@ -92,6 +92,7 @@ func (c *NodeClient) Pull(ctx context.Context, request PullRequest) (SignedSnaps
 	}
 	return nodeCall[PullRequest, SignedSnapshot](ctx, c, OperationPull, request, "")
 }
+
 // PullProfile retrieves only signed, read-only, administrator-approved plans.
 // Callers must verify Core's signature, node ID, request ID and expiration.
 func (c *NodeClient) PullProfile(ctx context.Context, request ProfilePlanRequest) (SignedProfilePlan, error) {

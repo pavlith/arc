@@ -4,6 +4,7 @@ set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 python3 scripts/check-agent-setup.py
+python3 scripts/check-doc-links.py
 
 mode=changed
 base=

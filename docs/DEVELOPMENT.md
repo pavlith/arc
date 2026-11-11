@@ -23,7 +23,7 @@ Use `bash scripts/verify-changed.sh --base HEAD` (or `make verify`) after local 
 
 | Boundary | Additional check |
 |---|---|
-| Codex/config/docs only | `python3 scripts/check-agent-setup.py` plus local links, commands and claims |
+| Codex/config/docs only | `python3 scripts/check-agent-setup.py`, `python3 scripts/check-doc-links.py`, commands and claims |
 | Bootstrap and migrations | `make m0-01-smoke`; fresh DB and replay |
 | Identity / session / delegation | `make m0-02-smoke` |
 | Access / ACL | `make m0-03-smoke` |

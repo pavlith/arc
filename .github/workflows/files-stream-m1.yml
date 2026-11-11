@@ -53,7 +53,7 @@ jobs:
       - name: Verify signed browser and private boundaries
         run: |
           go test ./services/gate/modules/http -run 'TestPrivateFilesGateSignedScopeAndBrowserBoundary|TestFilesByteBrowserCORSPreflight|TestFilesPrivateProofBindsScopeOffsetAndOperation' -count=1 -timeout=90s
-          go test ./services/files/stream -run TestMTLSPrivateByteReceiverScopesAndStreaming -count=1 -timeout=90s
+          go test ./services/files/stream -count=1 -timeout=90s
       - name: Verify internal chunk revocation and cleanup
         run: |
           go test ./services/files/modules/objects ./services/files/storage -count=1 -timeout=90s

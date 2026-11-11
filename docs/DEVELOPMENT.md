@@ -16,6 +16,11 @@ proof. A chat request authorizes work but does not replace its Issue record.
 5. Move to `status: review` when a reviewable delivery exists. Close only after
    delivery/acceptance; local files or old checked boxes do not prove publication.
 
+The repository uses exactly two branches: `dev` for authorized development and
+`main` for tested stable releases. Do not create temporary or feature branches.
+Merged work must not leave extra refs; promote release commits from `dev` to
+`main` only after relevant checks pass (Refs #23).
+
 Work on `dev`; `main` is stable. Do not commit, push, publish or open a PR without
 a request that includes it. Keep unrelated user changes. User chat is in Russian
 unless the user chooses another language. Docs, Issues, PRs, templates, code

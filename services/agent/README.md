@@ -167,8 +167,7 @@ IDs and do not generate repeated receipts. Core updates node liveness from
 authenticated Inventory at most once per minute, independently of receipts.
 
 Revision high-water marks are stored in separate atomic files under
-`state_directory/revisions/`. Existing `revisions.json` is read as a migration
-baseline and is never rewritten by new agents. Preserve the entire state
+`state_directory/revisions/`. The old single-file `revisions.json` format is no longer supported: Agent refuses startup without changing the old file. Back up and convert offline before upgrading an existing Agent installation. Preserve the entire state
 directory across upgrades, including Docker ownership and pending receipts.
 
 Transient host/timeout failures leave the operation pending; every retry first

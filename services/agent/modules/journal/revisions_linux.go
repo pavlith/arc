@@ -17,7 +17,7 @@ import (
 const maxRevisionFileSize = 4096
 
 // revisionDirectory keeps each resource's high-water mark independent.
-// The former revisions.json file is read on startup for backward compatibility.
+// Only per-resource revision files are supported.
 func (s *Store) revisionDirectory() (string, error) {
 	dir := filepath.Join(s.dir, "revisions")
 	if err := os.Mkdir(dir, 0700); err != nil && !errors.Is(err, os.ErrExist) {

@@ -2,18 +2,14 @@
 package journal
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"sync"
 	"syscall"
 
 	"github.com/pavlith/arc/sdk/agent"
-	"github.com/pavlith/arc/sdk/security"
 )
 
 // Store holds an OS lock for its full lifetime. A second process must fail
@@ -49,44 +45,10 @@ func Open(dir string) (*Store, error) {
 		return nil, err
 	}
 	s := &Store{dir: dir, lock: lock, records: map[string]agent.Record{}}
-	f, err := os.Open(filepath.Join(dir, "revisions.json"))
-	if errors.Is(err, os.ErrNotExist) {
-		if err := s.readRevisionFiles(); err != nil {
-			s.Close()
-			return nil, err
-		}
-		return s, nil
-	}
-	if err != nil {
-		s.Close()
-		return nil, err
-	}
-	defer f.Close()
-	raw, err := io.ReadAll(io.LimitReader(f, (16<<20)+1))
-	if err != nil || len(raw) > 16<<20 {
+	if _, err := os.Lstat(filepath.Join(dir, "revisions.json")); err == nil {
 		s.Close()
 		return nil, agent.ErrInvalid
-	}
-	_, err = security.CanonicalJSON(raw)
-	if err != nil {
-		s.Close()
-		return nil, agent.ErrInvalid
-	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	err = decoder.Decode(&s.records)
-	if err == nil {
-		if s.records == nil {
-			err = agent.ErrInvalid
-		}
-		for id, r := range s.records {
-			if !agent.ValidID(id) || r.Revision < 1 || len(r.Digest) != 64 || !agent.ValidID(r.OperationID) {
-				err = agent.ErrInvalid
-				break
-			}
-		}
-	}
-	if err != nil {
+	} else if !errors.Is(err, os.ErrNotExist) {
 		s.Close()
 		return nil, err
 	}
@@ -126,8 +88,7 @@ func (s *Store) Save(ctx context.Context, id string, r agent.Record) error {
 	if old, ok := s.records[id]; ok && r.Revision == old.Revision && old.Complete && r != old {
 		return agent.ErrStale
 	}
-	// Persist only the changed resource. Existing revisions.json is retained
-	// as a read-only migration baseline; never rewrite the entire JSON map.
+	// Persist each changed resource atomically; never rewrite all revision files.
 	if err := s.writeRevision(id, r); err != nil {
 		return err
 	}

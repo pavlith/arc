@@ -13,7 +13,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
+	"time"
 )
 
 const (
@@ -377,4 +379,59 @@ func (s *Local) RewindPending(ctx context.Context, uploadID string, committed in
 		return fmt.Errorf("%w: sync: %v", ErrMissing, err)
 	}
 	return nil
+}
+
+// ScanOldPending enumerates only UUID-named private temporary files whose
+// modification time predates before. The directory is read in bounded batches;
+// no storage mutex is held while visit consults SQLite or removes objects.
+func (s *Local) ScanOldPending(ctx context.Context, before time.Time, visit func(string) error) error {
+	if s == nil || ctx == nil || visit == nil || before.IsZero() {
+		return ErrInvalid
+	}
+	s.mu.Lock()
+	if s.root == nil {
+		s.mu.Unlock()
+		return ErrInvalid
+	}
+	dir, err := s.root.Open("pending")
+	s.mu.Unlock()
+	if err != nil {
+		return fmt.Errorf("%w: pending directory: %v", ErrMissing, err)
+	}
+	defer dir.Close()
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		entries, err := dir.ReadDir(64)
+		if err != nil && !errors.Is(err, io.EOF) {
+			return fmt.Errorf("%w: scan pending: %v", ErrMissing, err)
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			if !entry.Type().IsRegular() || !strings.HasSuffix(name, ".part") {
+				continue
+			}
+			key := strings.TrimSuffix(name, ".part")
+			if !validKey(key) {
+				continue
+			}
+			info, statErr := entry.Info()
+			if statErr != nil {
+				return fmt.Errorf("%w: stat pending: %v", ErrMissing, statErr)
+			}
+			if !info.ModTime().Before(before) {
+				continue
+			}
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if err := visit(key); err != nil {
+				return err
+			}
+		}
+		if errors.Is(err, io.EOF) || len(entries) == 0 {
+			return nil
+		}
+	}
 }

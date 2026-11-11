@@ -177,3 +177,13 @@ records completion. It retries interrupted cleanup safely, rather than
 removing the file inside a potentially rolled-back SQL command. This handles
 known SQL upload rows. Orphan files lacking an upload row and abandoned
 promoted objects still require their own retention-based reconciliation.
+
+### Abandoned temporary inodes
+
+The cleanup worker now scans its private pending directory in bounded batches
+and removes UUID-named temp files older than **26 hours** only when SQLite
+has no active/pending-cleanup upload referencing them. This covers a process
+crash between creating an inode and committing an upload row. A disk failure
+while deleting is surfaced, not treated as successful cleanup. Committed blobs
+must be retained: automatic garbage collection of promoted objects without
+SQL metadata still needs its own safe reference/retention protocol.

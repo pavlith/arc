@@ -80,10 +80,49 @@ func (s *Module) RunCleanup(ctx context.Context) error {
 				break
 			}
 		}
+		// A failed initiation can leave a temp inode without a committed
+		// SQL upload row. Never delete a recent or referenced temp inode.
+		if _, err := s.PruneOrphanPending(ctx); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return err
+		}
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
 		}
 	}
+}
+
+// PruneOrphanPending reclaims only unreferenced temp files older than the
+// 24-hour upload lifetime plus a two-hour crash-recovery grace period.
+// It cannot delete an active upload or an upload awaiting durable cleanup.
+func (s *Module) PruneOrphanPending(ctx context.Context) (int, error) {
+	if ctx == nil || s == nil || s.DB == nil || s.Storage == nil {
+		return 0, security.ErrUnavailable
+	}
+	s.chunkMu.Lock()
+	defer s.chunkMu.Unlock()
+	var removed int
+	cutoff := time.Now().Add(-26 * time.Hour)
+	err := s.Storage.ScanOldPending(ctx, cutoff, func(id string) error {
+		var protected bool
+		if err := s.DB.WithContext(ctx).Raw(
+			"SELECT EXISTS(SELECT 1 FROM uploads WHERE id=? AND cleaned_at IS NULL AND state IN ('pending','aborted','expired'))",
+			id,
+		).Row().Scan(&protected); err != nil {
+			return unavailable(err)
+		}
+		if protected {
+			return nil
+		}
+		if err := s.Storage.Abort(ctx, id); err != nil {
+			return unavailable(err)
+		}
+		removed++
+		return nil
+	})
+	return removed, err
 }

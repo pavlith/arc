@@ -247,12 +247,15 @@ func (s *Server) Start() error {
 		MaxHeaderBytes:    48 << 10,
 	}
 	s.server, s.listener, s.ended = server, tlsListener, make(chan error, 1)
+	// Capture the completion channel: Stop clears the owner field before
+	// waiting. Sending through s.ended after that would deadlock on nil.
+	done := s.ended
 	go func() {
 		err := server.Serve(tlsListener)
 		if errors.Is(err, http.ErrServerClosed) {
 			err = nil
 		}
-		s.ended <- err
+		done <- err
 	}()
 	return nil
 }

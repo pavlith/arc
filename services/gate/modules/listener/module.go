@@ -84,12 +84,15 @@ func (m *Module) Start(ctx context.Context) error {
 	m.server = s
 	m.done = make(chan error, 1)
 	m.started = true
+	// Stop swaps m.done to nil under the lock. Hold the original channel
+	// so the serving goroutine can always signal its own completion.
+	done := m.done
 	go func() {
 		e := s.Serve(l)
 		if errors.Is(e, http.ErrServerClosed) {
 			e = nil
 		}
-		m.done <- e
+		done <- e
 	}()
 	return nil
 }

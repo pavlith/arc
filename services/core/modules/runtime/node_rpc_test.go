@@ -160,8 +160,17 @@ func TestRuntimeNodeRPC(t *testing.T) {
 		MemoryBytes: 4 << 30, RootTotal: 10 << 30,
 		RootAvailable: 5 << 30, APT: true,
 	}
+	// Distinguish Identity/NATS authorization from host-facts persistence.
+	if _, err := issue(0, agent.OperationInventory); err != nil {
+		t.Fatalf("inventory token issuance: %v; logs=%v", err, logs.Entries())
+	}
+	if _, err := client.Inventory(ctx, agent.InventoryRequest{NodeID: "node-one"}); err != nil {
+		t.Fatalf("initial inventory: %v; logs=%v", err, logs.Entries())
+	}
 	inventory, err := client.Inventory(ctx, agent.InventoryRequest{NodeID: "node-one", Host: hostFacts})
-	must(err)
+	if err != nil {
+		t.Fatalf("host inventory: %v; logs=%v", err, logs.Entries())
+	}
 	profileRequest := agent.ProfilePlanRequest{
 		NodeID: "node-one", ProfileID: profile.ID, Revision: profile.Revision,
 		RequestID: "profile-pull-" + rpcNonce(),

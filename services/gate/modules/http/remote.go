@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"strings"
 	"github.com/nats-io/nats.go"
 	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/rpc"
@@ -123,4 +124,38 @@ func SubscribeChanges(nc *nats.Conn) (<-chan struct{}, func(), error) {
 		return nil, nil, e
 	}
 	return ch, func() { _ = s.Unsubscribe() }, nil
+}
+
+// SignPrivate binds scope, object, offset and length into Core's normal
+// Ed25519 invocation proof. Only Gate owns the instance signing key.
+func (r *Remote) SignPrivate(ctx context.Context, opID, token string, payload json.RawMessage, idem string) ([]byte, error) {
+	if r == nil || len(r.Client.PrivateKey) != ed25519.PrivateKeySize || r.Client.Kid == "" ||
+		ctx == nil || ctx.Err() != nil || len(payload) == 0 {
+		return nil, security.ErrUnavailable
+	}
+	jti, err := tokenJTI(token)
+	if err != nil { return nil, err }
+	type envelope struct {
+		RequestID string `json:"request_id"`
+		Operation string `json:"operation"`
+		SchemaVersion int `json:"schema_version"`
+		DeadlineAt time.Time `json:"deadline_at"`
+		Auth string `json:"auth"`
+		Proof *security.Proof `json:"proof,omitempty"`
+		IdempotencyKey string `json:"idempotency_key,omitempty"`
+		Payload json.RawMessage `json:"payload"`
+	}
+	req:=envelope{
+		RequestID:NewID(),Operation:opID,SchemaVersion:rpc.SchemaVersion,
+		DeadlineAt:time.Now().Add(50*time.Second),Auth:token,
+		IdempotencyKey:idem,Payload:payload,
+	}
+	unsigned,err:=json.Marshal(req)
+	if err!=nil{return nil,err}
+	subject:="rpc.files.v1."+strings.TrimPrefix(opID,"files.")
+	proof,err:=security.SignProof(r.Client.PrivateKey,subject,unsigned,jti,
+		security.Proof{Kid:r.Client.Kid,Timestamp:time.Now().UTC().Format(time.RFC3339Nano),Nonce:NewID()})
+	if err!=nil{return nil,err}
+	req.Proof=&proof
+	return json.Marshal(req)
 }

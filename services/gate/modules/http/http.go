@@ -44,6 +44,7 @@ type Config struct {
 	LoginsPerMinute   int
 	EnableRealtime    bool
 	RealtimeNATS      *nats.Conn
+	PrivateFiles      *PrivateFilesConfig
 }
 type bucket struct {
 	start time.Time
@@ -85,6 +86,9 @@ func New(cfg Config) (*Gate, error) {
 	}
 	if cfg.LoginsPerMinute <= 0 {
 		cfg.LoginsPerMinute = 10
+	}
+	if cfg.PrivateFiles != nil {
+		if err:=validatePrivateFiles(cfg.PrivateFiles);err!=nil{return nil,err}
 	}
 	g := &Gate{cfg: cfg, origins: origins, limits: map[string]bucket{}}
 	if cfg.EnableRealtime {
@@ -214,6 +218,10 @@ func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == realtimePath {
 		g.realtimeWS(w, r, id, client)
+		return
+	}
+	if isFilesBytePath(r.URL.Path) {
+		g.filesBytes(w,r,id)
 		return
 	}
 	trace := r.Header.Get("Traceparent")

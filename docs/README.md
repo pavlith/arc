@@ -5,6 +5,7 @@
 | [Requirements](REQUIREMENTS.md) | Product scope, stable requirement IDs and milestone acceptance |
 | [Architecture](ARCHITECTURE.md) | Trust boundaries, protocol/storage contracts and decisions |
 | [Development](DEVELOPMENT.md) | Setup, checks and issue-first delivery |
+| [Sequence before GitHub](shortplan.md) | Agreed service boundaries and implementation dependencies before the optional connector |
 | [Codex](CODEX.md) | Repository agent configuration, skills and optional integrations |
 
 For a narrow task, use the context map in [AGENTS.md](../AGENTS.md#context-routing-read-the-smallest-relevant-section)

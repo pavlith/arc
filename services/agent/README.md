@@ -55,7 +55,8 @@ When updating only config or credentials, restart `arc-agent.service`.
 ## Host inventory and APT planning
 
 `arc-agent -host-info` prints bounded read-only JSON host facts without requiring
-a connected Core. Each online inventory round sends a validated host snapshot in
+a connected Core. `arc-agent -apt-plan=curl,docker.io` simulates installation
+locally and reports additions/removals without executing changes. Each online inventory round sends a validated host snapshot in
 its first node-scoped RPC page. Core stores these facts separately from permissions;
 they do not authorize any host actions. APT supports read-only installed-package
 listing and a fixed-argv `apt-get -s` installation plan, including removal

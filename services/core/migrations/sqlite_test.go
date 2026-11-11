@@ -46,7 +46,7 @@ func TestCoreSQLiteMigrationsAndOwnerIsolation(t *testing.T) {
 		"access_operations", "access_policy_audit", "fabric_contracts",
 		"fabric_instances", "fabric_route_state", "fabric_outbox",
 		"runtime_desired_deployments", "runtime_nodes", "runtime_templates", "runtime_resources",
-		"runtime_operations", "runtime_revisions", "runtime_reports", "runtime_observations", "runtime_audit", "runtime_outbox", "schema_migrations",
+		"runtime_operations", "runtime_revisions", "runtime_reports", "runtime_observations", "runtime_audit", "runtime_outbox", "runtime_node_profiles", "schema_migrations",
 	} {
 		if !db.Migrator().HasTable(name) {
 			t.Errorf("missing Core table %q", name)

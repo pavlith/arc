@@ -56,3 +56,16 @@ type RuntimeOperation struct {
 }
 
 func (RuntimeOperation) TableName() string { return "runtime_operations" }
+
+type RuntimeNodeProfile struct {
+	NodeID     string    `gorm:"primaryKey"`
+	ID         string    `gorm:"primaryKey"`
+	Revision   int64     `gorm:"primaryKey"`
+	Spec       string
+	Digest     string
+	Revoked    bool
+	ApprovedBy string
+	CreatedAt  time.Time
+}
+
+func (RuntimeNodeProfile) TableName() string { return "runtime_node_profiles" }

@@ -46,7 +46,7 @@ def main():
         for key, node in zip(keys[1:], ("node-one", "node-two")):
             prefix = f"ctl.runtime.v1.node.{node}."
             users.append({"nkey": key, "permissions": {
-                "publish": {"allow": ["rpc.identity.v1.invocations.exchange_service", prefix + "inventory", prefix + "desired.get", prefix + "report"]},
+                "publish": {"allow": ["rpc.identity.v1.invocations.exchange_service", prefix + "inventory", prefix + "desired.get", prefix + "report", prefix + "profile.plan"]},
                 "subscribe": {"allow": [f"_INBOX.runtime.{node}.>"]},
             }})
         config.write_text(header + "authorization " + json.dumps({"users": users}))

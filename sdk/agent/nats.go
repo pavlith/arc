@@ -13,6 +13,7 @@ const (
 	OperationInventory = "runtime.v1.node.inventory"
 	OperationPull      = "runtime.v1.desired.get"
 	OperationReport    = "runtime.v1.node.report"
+	OperationProfilePlan = "runtime.v1.node.profile.plan"
 )
 
 // NodeSubject is concrete: no wildcard subscriptions or node chosen by headers.
@@ -28,6 +29,8 @@ func NodeSubject(node, operation string) (string, error) {
 		suffix = "desired.get"
 	case OperationReport:
 		suffix = "report"
+	case OperationProfilePlan:
+		suffix = "profile.plan"
 	default:
 		return "", ErrInvalid
 	}
@@ -45,6 +48,7 @@ type NodeClient struct {
 }
 
 var _ RuntimeProvider = (*NodeClient)(nil)
+var _ ProfilePlanProvider = (*NodeClient)(nil)
 
 // NewNodeClient does not own the connection. Connect through sdk.Connect with
 // this node's TLS/NKey credentials and identity-scoped Config.InboxPrefix;
@@ -87,6 +91,14 @@ func (c *NodeClient) Pull(ctx context.Context, request PullRequest) (SignedSnaps
 		return SignedSnapshot{}, ErrInvalid
 	}
 	return nodeCall[PullRequest, SignedSnapshot](ctx, c, OperationPull, request, "")
+}
+// PullProfile retrieves only signed, read-only, administrator-approved plans.
+// Callers must verify Core's signature, node ID, request ID and expiration.
+func (c *NodeClient) PullProfile(ctx context.Context, request ProfilePlanRequest) (SignedProfilePlan, error) {
+	if c == nil || request.NodeID != c.node || !ValidID(request.ProfileID) {
+		return SignedProfilePlan{}, ErrInvalid
+	}
+	return nodeCall[ProfilePlanRequest, SignedProfilePlan](ctx, c, OperationProfilePlan, request, "")
 }
 func (c *NodeClient) Report(ctx context.Context, report Report) error {
 	if c == nil || report.Observation.NodeID != c.node || !ValidID(report.EventID) {

@@ -2,6 +2,12 @@ package agent
 
 import "context"
 
+// ProfilePlanProvider is a separate read-only RPC capability. It is not
+// part of the workload reconcile interface and cannot execute host effects.
+type ProfilePlanProvider interface {
+	PullProfile(context.Context, ProfilePlanRequest) (SignedProfilePlan, error)
+}
+
 // RuntimeProvider is the typed node-to-Core boundary. Implementations must
 // authenticate the node independently of request fields and fail closed offline.
 type RuntimeProvider interface {

@@ -23,7 +23,7 @@ func (p verifiedNodePolicy) Node(ctx context.Context) (string, error) {
 		return "", security.ErrUnauthenticated
 	}
 	switch cl.Operation {
-	case agent.OperationInventory, agent.OperationPull, agent.OperationReport:
+	case agent.OperationInventory, agent.OperationPull, agent.OperationReport, agent.OperationProfilePlan:
 	default:
 		return "", security.ErrDenied
 	}
@@ -75,7 +75,7 @@ func (c *Control) BindNodeRPC(service rpc.EndpointService, verifier security.Ver
 	scoped := *c
 	scoped.policy = verifiedNodePolicy{verifier: verifier}
 	for _, node := range nodes {
-		for _, operation := range []string{agent.OperationInventory, agent.OperationPull, agent.OperationReport} {
+		for _, operation := range []string{agent.OperationInventory, agent.OperationPull, agent.OperationReport, agent.OperationProfilePlan} {
 			subject, _ := agent.NodeSubject(node, operation)
 			config := rpc.Operation{ID: operation, Endpoint: "runtime_" + node + "_" + strings.ReplaceAll(operation, ".", "_"), Subject: subject, QueueGroup: "q.runtime.v1", Timeout: 5 * time.Second, Protected: true, Mutation: operation == agent.OperationReport, Authorize: rpc.InvocationAuthorizer(verifier, agent.NodeAudience)}
 			switch operation {
@@ -93,6 +93,14 @@ func (c *Control) BindNodeRPC(service rpc.EndpointService, verifier security.Ver
 						return agent.SignedSnapshot{}, nodeWireError(security.ErrDenied)
 					}
 					out, err := scoped.Pull(ctx, r)
+					return out, nodeWireError(err)
+				})
+			case agent.OperationProfilePlan:
+				err = rpc.Handle(service, config, func(ctx context.Context, r agent.ProfilePlanRequest) (agent.SignedProfilePlan, error) {
+					if r.NodeID != node {
+						return agent.SignedProfilePlan{}, nodeWireError(security.ErrDenied)
+					}
+					out, err := scoped.PullProfile(ctx, r)
 					return out, nodeWireError(err)
 				})
 			case agent.OperationReport:

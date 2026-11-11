@@ -114,7 +114,7 @@ func TestRuntimeNodeRPC(t *testing.T) {
 		must(db.Exec(`INSERT INTO identity_service_accounts(id,service_definition,deployment) VALUES(?,'arc-agent',?)`, account, []string{"one", "two"}[i]).Error)
 		must(db.Exec(`INSERT INTO identity_service_credentials(kid,service_account_id,public_key,secret_reference,not_before,expires_at) VALUES(?,?,?,'fixture:node-key',?,?)`, kids[i], account, []byte(keys[i].Public().(ed25519.PublicKey)), now.Add(-time.Minute), now.Add(time.Hour)).Error)
 		rules = append(rules, access.Rule{Caller: account, Audience: "identity/v1", Operation: "identity.v1.invocations.exchange_service", ActorKinds: []string{"bootstrap"}})
-		for _, op := range []string{agent.OperationInventory, agent.OperationPull, agent.OperationReport} {
+		for _, op := range []string{agent.OperationInventory, agent.OperationPull, agent.OperationReport, agent.OperationProfilePlan} {
 			rules = append(rules, access.Rule{Caller: account, Audience: agent.NodeAudience, Operation: op, ActorKinds: []string{"service"}})
 		}
 	}
@@ -129,6 +129,8 @@ func TestRuntimeNodeRPC(t *testing.T) {
 	}
 	template := agent.Template{ID: "task", Revision: 1, Kind: agent.Docker, Target: "registry/arc/task@sha256:" + strings.Repeat("a", 64), MaxReplicas: 3}
 	must(control.ApproveTemplate(ctx, "node-one", template))
+	profile := managedNodeProfile()
+	must(control.ApproveNodeProfile(ctx, "node-one", profile))
 	receipt, err := control.Apply(ctx, change("network-create", 0))
 	must(err)
 	must(service.Start(ctx))
@@ -152,8 +154,28 @@ func TestRuntimeNodeRPC(t *testing.T) {
 	}
 	client, err := agent.NewNodeClient(clients[0], "node-one", func(_ context.Context, op string) (rpc.Credentials, error) { return issue(0, op) })
 	must(err)
-	inventory, err := client.Inventory(ctx, agent.InventoryRequest{NodeID: "node-one"})
+	hostFacts := &agent.HostFacts{
+		OS: "ubuntu", Version: "24.04", Architecture: "amd64",
+		Kernel: "6.8.0-generic", CPUThreads: 2,
+		MemoryBytes: 4 << 30, RootTotal: 10 << 30,
+		RootAvailable: 5 << 30, APT: true,
+	}
+	inventory, err := client.Inventory(ctx, agent.InventoryRequest{NodeID: "node-one", Host: hostFacts})
 	must(err)
+	profileRequest := agent.ProfilePlanRequest{
+		NodeID: "node-one", ProfileID: profile.ID, Revision: profile.Revision,
+		RequestID: "profile-pull-" + rpcNonce(),
+	}
+	profileSigned, err := client.PullProfile(ctx, profileRequest)
+	must(err)
+	profileRaw, err := json.Marshal(profileSigned)
+	must(err)
+	verified, err := agent.VerifyProfilePlan(profileRaw, snapshotKey.Public().(ed25519.PublicKey),
+		"node-one", profileRequest.RequestID, time.Now())
+	must(err)
+	if agent.NodeProfileDigest(verified.Profile) != agent.NodeProfileDigest(profile) {
+		t.Fatal("network profile mismatch")
+	}
 	if len(inventory.ResourceIDs) != 1 || inventory.ResourceIDs[0] != "task-prod" {
 		t.Fatalf("inventory: %+v", inventory)
 	}

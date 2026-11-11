@@ -1,7 +1,7 @@
 # Files service — initial implementation contract
 
 Tracking: [#29](https://github.com/pavlith/arc/issues/29). Stage 3 of
-[shortplan](shortplan.md). **Implementation in dev:** signed Files 0.2.0 has 12 folder/upload/file metadata operations, scoped root lifecycle, owner SQLite migrations, audit/replay/outbox, an internal SQL/disk-synchronized chunk append, post-commit expiry cleanup, abandoned-temp reconciliation and revocation-aware private read primitive. **None of these byte APIs is publicly exposed**: Gate-to-Files authenticated streaming and live deployment acceptance remain open.
+[shortplan](shortplan.md). **Implementation in dev:** signed Files 0.3.0 has 12 public folder/upload/file metadata operations and 2 hidden private byte operations, scoped root lifecycle, owner SQLite migrations, audit/replay/outbox, SQL/disk-synchronized chunk append, cleanup and repeated ACL checks during streaming. **Private streaming is opt-in** and routed through Gate using Core-verified Ed25519 proof and mTLS. Deployment and two-user acceptance remain open.
 
 ## Ownership and authorization
 
@@ -114,7 +114,7 @@ explicitly. The resource type is `files.workspace`, with actions
 prepared with a signed Files provider receipt, activated in Access, and then
 activated in Files before browser requests can succeed.
 
-**Still open:** personal file sections, file rename/move/archive/search, signed private Gate byte routes, periodic authorization while accepting a single slow chunk, complete tenant-level quotas, orphaned promoted-object garbage collection, production NATS grants, service installations, and live two-user/two-workspace upload/download acceptance. Existing internal byte primitives do not imply public byte endpoints.
+**Still open:** personal file sections, file rename/move/archive/search, full tenant-level quotas, orphaned promoted-object garbage collection, production NATS grants, private CA/cert provisioning, operator-approved service installations and two-user/two-workspace live upload/download acceptance. The opt-in private streaming code does not imply successful production deployment.
 
 ## Local byte adapter (internal, not an upload API)
 
@@ -160,8 +160,11 @@ The upload is also bound to the verified actor and session. It accepts only
 checks the provided offset against SQLite, reconciles uncommitted disk tails
 from interrupted requests, and advances the SQL offset with a scoped CAS.
 If that transaction fails, the disk is rewound to the last committed offset.
-The private Gate-to-Files streaming route still needs a signed transport
-identity and cannot call this method from unverified browser headers.
+Gate now signs the exact upload scope/offset/length and relays bytes over
+mutually authenticated TLS. Files verifies the Core proof and checks live
+`files.create` permissions before the append and repeatedly during slow
+body reads (at least every 256 KiB or one second). No browser identity
+headers are trusted by the private listener.
 
 ## Durable abandoned-upload cleanup
 
@@ -191,6 +194,54 @@ online `files.read` check before touching disk. It reads only `ready`
 metadata in the same ACL root, validates the committed object size, copies
 at most 256 KiB per write, and repeats online authorization before each
 block and on completion. A cancellation or rejected Access check stops
-further delivery. This is an **internal** primitive and does not install a
-public Gate route: the authenticated private streaming transport remains a
-separate integration/acceptance requirement.
+further delivery. This remains an **internal** primitive called by the opt-in Files private
+mTLS listener. Gate only exposes an approved public byte URL when the same
+signed Fabric snapshot includes the matching public metadata operation and
+the exact hidden private operation. Live multiuser acceptance remains open.
+
+## Opt-in private Gate ↔ Files streaming (0.3.0)
+
+Files adds the hidden, signed RPC operations `files.uploads.chunk` (command)
+and `files.files.download` (query), without exposing these as generated public
+RPC endpoints or carrying any bytes over NATS. The NATS-bound placeholders
+deny calls. The private `services/files/stream` HTTPS receiver decodes a
+bounded, strictly validated, Core-proof-bound invocation envelope and requires
+a verified **client mTLS certificate**. Files' Core RemoteAuthorizer verifies
+the original Ed25519 invocation proof, actor/session, audience and live state.
+The receiver then rechecks the exact Files ACL root for each upload/download.
+
+The opt-in browser-facing paths are:
+
+| Method | Path | Data |
+|---|---|---|
+| `PATCH` | `/api/v1/files/workspaces/{workspace_id}/roots/{acl_root_id}/uploads/{upload_id}/bytes` | `Content-Type: application/octet-stream`, `Content-Length` 1–8 MiB, `Upload-Offset`, `Idempotency-Key` and bytes |
+| `GET` | `/api/v1/files/workspaces/{workspace_id}/roots/{acl_root_id}/files/{file_id}/content` | Attachment body, no Range requests in v1 |
+
+Use a browser's usual Secure session cookie and CSRF token for mutation, or an
+eligible Bearer token; Gate authenticates via Core before exchanging a token
+scoped to the exact hidden Files operation. Gate refuses these URLs without
+a currently verified signed Fabric route snapshot containing their sibling
+metadata operation and an exact approved hidden Files operation. Gate does
+not forward browser Authorization/Cookie headers or let clients choose the
+private URL or service identity.
+
+The example configuration files are `deploy/files/config.example.json`
+(`stream_listen`, `stream_tls_cert_file`, `stream_tls_key_file`,
+`stream_client_ca_file`) and `deploy/gate/config.example.json`
+(`files_stream_url`, `files_stream_ca_file`,
+`files_stream_server_name`, `files_stream_client_cert_file`,
+`files_stream_client_key_file`). The Gate mTLS client pins the private Files
+server name and CA, disables redirects and proxy lookup; Files requires TLS
+1.3 and a client certificate issued by the configured CA. Disable the
+private listener simply by omitting every stream key. Partial stream
+configurations are rejected instead of enabling an insecure fallback.
+Do not publish Files' private HTTPS port to the public internet. Provision
+client/server certificates, private NATS permissions and signed Fabric/Access
+installation before enabling these example settings.
+
+**Acceptance remaining:** test the full live Core → Gate → private mTLS → Files
+pipeline with two users and two workspaces, validate actual certificate trust,
+network loss/retry under load, process failures, Access revocation during a
+long download and upload, operator install/uninstall, and cleanup of promoted
+blobs that fail metadata commit. The domain unit tests use a local fixture
+identity authority and do **not** replace live Core cryptographic acceptance.

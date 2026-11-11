@@ -1,0 +1,59 @@
+name: M1 Files private Gate transport (independent of UI)
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - ".github/workflows/files-stream-m1.yml"
+      - "services/files/**"
+      - "services/gate/**"
+      - "cmd/arc-gate/**"
+      - "cmd/arc-files/**"
+      - "sdk/security/**"
+      - "sdk/rpc/**"
+      - "go.mod"
+      - "go.sum"
+  pull_request:
+    branches: [dev]
+    paths:
+      - ".github/workflows/files-stream-m1.yml"
+      - "services/files/**"
+      - "services/gate/**"
+      - "cmd/arc-gate/**"
+      - "cmd/arc-files/**"
+      - "sdk/security/**"
+      - "sdk/rpc/**"
+      - "go.mod"
+      - "go.sum"
+
+permissions:
+  contents: read
+
+jobs:
+  files-stream:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.3"
+          cache-dependency-path: go.sum
+      - name: Check private transport formatting
+        run: |
+          files=$(gofmt -l services/files/stream services/gate/modules/http/files_private*.go services/gate/modules/http/remote.go cmd/arc-gate)
+          if [ -n "$files" ]; then
+            printf 'Unformatted files:\n%s\n' "$files"
+            exit 1
+          fi
+      - name: Compile Gate and Files independent processes
+        run: go build ./services/gate/... ./services/files/... ./cmd/arc-gate ./cmd/arc-files
+      - name: Check static analysis
+        run: go vet ./services/gate/... ./services/files/...
+      - name: Verify signed browser and private boundaries
+        run: |
+          go test ./services/gate/modules/http -run 'TestPrivateFilesGateSignedScopeAndBrowserBoundary|TestFilesByteBrowserCORSPreflight|TestFilesPrivateProofBindsScopeOffsetAndOperation' -count=1 -timeout=90s
+          go test ./services/files/stream -run TestMTLSPrivateByteReceiverScopesAndStreaming -count=1 -timeout=90s
+      - name: Verify internal chunk revocation and cleanup
+        run: |
+          go test ./services/files/modules/objects ./services/files/storage -count=1 -timeout=90s

@@ -5,7 +5,7 @@
 | `core/` | `cmd/arc-core`, owner SQLite, private RPC and signed approval for Identity profile, workspace lifecycle and invitations, member/group management and administrator provisioning | Runtime policy and adapter #13 |
 | `gate/` | `cmd/arc-gate`, browser cookies, CLI tokens, signed domain routes, Identity routes and optional UI assets | WS/DAV adapters (shared realtime protocol in docs/REALTIME.md) |
 | `task/` | `cmd/arc-task`, scoped Teams/workflow, shared work items, projects/labels, comments/history, subtasks/links, atomic bulk updates, saved-view APIs and atomic replay/outbox | Triage, UI adaptation and live template acceptance #10 |
-| `files/` | `cmd/arc-files`, independent SQLite, signed folder + upload/file metadata, internal bounded chunk append and download with live ACL, post-commit cleanup and metadata outbox | Signed Gate-to-Files byte streaming, remaining file metadata operations and live acceptance #29 |
+| `files/` | `cmd/arc-files`, owner SQLite, signed folder/file/upload metadata, hidden mTLS stream receiver, live ACL and bounded chunks, post-commit cleanup and metadata outbox | Operator installation, live certificate/Core acceptance, quota/GC and remaining file operations #29 |
 | `notify/` | `cmd/arc-notify`, personal Inbox/subscriptions and persisted fake outbound intents | Realtime and real channels #9/#12 |
 | `agent/` | `cmd/arc-agent`, private node RPC, durable journal, restricted systemd and Docker drivers | Admin/Gate/UI, live Docker acceptance, LXD and Core reconcile #13 |
 
@@ -40,15 +40,15 @@ key is a JSON base64 string. Never pass Core/operator private keys to a domain
 service or mount another owner's database. `deploy/docker/Dockerfile.domain`
 accepts `SERVICE=task|notify|files`.
 
-Files artifact: `files/api/v1/contract/` (12 metadata RPC operations).
+Files artifact: `files/api/v1/contract/` (12 public metadata + 2 hidden byte operations).
 The Files owner must apply migrations `000001_files` and
 `000002_upload_cleanup` with `bash scripts/migrate.sh files /absolute/files.sqlite`,
 set a private absolute `storage_path`, and install its signed Fabric contract
-and NATS publisher permissions. The internal `AppendChunk` and
-`StreamDownload` primitives require a verified identity context and live
-root authorization. They are **not public HTTP byte endpoints**; never
-proxy browser bytes to them without the dedicated signed private Gate
-streaming adapter and revocation checks.
+and NATS publisher permissions. The internal `AppendChunk` and `StreamDownload` primitives require a verified
+identity context and live root authorization. Gate now has an **opt-in**
+signed mTLS streaming adapter, configured only through the separate Gate
+and Files private TLS credentials; see [Files](../docs/FILES.md). This does not
+constitute a live production deployment or multi-user acceptance.
 
 Task artifact: `task/api/v1/contract/`; Notify: `notify/api/v1/contract/`.
 `fabric.Core.Approve` requires operator signature and exact identity/deployment.

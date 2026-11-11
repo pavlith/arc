@@ -13,7 +13,9 @@
       "enum": [
         "team",
         "status",
-        "work"
+        "work",
+        "project",
+        "label"
       ]
     },
     "entity_id": {

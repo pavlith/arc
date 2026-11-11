@@ -35,3 +35,13 @@ type WorkflowStatus struct {
 }
 
 func (WorkflowStatus) TableName() string { return "workflow_statuses" }
+
+type TeamMember struct {
+	TeamID      string `gorm:"primaryKey"`
+	WorkspaceID string
+	RootID      string `gorm:"column:acl_root_id"`
+	UserID      string `gorm:"primaryKey"`
+	CreatedAt   time.Time
+}
+
+func (TeamMember) TableName() string { return "team_members" }

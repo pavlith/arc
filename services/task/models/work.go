@@ -9,6 +9,7 @@ type TaskDetails struct {
 	TeamID      string
 	StatusID    string
 	Identifier  string
+	ProjectID   *string
 	Description string
 	Priority    int
 	DueDate     *time.Time

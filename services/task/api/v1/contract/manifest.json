@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "service": {
     "name": "task",
-    "build_version": "0.2.0",
+    "build_version": "0.3.0",
     "api_major": 1
   },
   "resources": [
@@ -893,6 +893,588 @@
             "source": "query",
             "name": "search",
             "field": "search",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "project_id",
+            "field": "project_id",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "label_id",
+            "field": "label_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "task.projects.create",
+      "subject": "rpc.task.v1.projects.create",
+      "kind": "command",
+      "request_schema": "schemas/project-create.json",
+      "response_schema": "schemas/project.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "task.workspace",
+        "action": "task.create",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/projects",
+        "success_status": 201,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "task.projects.update",
+      "subject": "rpc.task.v1.projects.update",
+      "kind": "command",
+      "request_schema": "schemas/project-update.json",
+      "response_schema": "schemas/project.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "task.workspace",
+        "action": "task.create",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "PATCH",
+        "path": "/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/projects/{project_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "project_id",
+            "field": "project_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "task.projects.archive",
+      "subject": "rpc.task.v1.projects.archive",
+      "kind": "command",
+      "request_schema": "schemas/project-archive.json",
+      "response_schema": "schemas/archived.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "task.workspace",
+        "action": "task.delete",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/projects/{project_id}/archive",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "project_id",
+            "field": "project_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "task.projects.get",
+      "subject": "rpc.task.v1.projects.get",
+      "kind": "query",
+      "request_schema": "schemas/project-get.json",
+      "response_schema": "schemas/project.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "task.workspace",
+        "action": "task.read",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/projects/{project_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "project_id",
+            "field": "project_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "task.projects.list",
+      "subject": "rpc.task.v1.projects.list",
+      "kind": "query",
+      "request_schema": "schemas/project-list.json",
+      "response_schema": "schemas/projects.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "task.workspace",
+        "action": "task.read",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/projects",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "limit",
+            "field": "limit",
+            "type": "integer"
+          },
+          {
+            "source": "query",
+            "name": "cursor",
+            "field": "cursor",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "team_id",
+            "field": "team_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "task.labels.create",
+      "subject": "rpc.task.v1.labels.create",
+      "kind": "command",
+      "request_schema": "schemas/label-create.json",
+      "response_schema": "schemas/label.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "task.workspace",
+        "action": "access.grants.manage",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/labels",
+        "success_status": 201,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "task.labels.update",
+      "subject": "rpc.task.v1.labels.update",
+      "kind": "command",
+      "request_schema": "schemas/label-update.json",
+      "response_schema": "schemas/label.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "task.workspace",
+        "action": "access.grants.manage",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "PATCH",
+        "path": "/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/labels/{label_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "label_id",
+            "field": "label_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "task.labels.archive",
+      "subject": "rpc.task.v1.labels.archive",
+      "kind": "command",
+      "request_schema": "schemas/label-archive.json",
+      "response_schema": "schemas/archived.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "task.workspace",
+        "action": "access.grants.manage",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/labels/{label_id}/archive",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "label_id",
+            "field": "label_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "task.labels.get",
+      "subject": "rpc.task.v1.labels.get",
+      "kind": "query",
+      "request_schema": "schemas/label-get.json",
+      "response_schema": "schemas/label.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "task.workspace",
+        "action": "task.read",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/labels/{label_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "label_id",
+            "field": "label_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "task.labels.list",
+      "subject": "rpc.task.v1.labels.list",
+      "kind": "query",
+      "request_schema": "schemas/catalog-list.json",
+      "response_schema": "schemas/labels.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "task.workspace",
+        "action": "task.read",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/labels",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "limit",
+            "field": "limit",
+            "type": "integer"
+          },
+          {
+            "source": "query",
+            "name": "cursor",
+            "field": "cursor",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "task.teams.members.add",
+      "subject": "rpc.task.v1.teams.members.add",
+      "kind": "command",
+      "request_schema": "schemas/team-member-change.json",
+      "response_schema": "schemas/catalog-result.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "task.workspace",
+        "action": "access.grants.manage",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/teams/{team_id}/members",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "team_id",
+            "field": "team_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "task.teams.members.remove",
+      "subject": "rpc.task.v1.teams.members.remove",
+      "kind": "command",
+      "request_schema": "schemas/team-member-change.json",
+      "response_schema": "schemas/catalog-result.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "task.workspace",
+        "action": "access.grants.manage",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/teams/{team_id}/members/{user_id}/remove",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "team_id",
+            "field": "team_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "user_id",
+            "field": "user_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "task.teams.members.list",
+      "subject": "rpc.task.v1.teams.members.list",
+      "kind": "query",
+      "request_schema": "schemas/team-member-list.json",
+      "response_schema": "schemas/team-members.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "task.workspace",
+        "action": "task.read",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/teams/{team_id}/members",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "team_id",
+            "field": "team_id",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "limit",
+            "field": "limit",
+            "type": "integer"
+          },
+          {
+            "source": "query",
+            "name": "cursor",
+            "field": "cursor",
             "type": "string"
           }
         ]

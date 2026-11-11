@@ -83,6 +83,30 @@ type StatusDeleteRequest struct {
 type StatusesResult struct {
 	Statuses []WorkflowStatus `json:"statuses"`
 }
+type TeamMember struct {
+	UserID    string    `json:"user_id"`
+	CreatedAt time.Time `json:"created_at"`
+}
+type CatalogMutationResult struct {
+	Scope
+	ID        string    `json:"id"`
+	Revision  int64     `json:"revision"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+type TeamMemberChange struct {
+	TeamScope
+	UserID   string `json:"user_id"`
+	Revision int64  `json:"revision"`
+}
+type TeamMemberPage struct {
+	TeamScope
+	Cursor string `json:"cursor,omitempty"`
+	Limit  int    `json:"limit"`
+}
+type TeamMembersResult struct {
+	Members    []TeamMember `json:"members"`
+	NextCursor string       `json:"next_cursor,omitempty"`
+}
 type CatalogChanged struct {
 	Scope
 	EntityKind string `json:"entity_kind"`
@@ -94,13 +118,16 @@ const CatalogChangedSubject = "evt.task.catalog.changed.v1"
 const CatalogChangedName = "task.catalog.changed"
 
 var (
-	TeamCreate   = module.Command[TeamCreateRequest, Team]{ID: "task.teams.create"}
-	TeamUpdate   = module.Command[TeamUpdateRequest, Team]{ID: "task.teams.update"}
-	TeamArchive  = module.Command[TeamArchiveRequest, ArchivedItem]{ID: "task.teams.archive"}
-	TeamGet      = module.Query[TeamScope, Team]{ID: "task.teams.get"}
-	TeamList     = module.Query[CatalogPage, TeamsResult]{ID: "task.teams.list"}
-	StatusCreate = module.Command[StatusCreateRequest, WorkflowStatus]{ID: "task.statuses.create"}
-	StatusUpdate = module.Command[StatusUpdateRequest, WorkflowStatus]{ID: "task.statuses.update"}
-	StatusDelete = module.Command[StatusDeleteRequest, ArchivedItem]{ID: "task.statuses.delete"}
-	StatusList   = module.Query[TeamScope, StatusesResult]{ID: "task.statuses.list"}
+	TeamCreate       = module.Command[TeamCreateRequest, Team]{ID: "task.teams.create"}
+	TeamUpdate       = module.Command[TeamUpdateRequest, Team]{ID: "task.teams.update"}
+	TeamArchive      = module.Command[TeamArchiveRequest, ArchivedItem]{ID: "task.teams.archive"}
+	TeamGet          = module.Query[TeamScope, Team]{ID: "task.teams.get"}
+	TeamList         = module.Query[CatalogPage, TeamsResult]{ID: "task.teams.list"}
+	StatusCreate     = module.Command[StatusCreateRequest, WorkflowStatus]{ID: "task.statuses.create"}
+	StatusUpdate     = module.Command[StatusUpdateRequest, WorkflowStatus]{ID: "task.statuses.update"}
+	StatusDelete     = module.Command[StatusDeleteRequest, ArchivedItem]{ID: "task.statuses.delete"}
+	StatusList       = module.Query[TeamScope, StatusesResult]{ID: "task.statuses.list"}
+	TeamMemberAdd    = module.Command[TeamMemberChange, CatalogMutationResult]{ID: "task.teams.members.add"}
+	TeamMemberRemove = module.Command[TeamMemberChange, CatalogMutationResult]{ID: "task.teams.members.remove"}
+	TeamMemberList   = module.Query[TeamMemberPage, TeamMembersResult]{ID: "task.teams.members.list"}
 )

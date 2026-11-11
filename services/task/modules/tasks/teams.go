@@ -274,6 +274,9 @@ func (s *Service) listStatuses(ctx context.Context, q taskv1.TeamScope) (taskv1.
 }
 func (s *Service) bindTeams(r *module.Registry, policy module.Policy, store events.Store) error {
 	for _, bind := range []func() error{
+		func() error { return module.BindCommand(r, taskv1.TeamMemberAdd, policy, store, s.addTeamMember) },
+		func() error { return module.BindCommand(r, taskv1.TeamMemberRemove, policy, store, s.removeTeamMember) },
+		func() error { return module.BindQuery(r, taskv1.TeamMemberList, policy, s.listTeamMembers) },
 		func() error { return module.BindCommand(r, taskv1.TeamCreate, policy, store, s.createTeam) },
 		func() error { return module.BindCommand(r, taskv1.TeamUpdate, policy, store, s.updateTeam) },
 		func() error { return module.BindCommand(r, taskv1.TeamArchive, policy, store, s.archiveTeam) },

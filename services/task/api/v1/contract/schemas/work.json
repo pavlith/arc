@@ -86,6 +86,19 @@
     },
     "archived": {
       "type": "boolean"
+    },
+    "project_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "label_ids": {
+      "type": "array",
+      "maxItems": 50,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      }
     }
   },
   "required": [
@@ -103,7 +116,8 @@
     "sort_order",
     "assignee_ids",
     "revision",
-    "archived"
+    "archived",
+    "label_ids"
   ],
   "additionalProperties": false
 }

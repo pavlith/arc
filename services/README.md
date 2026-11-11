@@ -194,6 +194,50 @@ assignees, audit, outbox and command result commit atomically. Team/status archi
 responses now return identifier/revision metadata only, avoiding content exposure
 to management-only callers. No UI changes are included.
 
+## Projects, labels and business Team membership
+
+Task 0.3.0 requires explicit migration `000004_projects_labels`. Paths below use
+the same workspace/root prefix as the Work APIs:
+
+| Method/path | Behavior |
+|---|---|
+| POST `/projects`, PATCH `/projects/{project_id}` | Create/replace project fields; `task.create`; updates require `revision` |
+| GET `/projects/{project_id}`, GET `/projects?limit=100` | Read project metadata or page active projects; `task.read`; optional Team filter `team_id` |
+| POST `/projects/{project_id}/archive` | Archive by revision; `task.delete`; metadata-only response |
+| POST `/labels`, PATCH `/labels/{label_id}` | Create/replace label name/color; `access.grants.manage`; updates require `revision` |
+| GET `/labels/{label_id}`, GET `/labels?limit=100` | Read label metadata or page active labels; `task.read` |
+| POST `/labels/{label_id}/archive` | Archive by revision; `access.grants.manage`; metadata-only response |
+| GET `/teams/{team_id}/members?limit=100` | Page business members by user UUID; `task.read` |
+| POST `/teams/{team_id}/members` | Add `user_id` with current Team `revision`; `access.grants.manage` |
+| POST `/teams/{team_id}/members/{user_id}/remove` | Remove using current Team `revision`; `access.grants.manage` |
+
+Project fields are `name`, `description`, `color`, `status` (planned/active/paused/
+completed/cancelled; default planned), optional immutable `team_id`, `start_date`
+and `due_date`. Start cannot be after due. Updates replace mutable fields and
+must preserve the Team ID. Lists require limit 1–100 and optional UUID cursor;
+project pages may stop early for the RPC response budget. Direct project/label
+reads include archived metadata for existing references. Archiving these records
+does not hide their tasks or change ACL.
+
+Work create/update additionally accepts optional `project_id` and up to 50 unique
+`label_ids`. Omission clears those associations on update. All references must
+match the root/workspace; Team projects must match the work item's Team. Existing
+archived references may be retained or removed but cannot be newly assigned.
+Work list filters additionally accept `project_id` and `label_id`.
+
+Team member writes increment the Team revision and return scope/ID/revision/time
+only. The add operation needs downstream
+`access.v1.principals.validate_users` with actor action `access.grants.manage`,
+target `task.read`, and source `task/v1:task.teams.members.add`. A business
+membership never grants workspace or root access. Removal does not require the
+target to remain active. Lists contain IDs/timestamps, not profile data.
+
+All writes retain domain/audit/replay/outbox atomicity. Extend exact Gate/Task
+operation approvals, downstream Access checks and broker subjects for the new
+operations; replace the Task artifact/routes and update Notify's producer digest.
+The catalog change hint now additionally supports project/label identifiers;
+existing task-created notification semantics remain unchanged.
+
 ## Runtime
 
 Core Control requires explicit live `RuntimeControlPolicy` and a snapshot signing

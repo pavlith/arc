@@ -23,6 +23,16 @@ func invalidWork() error {
 	return &rpc.Error{Code: rpc.CodeValidation, Message: "invalid Task work item input"}
 }
 func validateWork(q taskv1.WorkInput) error {
+	if len(q.LabelIDs) > 50 {
+		return invalidWork()
+	}
+	labels := map[string]bool{}
+	for _, id := range q.LabelIDs {
+		if id == "" || labels[id] {
+			return invalidWork()
+		}
+		labels[id] = true
+	}
 	if strings.TrimSpace(q.Title) == "" || len(strings.TrimSpace(q.Title)) > 300 || len(q.Description) > 60000 || q.Priority < 0 || q.Priority > 4 || q.SortOrder < 0 || q.SortOrder > 1000000000000 || len(q.AssigneeIDs) > 20 {
 		return invalidWork()
 	}
@@ -86,7 +96,7 @@ func workItem(ctx context.Context, db *gorm.DB, q taskv1.GetRequest) (taskv1.Wor
 	if err := db.WithContext(ctx).Where("id=? AND workspace_id=? AND acl_root_id=?", q.TaskID, q.WorkspaceID, q.RootID).Take(&row).Error; err != nil {
 		return taskv1.WorkItem{}, catalogError(err)
 	}
-	out := taskv1.WorkItem{Task: toTask(row), Identifier: row.ID, AssigneeIDs: []string{}, Revision: 1}
+	out := taskv1.WorkItem{Task: toTask(row), Identifier: row.ID, AssigneeIDs: []string{}, LabelIDs: []string{}, Revision: 1}
 	var detail models.TaskDetails
 	err := db.WithContext(ctx).Where("task_id=? AND workspace_id=? AND acl_root_id=?", row.ID, q.WorkspaceID, q.RootID).Take(&detail).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -111,6 +121,12 @@ func workItem(ctx context.Context, db *gorm.DB, q taskv1.GetRequest) (taskv1.Wor
 	out.DueDate = detail.DueDate
 	out.SortOrder = detail.SortOrder
 	out.Revision = detail.Revision
+	if detail.ProjectID != nil {
+		out.ProjectID = *detail.ProjectID
+	}
+	if err := db.WithContext(ctx).Model(&models.TaskLabel{}).Where("task_id=?", row.ID).Order("label_id").Pluck("label_id", &out.LabelIDs).Error; err != nil {
+		return out, catalogError(err)
+	}
 	if err := db.WithContext(ctx).Model(&models.TaskAssignee{}).Where("task_id=?", row.ID).Order("user_id").Pluck("user_id", &out.AssigneeIDs).Error; err != nil {
 		return out, catalogError(err)
 	}
@@ -140,6 +156,9 @@ func (s *Service) createWork(ctx context.Context, tx *gorm.DB, q taskv1.WorkCrea
 		return taskv1.WorkItem{}, catalogError(err)
 	}
 	if err := replaceAssignees(ctx, tx, base.ID, q.AssigneeIDs); err != nil {
+		return taskv1.WorkItem{}, err
+	}
+	if err := setWorkReferences(ctx, tx, taskv1.GetRequest{Scope: q.Scope, TaskID: base.ID}, q.WorkInput, taskv1.WorkItem{}); err != nil {
 		return taskv1.WorkItem{}, err
 	}
 	if err := s.catalogChanged(ctx, tx, q.Scope, "work", base.ID, detail.Revision); err != nil {
@@ -180,6 +199,7 @@ func (s *Service) updateWork(ctx context.Context, tx *gorm.DB, q taskv1.WorkUpda
 		return taskv1.WorkItem{}, catalogError(err)
 	}
 	detail.TeamID = team.ID
+	detail.ProjectID = nil // References are checked against the new Team before being restored below.
 	detail.StatusID = status.ID
 	detail.Description = q.Description
 	detail.Priority = q.Priority
@@ -197,6 +217,9 @@ func (s *Service) updateWork(ctx context.Context, tx *gorm.DB, q taskv1.WorkUpda
 		return taskv1.WorkItem{}, catalogError(err)
 	}
 	if err := replaceAssignees(ctx, tx, q.TaskID, q.AssigneeIDs); err != nil {
+		return taskv1.WorkItem{}, err
+	}
+	if err := setWorkReferences(ctx, tx, q.GetRequest, q.WorkInput, current); err != nil {
 		return taskv1.WorkItem{}, err
 	}
 	if err := s.catalogChanged(ctx, tx, q.Scope, "work", q.TaskID, detail.Revision); err != nil {
@@ -253,6 +276,12 @@ func (s *Service) listWork(ctx context.Context, q taskv1.WorkListRequest) (taskv
 		}
 		if q.AssigneeID != "" {
 			db = db.Where("EXISTS(SELECT 1 FROM task_assignees a WHERE a.task_id=t.id AND a.user_id=?)", q.AssigneeID)
+		}
+		if q.ProjectID != "" {
+			db = db.Where("d.project_id=?", q.ProjectID)
+		}
+		if q.LabelID != "" {
+			db = db.Where("EXISTS(SELECT 1 FROM task_labels l WHERE l.task_id=t.id AND l.label_id=?)", q.LabelID)
 		}
 		if q.Search != "" {
 			db = db.Where("(instr(lower(t.title),lower(?))>0 OR instr(lower(COALESCE(d.description,'')),lower(?))>0)", q.Search, q.Search)

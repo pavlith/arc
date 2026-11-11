@@ -38,6 +38,14 @@
     "search": {
       "type": "string",
       "maxLength": 300
+    },
+    "project_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "label_id": {
+      "type": "string",
+      "format": "uuid"
     }
   },
   "required": [

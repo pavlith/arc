@@ -81,6 +81,26 @@ after validation may leave an assigned identifier but cannot authorize a later
 read. Active tasks prevent their status from being archived; a status can instead
 be renamed/reordered or tasks moved first.
 
+## Projects, labels and Team membership
+
+Projects belong to a root, optionally to one Team in that root. Their Team scope
+is immutable after creation; name, description, status and dates are versioned.
+A task may reference only a project from the same workspace/root and, for a
+Team-scoped project, the same Team. Labels are root-scoped. References are checked
+in the command transaction; SQLite foreign keys/triggers reinforce these bounds.
+Project/label archive retains existing references and does not hide tasks or
+revoke ACL. Direct metadata reads remain available to root readers. Archived
+references may be retained or removed by an edit, but cannot be newly assigned.
+
+Business Team membership is a Task-owned user/Team association, independent of
+Identity Groups, workspace membership and ACL. Adding a member requires root
+management authority plus live workspace membership and `task.read` for the
+target user. Removal remains possible after the target user loses access.
+Changes use the Team's current revision, increment it, and emit the same minimal
+Team change hint. Historical associations can remain after access revocation;
+they never authorize a read. Member lists contain user IDs/timestamps only;
+profile data comes from the separately authorized Identity APIs.
+
 ## Delivery boundary
 
 Each artifact/schema change requires signed Task replacement approval, exact

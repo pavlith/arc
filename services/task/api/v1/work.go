@@ -11,6 +11,8 @@ type WorkItem struct {
 	TeamID      string     `json:"team_id,omitempty"`
 	StatusID    string     `json:"status_id,omitempty"`
 	Identifier  string     `json:"identifier"`
+	ProjectID   string     `json:"project_id,omitempty"`
+	LabelIDs    []string   `json:"label_ids"`
 	Description string     `json:"description"`
 	Priority    int        `json:"priority"`
 	DueDate     *time.Time `json:"due_date,omitempty"`
@@ -20,6 +22,8 @@ type WorkItem struct {
 	Archived    bool       `json:"archived"`
 }
 type WorkInput struct {
+	ProjectID   string     `json:"project_id,omitempty"`
+	LabelIDs    []string   `json:"label_ids,omitempty"`
 	Title       string     `json:"title"`
 	TeamID      string     `json:"team_id"`
 	StatusID    string     `json:"status_id,omitempty"`
@@ -53,6 +57,8 @@ type ArchivedItem struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 type WorkListRequest struct {
+	ProjectID string `json:"project_id,omitempty"`
+	LabelID   string `json:"label_id,omitempty"`
 	CatalogPage
 	TeamID     string `json:"team_id,omitempty"`
 	StatusID   string `json:"status_id,omitempty"`

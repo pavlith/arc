@@ -10,6 +10,6 @@ type PrivateChunkRequest struct {
 }
 
 var (
-	PrivateChunk = module.Command[PrivateChunkRequest, Upload]{ID: "files.uploads.chunk"}
+	PrivateChunk    = module.Command[PrivateChunkRequest, Upload]{ID: "files.uploads.chunk"}
 	PrivateDownload = module.Query[FileRef, File]{ID: "files.files.download"}
 )

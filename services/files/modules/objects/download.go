@@ -103,11 +103,11 @@ func (s *Module) PrepareDownload(ctx context.Context, ref filesv1.FileRef) (file
 	meta, hasMeta := rpc.Metadata(ctx)
 	var scope filesv1.Scope
 	if !ok || !hasMeta || cl.SessionID == "" || cl.WorkspaceID != ref.WorkspaceID ||
-		json.Unmarshal(meta.Payload,&scope) != nil || scope != ref.Scope {
-		return filesv1.File{},security.ErrDenied
+		json.Unmarshal(meta.Payload, &scope) != nil || scope != ref.Scope {
+		return filesv1.File{}, security.ErrDenied
 	}
-	if err := s.Authorize(ctx,ref.RootID,"files.read"); err != nil {
-		return filesv1.File{},err
+	if err := s.Authorize(ctx, ref.RootID, "files.read"); err != nil {
+		return filesv1.File{}, err
 	}
-	return s.getFile(ctx,ref)
+	return s.getFile(ctx, ref)
 }

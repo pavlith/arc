@@ -88,7 +88,9 @@ func New(cfg Config) (*Gate, error) {
 		cfg.LoginsPerMinute = 10
 	}
 	if cfg.PrivateFiles != nil {
-		if err:=validatePrivateFiles(cfg.PrivateFiles);err!=nil{return nil,err}
+		if err := validatePrivateFiles(cfg.PrivateFiles); err != nil {
+			return nil, err
+		}
 	}
 	g := &Gate{cfg: cfg, origins: origins, limits: map[string]bucket{}}
 	if cfg.EnableRealtime {
@@ -221,7 +223,7 @@ func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if isFilesBytePath(r.URL.Path) {
-		g.filesBytes(w,r,id)
+		g.filesBytes(w, r, id)
 		return
 	}
 	trace := r.Header.Get("Traceparent")

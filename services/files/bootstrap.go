@@ -6,19 +6,19 @@ import (
 
 	"github.com/pavlith/arc/sdk/bootstrap"
 	"github.com/pavlith/arc/sdk/contract"
-	filesv1 "github.com/pavlith/arc/services/files/api/v1"
-	"github.com/pavlith/arc/services/files/stream"
 	"github.com/pavlith/arc/services/core/modules/fabric"
 	"github.com/pavlith/arc/services/core/modules/identity"
+	filesv1 "github.com/pavlith/arc/services/files/api/v1"
 	"github.com/pavlith/arc/services/files/storage"
+	"github.com/pavlith/arc/services/files/stream"
 )
 
 type BootstrapConfig struct {
 	bootstrap.Config
-	StoragePath string `json:"storage_path"`
-	StreamListen string `json:"stream_listen,omitempty"`
-	StreamTLSCertFile string `json:"stream_tls_cert_file,omitempty"`
-	StreamTLSKeyFile string `json:"stream_tls_key_file,omitempty"`
+	StoragePath        string `json:"storage_path"`
+	StreamListen       string `json:"stream_listen,omitempty"`
+	StreamTLSCertFile  string `json:"stream_tls_cert_file,omitempty"`
+	StreamTLSKeyFile   string `json:"stream_tls_key_file,omitempty"`
 	StreamClientCAFile string `json:"stream_client_ca_file,omitempty"`
 }
 
@@ -59,14 +59,18 @@ func Run(ctx context.Context, path string) error {
 		cfg.StreamTLSKeyFile != "" || cfg.StreamClientCAFile != ""
 	if streamRequested {
 		compiled, e := contract.Compile(filesv1.Artifact())
-		if e != nil { return e }
+		if e != nil {
+			return e
+		}
 		private, err = stream.New(stream.Config{
-			Listen:cfg.StreamListen, TLSCertFile:cfg.StreamTLSCertFile,
-			TLSKeyFile:cfg.StreamTLSKeyFile,ClientCAFile:cfg.StreamClientCAFile,
-			Verify:identity.RemoteAuthorizer(app.Folders.Identity,deps.CoreTrust,"files/v1"),
-			Objects:app.Objects,Contract:compiled,
+			Listen: cfg.StreamListen, TLSCertFile: cfg.StreamTLSCertFile,
+			TLSKeyFile: cfg.StreamTLSKeyFile, ClientCAFile: cfg.StreamClientCAFile,
+			Verify:  identity.RemoteAuthorizer(app.Folders.Identity, deps.CoreTrust, "files/v1"),
+			Objects: app.Objects, Contract: compiled,
 		})
-		if err != nil {return err}
+		if err != nil {
+			return err
+		}
 	}
 	if err = app.Start(ctx); err != nil {
 		_ = app.Stop()
@@ -74,7 +78,9 @@ func Run(ctx context.Context, path string) error {
 	}
 	defer app.Stop()
 	if private != nil {
-		if err = private.Start(); err != nil {return err}
+		if err = private.Start(); err != nil {
+			return err
+		}
 		defer private.Stop(context.Background())
 	}
 	err = app.App.Wait(ctx)

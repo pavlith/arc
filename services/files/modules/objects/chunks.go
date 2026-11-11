@@ -62,7 +62,7 @@ func (s *Module) AppendChunk(ctx context.Context, ref filesv1.UploadRef, offset,
 			return unavailable(err)
 		}
 		next, err := s.Storage.Append(ctx, v.TempKey, offset, length,
-			&authorizedReader{source:body,ctx:ctx,authorize:func() error {return s.Authorize(ctx,ref.RootID,"files.create")}})
+			&authorizedReader{source: body, ctx: ctx, authorize: func() error { return s.Authorize(ctx, ref.RootID, "files.create") }})
 		if err != nil {
 			return unavailable(err)
 		}
@@ -99,20 +99,26 @@ func (s *Module) AppendChunk(ctx context.Context, ref filesv1.UploadRef, offset,
 // Revalidate while reading a slow request body, not merely once before it.
 // A callback error propagates into the disk adapter's rollback path.
 type authorizedReader struct {
-	source io.Reader
-	ctx context.Context
+	source    io.Reader
+	ctx       context.Context
 	authorize func() error
-	since int
+	since     int
 }
 
-func (a *authorizedReader) Read(p []byte) (int,error) {
-	if err:=a.ctx.Err();err!=nil{return 0,err}
-	if a.since==0 || a.since >= 256<<10 {
-		if err:=a.authorize();err!=nil{return 0,err}
-		a.since=0
+func (a *authorizedReader) Read(p []byte) (int, error) {
+	if err := a.ctx.Err(); err != nil {
+		return 0, err
 	}
-	if len(p)>256<<10-a.since { p=p[:256<<10-a.since] }
-	n,err:=a.source.Read(p)
-	a.since+=n
-	return n,err
+	if a.since == 0 || a.since >= 256<<10 {
+		if err := a.authorize(); err != nil {
+			return 0, err
+		}
+		a.since = 0
+	}
+	if len(p) > 256<<10-a.since {
+		p = p[:256<<10-a.since]
+	}
+	n, err := a.source.Read(p)
+	a.since += n
+	return n, err
 }

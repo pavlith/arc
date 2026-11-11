@@ -40,6 +40,8 @@ func TestFilesSignedContractSurface(t *testing.T) {
 	// fail closed without accepting raw payload bytes.
 	for _, id := range []string{"files.uploads.chunk", "files.files.download"} {
 		op, err := compiled.Operation(id)
-		if err != nil || op.HTTP.Expose { t.Fatalf("private operation accidentally exposed: %s", id) }
+		if err != nil || op.HTTP.Expose {
+			t.Fatalf("private operation accidentally exposed: %s", id)
+		}
 	}
 }

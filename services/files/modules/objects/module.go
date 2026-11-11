@@ -319,6 +319,13 @@ func (s *Module) complete(ctx context.Context, tx *gorm.DB, q filesv1.UploadRef)
 	return fileDTO(row), nil
 }
 
+func normalizeFileError(err error) error {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return missing()
+	}
+	return unavailable(err)
+}
+
 func (s *Module) getFile(ctx context.Context, q filesv1.FileRef) (filesv1.File, error) {
 	var v models.File
 	err := s.DB.WithContext(ctx).Where(

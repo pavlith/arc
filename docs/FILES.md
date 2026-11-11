@@ -187,3 +187,14 @@ crash between creating an inode and committing an upload row. A disk failure
 while deleting is surfaced, not treated as successful cleanup. Committed blobs
 must be retained: automatic garbage collection of promoted objects without
 SQL metadata still needs its own safe reference/retention protocol.
+
+## Bounded private read primitive
+
+`objects.Module.StreamDownload` requires a verified scoped identity and an
+online `files.read` check before touching disk. It reads only `ready`
+metadata in the same ACL root, validates the committed object size, copies
+at most 256 KiB per write, and repeats online authorization before each
+block and on completion. A cancellation or rejected Access check stops
+further delivery. This is an **internal** primitive and does not install a
+public Gate route: the authenticated private streaming transport remains a
+separate integration/acceptance requirement.

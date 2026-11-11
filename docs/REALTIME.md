@@ -2,7 +2,7 @@
 
 Owner: [#27](https://github.com/pavlith/arc/issues/27).
 Delivery: stage 2 of [shortplan](shortplan.md).
-This is a **design contract**, not an implemented endpoint or an acceptance claim.
+The Notify event producer and an opt-in Gate WSS implementation are now in \`dev\`.\nThis is **not a deployment or acceptance claim**; exact broker permissions and\nrevocation/overflow integration checks are still outstanding.
 
 ## Ownership and transport
 
@@ -103,8 +103,7 @@ per-browser replay or exactly-once stream guarantee.
    Migration `000003_notify_outbox` is required; broker stream permissions,
    signed reapproval and live rollout remain separate.
 2. Add Gate WebSocket handshake, bounded protocol reader/writer, private NATS
-   consumer and explicit domain event → channel mapping. Do not expose the
-   browser endpoint until all required authorizers are wired.
+   consumer and explicit domain event → channel mapping. **Code implemented**\n   with an opt-in \`enable_realtime\` switch, disabled by default. Gate validates\n   live cookies and CSRF at the handshake, and Task's approved \`work.list\`\n   action at subscribe/delivery. It does not start until explicitly enabled.\n   Publish and subscribe only with operator-restricted exact NATS subjects.
 3. Wire the exact Core/Gate service approvals: session validation, Access.Check
    and publisher/consumer subjects for Task and Notify. Gate remains DB-free.
    Broker subscriptions require approved scoped credentials and no wildcard
@@ -119,3 +118,25 @@ per-browser replay or exactly-once stream guarantee.
 Dependencies: replacement Task contract/digest for stage 1, Notify producer
 digest pin, broker stream/consumer grants, exact signed installation approvals,
 Core identity and Access live checks. Code push alone deploys none of these.
+
+## Initial operator enablement (not yet accepted)
+
+The Gate JSON config may set `"enable_realtime": true` **only after**
+granting the Gate NKey exact private subscribe permission to
+`evt.task.catalog.changed.v1`, `evt.task.task.created.v1` and
+`evt.notify.inbox.changed.v1`. The Notify NKey requires publish permission
+to its own `evt.notify.inbox.changed.v1`, and private JetStream must provision
+the Notify stream. Gate will not start with a missing broker connection and
+will reject upgrades when its realtime hub is unavailable. The server selects
+only `arc.realtime.v1` (never the offered CSRF protocol). The CSRF token in
+`Sec-WebSocket-Protocol` is formed as
+`csrf.<base64url(raw cookie value bytes without padding)>`.
+
+The initial Gate live task check invokes Task's signed `task.work.list`
+operation with `limit=1` to exercise Task's own fresh root ACL enforcement
+without cached grants or cross-service SQL. Inbox delivery checks the active
+browser session and exact recipient ID. Every event is schema-validated
+against the pinned domain artifact, then filtered to matching subscriptions.
+No browser connects to NATS, and no notification content crosses the WSS
+channel. If NATS permissions/streams or the signed Task/Notify/Gate deployment
+are not configured, leave the switch off; code push does not imply rollout.

@@ -71,14 +71,14 @@ func (c *realtimeClient) enqueue(event invalidation) {
 	}
 }
 
-func (g *Gate) startRealtime() error {
+func (g *Gate) StartRealtime() error {
 	if g.hub == nil {
 		return nil
 	}
 	return g.hub.start()
 }
 
-func (g *Gate) stopRealtime() {
+func (g *Gate) StopRealtime() {
 	if g.hub != nil {
 		g.hub.stop()
 	}

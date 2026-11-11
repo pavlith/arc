@@ -433,3 +433,17 @@ add the exact Notify subject to a private JetStream stream and Notify NKey
 publish permissions, reapprove the updated Notify artifact/digest, and update
 Notify service deployment. This does not expose WebSocket to browsers; see
 [realtime contract](../docs/REALTIME.md).
+
+## Gate shared realtime (opt-in)
+
+Gate now includes the `/api/v1/arc/realtime` WSS adapter. It remains disabled
+by default and must be enabled only by an operator-configured
+`"enable_realtime": true` in the Gate JSON configuration **after** exact NATS
+event subscription permissions, Notify stream and signed contracts have been
+deployed. Browser handshake uses the existing cookie session and an allowed
+HTTPS Origin plus the offered `arc.realtime.v1` and
+`csrf.<base64url(cookie CSRF value)>` subprotocols. The server replies with
+only `arc.realtime.v1`. Task scopes are live-validated using the signed Task
+read operation; Inbox subscriptions bind to the validated session user.
+Bounded invalidations force authorized HTTP refetch. Do not enable without
+the operational checks in [realtime protocol](../docs/REALTIME.md).

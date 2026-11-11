@@ -69,3 +69,20 @@ type RuntimeNodeProfile struct {
 }
 
 func (RuntimeNodeProfile) TableName() string { return "runtime_node_profiles" }
+
+type RuntimeEnrollmentOffer struct {
+	ID               string `gorm:"primaryKey"`
+	NodeID           string
+	ServiceAccountID string
+	Kid              string
+	PublicKey        []byte
+	Capabilities     string
+	TokenHash        string
+	ApprovedBy       string
+	CreatedAt        time.Time
+	ExpiresAt        time.Time
+	RedeemedAt       *time.Time
+	RevokedAt        *time.Time
+}
+
+func (RuntimeEnrollmentOffer) TableName() string { return "runtime_enrollment_offers" }

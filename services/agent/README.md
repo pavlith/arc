@@ -157,7 +157,7 @@ effect during Core/NATS outage and no delete inferred from missing inventory ID.
 Effects are serial and bounded by snapshot expiry; failures back off up to a minute.
 Each online round uses one request/trace context across Identity and private
 Runtime RPC. Reconciliation logs include duration and fixed codes, never payloads
-or credentials; see [correlated diagnostics](../../docs/DEVELOPMENT.md#correlated-diagnostics).
+or credentials; see [correlated diagnostics](../../docs/DEVELOPMENT.md#diagnostics).
 
 Journal persists intent before effect. Inspector checks completed revisions before
 drift repair, which still needs fresh online authorization. Inspection failure

@@ -1,6 +1,5 @@
 # Arc requirements
 
-> Reviewed on 2026-11-10 under [#14](https://github.com/pavlith/arc/issues/14).
 > [Architecture](ARCHITECTURE.md) defines implementation contracts.
 > Requirements describe the target; their presence does not establish delivery.
 > P0: foundation; P1: Office MVP; P2: automation/agents; P3: infrastructure management.
@@ -24,8 +23,7 @@ Adapt applicable [Kuayle](https://github.com/carbogninalberto/kuayle) behavior:
 Go/Echo direction, Svelte 5/shadcn-svelte, workspaces, tasks/projects/views,
 notifications, realtime, Tiptap and uploads. GitHub becomes an optional connector;
 coding runtimes are specialized execution resources. Preserve existing data where
-possible and document/test irreversible changes. Upstream or lost local code
-does not count as an Arc implementation. Define the data-import and personal-task
+possible and document/test irreversible changes. Upstream code does not establish delivery. Define the data-import and personal-task
 strategy in #10 before implementing it.
 
 ## 2. Functional requirements
@@ -388,31 +386,9 @@ Verified: full relevant M7 matrix executed. M0–M6 require Integrated for accep
 scope; production requires Verified. See [architecture §10](ARCHITECTURE.md#10-verification-policy)
 for the single verification policy. Missing code has no current readiness claim.
 
-## 7. M0 deliveries and remaining decisions
+## 7. Deferred design decisions
 
-| Delivery / Issue | Scope | Required focused evidence |
-|---|---|---|
-| 1 / #2 | NATS/SQLite bootstrap, explicit migrations, minimal transport | Repeated clean start, RPC and credential isolation |
-| 2 / #3 | Identity/session/refresh/delegation/invocation | Proof/audience/operation/replay, revoke and self-delegation denial |
-| 3 / #4 | Root/grant lifecycle and online ACL | Owner/deny/revoke/cross-root/fail-closed and reserve replay |
-| 4 / #5 | Approved Fabric contracts, readiness, typed RPC/events | Digest/schema/action/version, command replay and duplicate event |
-| 5 / #6 | Signed Gate routes and auth boundary | Approved route, signature/collision and Core outage |
-| 6 / #7 | Proof Task outbox and Notify inbox | Vertical path, internal atomicity and stable outbound key |
-| 7 / #8 | Runtime contracts/fake Agent and diagnostics | Revision/template/bootstrap denials and correlated smoke |
-
-#2–#7 preserve historical delivery acceptance, with current code mapped in their
-bodies. #8 needs current acceptance; #13 restores/extends Runtime. #9–#10 describe
-lost M1 work that must be reimplemented. #15 adds the Core command and secure
-startup; product provisioning and full standalone platform acceptance remain separate.
-Current paths/limits live in component guides; status remains in Issue labels.
-
-The M1 Kuayle adaptation and personal Task boundary are defined in
-[Task product model](TASK-MODEL.md); automatic import and personal Task roots are
-separate extensions. Open decisions: M2 sharing/DAV scheduling/
-client matrix; M3 WebDAV locking/versioning/stream revoke; M4–M5 Starlark limits,
-approval classes/connector secrets; beyond M6 placement/rollback/zero-downtime.
-Preserve operation-bound invocation, explicit ACL self-grant audit, signed routes,
-atomic inbox/effect and honest external at-least-once semantics.
+Issue status and implementation evidence belong in [GitHub Issues](https://github.com/pavlith/arc/issues), never a duplicated delivery report. Still requiring explicit design approval: personal Task ownership/import; M2 cross-workspace sharing/DAV scheduling and client matrix; M3 WebDAV locking/versioning/stream revoke; M4–M5 Starlark limits, connector secrets and approvals; beyond-M6 placement/rollback/zero-downtime. All implementations preserve operation-bound proofs, online ACL, signed routes and transaction/outbox integrity.
 
 ## 8. M7 verification
 

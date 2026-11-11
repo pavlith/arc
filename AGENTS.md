@@ -13,7 +13,7 @@
 - GitHub Issues + labels: tasks, priority, status, acceptance and actual verification. No parallel Markdown backlog, Notion or GitHub Projects.
 - `docs/REQUIREMENTS.md`: requirement IDs and scope; `docs/ARCHITECTURE.md`: trust, ownership and approved protocols.
 - Update normative docs only for durable semantic changes; Git history/Issues hold delivery history.
-- `main` is the active branch; `dev` is retained as a legacy reference. Never force-push or rewrite either.
+- `main` is the active branch. Never force-push or rewrite history.
 
 ## Context routing (read the smallest relevant section)
 - Identity/auth: Architecture §3; Requirements §2.1.

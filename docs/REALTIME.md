@@ -96,57 +96,12 @@ handshake and all subscription authorization. The browser must refetch its
 current collections before trusting new invalidations; there is no durable
 per-browser replay or exactly-once stream guarantee.
 
-## Implementation and deployment order
+## Operator enablement and verification
 
-1. Add a Notify-owned event for personal Inbox changes, with an additive
-   migration, bounded payload and atomic notification mutation/outbox write.
-   **Implemented:** Notify 0.2.0 produces `evt.notify.inbox.changed.v1` with
-   recipient UUID, optional notification UUID and revision (omitted for bulk).
-   Migration `000003_notify_outbox` is required; broker stream permissions,
-   signed reapproval and live rollout remain separate.
-2. Add Gate WebSocket handshake, bounded protocol reader/writer, private NATS
-   consumer and explicit domain event → channel mapping. **Code implemented**\n   with an opt-in \`enable_realtime\` switch, disabled by default. Gate validates\n   live cookies and CSRF at the handshake, and Task's approved \`work.list\`\n   action at subscribe/delivery. It does not start until explicitly enabled.\n   Publish and subscribe only with operator-restricted exact NATS subjects.
-3. Wire the exact Core/Gate service approvals: session validation, Access.Check
-   and publisher/consumer subjects for Task and Notify. Gate remains DB-free.
-   Broker subscriptions require approved scoped credentials and no wildcard
-   publish permission.
-4. Provide focused tests for cross-workspace known IDs, two users, revoked
-   session/root access, missing Core/Access, invalid origin/CSRF, overflow,
-   broker disconnect and reconnect. Test event payloads against current
-   compiled contracts and the unchanged 200 KiB HTTP/256 KiB RPC envelope.
-5. Only after the above, expose the WSS path, update Gate readiness/health
-   and add the UI adapter when UI work is explicitly resumed.
+Gate's `/api/v1/arc/realtime` implementation is opt-in (`enable_realtime: true`), disabled by default. Install the exact Task/Notify signed artifacts and pinned producer digests, enable Gate's private NATS subscribe permissions for `evt.task.catalog.changed.v1`, `evt.task.task.created.v1`, `evt.notify.inbox.changed.v1`, and enable Notify's exact publisher permission and JetStream stream before activation. Core and Access remain live authorities. No public NATS connection or separate realtime DB is introduced.
 
-Dependencies: replacement Task contract/digest for stage 1, Notify producer
-digest pin, broker stream/consumer grants, exact signed installation approvals,
-Core identity and Access live checks. Code push alone deploys none of these.
+Handshake requires live cookie session, allowed HTTPS Origin and both offered subprotocols `arc.realtime.v1` and `csrf.<base64url(raw CSRF cookie value, no padding)>`; only `arc.realtime.v1` is echoed. Gate verifies Task `task.work.list` (`limit=1`) through signed invocation and current root ACL; Inbox subscriptions bind to the current session user. Fresh checks apply on subscribe, delivery and heartbeat. Failure/overflow disconnects rather than leaking or silently dropping authorization-sensitive state.
 
-## Initial operator enablement (not yet accepted)
+Task invalidations require valid workspace/root/entity UUIDs and positive revision; Inbox events require recipient UUID, optional notification UUID and nonnegative revision. Invalid/unbound payloads cannot reach a browser; schema validation alone never authenticates a producer. Hints carry no content; clients refetch via authorized HTTP and resubscribe on reconnect. The configured per-check deadline is 15 seconds under isolated test load; timeout still fails closed.
 
-The Gate JSON config may set `"enable_realtime": true` **only after**
-granting the Gate NKey exact private subscribe permission to
-`evt.task.catalog.changed.v1`, `evt.task.task.created.v1` and
-`evt.notify.inbox.changed.v1`. The Notify NKey requires publish permission
-to its own `evt.notify.inbox.changed.v1`, and private JetStream must provision
-the Notify stream. Gate will not start with a missing broker connection and
-will reject upgrades when its realtime hub is unavailable. The server selects
-only `arc.realtime.v1` (never the offered CSRF protocol). The CSRF token in
-`Sec-WebSocket-Protocol` is formed as
-`csrf.<base64url(raw cookie value bytes without padding)>`.
-
-The initial Gate live task check invokes Task's signed `task.work.list`
-operation with `limit=1` to exercise Task's own fresh root ACL enforcement
-without cached grants or cross-service SQL. Inbox delivery checks the active
-browser session and exact recipient ID. Every event is schema-validated
-against the pinned domain artifact, then filtered to matching subscriptions.
-No browser connects to NATS, and no notification content crosses the WSS
-channel. If NATS permissions/streams or the signed Task/Notify/Gate deployment
-are not configured, leave the switch off; code push does not imply rollout.
-
-### Strict event binding
-
-The Gate hub rejects Task invalidations without valid workspace, root, entity UUID and positive revision; Inbox events require a valid recipient UUID, optional valid notification UUID and nonnegative revision. A schema-valid but unbound broker event is never routed to a browser. This is defense in depth beyond the signed artifact schema and does not authorize a producer by itself.
-
-### CI latency and negative tests
-
-The live Task subscription runs an authorization pipeline through Identity, Task and Access. The per-subscription/per-invalidation/heartbeat bounded authorization deadline is 15 seconds to tolerate slow isolated CI brokers; failure at that deadline still terminates/denies access. The invalid-proof integration fixture uses an explicit 15-second RPC deadline (rather than 1 second), so a busy runner does not return a deadline error before exercising cryptographic rejection. Neither check caches grants or weakens fail-closed behavior.
+Verification must include two users/workspaces, forged IDs, revoked session/root, Core/Access outage, missing broker permission, bad origin/CSRF, backpressure, reconnect and bounded frames. An isolated live test does not prove production rollout or full M7 browser/load acceptance.

@@ -12,9 +12,8 @@ Multiple Teams can share a root and therefore its access boundary. Independently
 private Teams require independently provisioned roots; a boolean on a Team never
 creates privacy or another permission engine.
 
-Existing Task IDs, titles, creators, timestamps, audit, command replay and outbox
-data are preserved by additive migrations. Legacy proof APIs remain a narrow
-projection. New product APIs and schemas are explicit approved operations rather
+Task IDs, titles, creators, timestamps, replay and outbox survive additive
+migrations. The original proof endpoints retain a narrow projection. New product APIs and schemas are explicit approved operations rather
 than an implicit reinterpretation of old credentials. Rich descriptions are data,
 never executable HTML; clients render/sanitize them before display.
 
@@ -52,17 +51,17 @@ subscribers must reacquire permission to fetch content.
 `task_assignees` hold product fields. New `task.work.*` operations use the same
 Task IDs and titles while returning workflow category/status ID, Team, stable
 creation identifier, description, priority, due date, card order and assignees.
-Legacy tasks appear in the new read model with status `open`, revision 1, no Team
+Tasks without Team assignment appear in the read model with status `open`, revision 1, no Team
 and their UUID as identifier until explicitly assigned to a Team by an update.
 Identifiers allocated from a Team key/counter remain stable if the task moves
 between Teams inside the same root. Cross-root moves are not supported.
 
 Product reads list all tasks permitted by the root's `task.read`, including other
-creators; the legacy list remains creator-filtered. Root `task.create` is the
+creators; the original list remains creator-filtered. Root `task.create` is the
 explicit write authority for shared product edits. Such edits require both the
-current product revision and base `updated_at`, so concurrent legacy title edits
+current product revision and base `updated_at`, so concurrent title edits
 also conflict rather than overwrite. Archive needs `task.delete` and returns only
-scope/ID/revision/timestamp, never content. Legacy and product reads hide archived
+scope/ID/revision/timestamp, never content. Both proof and product reads hide archived
 work items and tasks in archived Teams.
 
 Updates replace the full mutable product representation; omitted description,

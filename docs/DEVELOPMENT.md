@@ -1,7 +1,7 @@
 # Development
 
 ## Delivery policy
-`main` is the active branch; `dev` remains as an older reference, not a second work queue. Do not force-push or rewrite history. Every change, including docs and cleanup, starts from a matching [GitHub Issue](https://github.com/pavlith/arc/issues); reuse it or create one with scope, acceptance and minimal checks. Issue labels own status, priority, milestone, type and area. No GitHub Projects, Notion or duplicated Markdown backlog.
+`main` is the single active work branch; GitHub Issues own tasks, not Markdown backlogs. Do not force-push or rewrite history. Every change, including docs and cleanup, starts from a matching [GitHub Issue](https://github.com/pavlith/arc/issues); reuse it or create one with scope, acceptance and minimal checks. Issue labels own status, priority, milestone, type and area. No GitHub Projects, Notion or duplicated Markdown backlog.
 
 Inspect actual code before implementing, keep changes scoped, update normative docs only if behavior/contract changes, run proportional checks, and attach results to the Issue. Use `Refs #N` for partial delivery and `Closes #N` only when all criteria are met. PRs require an Issue and explicit authorization. A direct commit/push requires the user's authorization; user chat is Russian, engineering material English. Never expose credentials in Git/logs/Issues.
 
@@ -19,6 +19,9 @@ done
 For standalone owner migrations: `bash scripts/migrate.sh task /absolute/task.sqlite`; use `core`, `notify`, `files` or `pages` as appropriate. Run one migrator per owner database before traffic; Core startup needs signed policy and pinned trust roots. See [services](../services/README.md), [database](../sdk/database/README.md) and [Core](../services/core/README.md). These examples are not a production installer.
 
 ## Verification
+
+CI has three tiers: **per push**—Go format/vet/build, affected owner unit tests, docs/UI checks and signed boundary smokes when security code changes; **weekly**—full Go race regression; **stable-release tag `v*` or manual**—full Go race regression plus Core/Runtime/bootstrap, Files/Pages live and M0 signed vertical smokes. A green push is not a release acceptance.
+
 Use `bash scripts/verify-changed.sh --base HEAD` (or `make verify`) after local code edits. It checks setup, Go formatting, changed Go service/package groups and relevant client workspaces. Shared SDK, test or Go dependency changes expand to `go test ./...`. The default comparison base is `origin/main`, then `HEAD^`/`HEAD`. This is **not** a complete security/CI check.
 
 | Boundary | Additional check |

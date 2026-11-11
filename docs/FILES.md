@@ -223,7 +223,7 @@ read/create invocations cannot be used as grant-management authority.
 
 ### Installation and provisioning for both scopes
 
-Approve both resource types at the same Files 0.6.0 artifact digest, all 38
+Approve both resource types at the same current Files artifact digest, all approved
 operation subjects (including four hidden byte subjects), and exact Gate rules
 for the declared action of each operation. Files' downstream `access.v1.check`
 rule must map each `files/v1:<operation>` source to its declared action only.
@@ -233,8 +233,8 @@ Grant sources `files/v1:files.roots.grants` and
 `files/v1:files.personal.roots.grants` may exchange only for grant add/revoke,
 with the declared type actions. No bootstrap Access wildcard is needed.
 Apply `000003_personal_roots` explicitly before restart, approve the new signed
-artifact, then reconcile Gate. Old installations do not implicitly approve the
-new operations. No production signing key or credential is included in the repo.
+artifact, then reconcile Gate. Prior installations do not automatically approve unregistered
+operations. No production signing key or credential is included in the repo.
 
 ## Reproducible isolated live acceptance
 

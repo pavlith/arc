@@ -22,7 +22,7 @@ flowchart TB
     Agent --> Host[Approved host drivers]
 ```
 
-The diagram includes planned components. Current executable surfaces and gaps are documented in [services](../services/README.md). [Standalone Core](../services/core/README.md) uses explicit migrations and signed local bootstrap policy. Gate can serve the first Svelte workspace and Task view. Historical reports of lost local implementations do not establish current behavior.
+The diagram includes planned components; [service inventory](../services/README.md) records current executable boundaries. [Core](../services/core/README.md) uses explicit migrations and signed local bootstrap.
 
 ## 2. Process and data ownership
 
@@ -296,129 +296,19 @@ Protected handler pipeline: verify invocation/proof → validate schema → reso
 
 ## 6. Gate and protocol adapters
 
-The initial shared WebSocket invalidation protocol, ownership boundaries and
-fail-closed conditions are specified in [REALTIME.md](REALTIME.md), tracked by
-[#27](https://github.com/pavlith/arc/issues/27). This is a planned Gate adapter,
-not an existing public API. No separate realtime database or public NATS ingress
-is introduced.
+Gate is the public HTTPS boundary and owns **no database**. It accepts trusted proxy headers only from configured CIDRs, applies bounded timeouts/rates, caps HTTP bodies at 200 KiB within the 256 KiB RPC envelope, and exposes separate liveness/readiness probes. Missing upstream authority fails closed.
 
-Gate is a standalone HTTP process without a database. HTTPS is direct or behind explicitly trusted proxy CIDRs; forwarded headers are accepted only from trusted peers, resolving client IP from the right of the proxy chain. Configure header/read/write/idle deadlines, graceful shutdown, 200 KiB HTTP bodies within the 256 KiB RPC envelope, bounded per-IP rates and explicit HTTPS CORS origins. `/healthz` is liveness; `/readyz` reflects accepted routes and reconciliation.
+Browser authentication uses `/api/v1/arc/auth/{login,refresh,logout,session}`: Secure/HttpOnly/SameSite=Lax `__Host-` session and refresh cookies, same-origin/allowed-Origin checks and CSRF on mutations. No browser Bearer tokens. CLI uses `/api/v1/arc/cli/{token,refresh,logout}` without Origin or cookies and with independent token rotation. Mixed credentials are rejected; Bearer validation requires a current Core session and `aud=gate`.
 
-Browser auth uses POST `/api/v1/arc/auth/login`, `/refresh`, `/logout` and GET `/api/v1/arc/auth/session`. Login requires allowed Origin and returns session metadata and CSRF data. Session and refresh credentials are Secure/HttpOnly/SameSite=Lax `__Host-` cookies. The CSRF cookie/header must match and Identity checks its hash for mutations. Browser sessions issue no Bearer token. CLI clients use POST `/api/v1/arc/cli/token`, `/refresh` and `/logout` without Origin or cookies. CLI token families rotate independently of browser families. Bearer uses Core `Verifier.Access` with `aud=gate` and live session. Mixing Bearer and session cookie is rejected.
+Invited registration is restricted to `/api/v1/arc/auth/register-invited` with allowed Origin, rate limits, signed `identity.v1.sessions.register_invited` Gate-only invocation and one-time recovery code (no-store). Invitation tokens stay in URL fragments/UI memory, never in logs or cookies. Public recovery requires a one-time code, always rotates the recovery secret and revokes sessions. Wrong credentials return indistinguishable authentication errors.
 
-POST `/api/v1/arc/auth/register-invited` accepts only `email`, `password` and
-`token`, requires an allowed Origin and applies a per-client rate limit. Core also
-limits registration attempts. It calls the exact operator-approved
-`identity.v1.sessions.register_invited` RPC with Gate assertion/proof; Core rejects
-callers whose live service definition is not `gate`. The 201 response contains
-`user_id`, `workspace_id` and one-time `recovery_code`, with `Cache-Control:
-no-store` and no auth cookies. Invitation links keep tokens in URL fragments; the
-UI removes the fragment and keeps the token and recovery code only in memory.
+Reserved `/api/v1/arc/identity/` routes map only to explicitly operator-approved `identity.v1.product.*` RPCs. Core verifies the actual Gate service account, signed assertion/proof, live browser user, membership and administrator policy **inside mutations before replay**. Account status/provisioning needs signed installation `AdminUsers` authority, never workspace-admin privilege; disabling revokes sessions and invitations, re-enabling never restores them. Profile/preference/password/session operations are self-scoped, revisioned and subject to live authorization. Credential changes do not persist secrets in replay records.
 
-The reserved `/api/v1/arc/identity/` routes map to exact operator-approved `identity.v1.product.*` RPCs. Core verifies the Gate assertion and request proof, then resolves the live browser session and checks current workspace membership or administrator authority. Workspace commands check permission inside their owner transaction before replay. Domain Task routes still require a verified Fabric snapshot and operation-bound invocation.
+Task root discovery separates current `task.read` and `access.grants.manage` authorization; only bounded root IDs and permission flags are exposed. Flags and workspace slugs are navigation metadata, not authority. Invitation listings require current workspace owner/admin. Workspace slug resolution requires current membership and returns immutable UUID/root bindings; renamed slugs do not create automatic redirects.
 
-Task root discovery has two workspace-scoped browser queries. GET
-`/api/v1/arc/identity/task_roots/list?workspace_id=<uuid>` returns roots with live
-`task.read`; GET
-`/api/v1/arc/identity/task_roots/managed/list?workspace_id=<uuid>` returns roots
-with live `access.grants.manage`. This lets an owner/admin discover an ACL
-administration scope without granting content access. An active workspace member
-with an explicit ACL management grant can also discover that scope; workspace
-membership alone does not reveal roots.
+All protected requests exchange an operation-/audience-bound invocation and fresh proof. Domain services recheck root binding, current ACL, replay and request integrity. Preserve request/trace IDs, deadlines and idempotency; never cache ACL in a route snapshot. Missing responder is unavailable; deadlines and authority outages fail closed. The signed manifest and implementation are authoritative for exact route payloads.
 
-Both lists return at most 100 active registry roots ordered by ID, with optional
-`after` cursor and per-root `can_read`, `can_write` and `can_manage` flags from one
-policy/time snapshot. Flags describe domain ACL permissions, not service approval
-or domain availability, and are not bearer authority. Readable-root filtering is
-unchanged. The managed list exposes root IDs and flags only, and needs the exact
-Gate bootstrap operation `identity.v1.product.task_roots.managed.list`. Task still
-checks its own root/workspace binding and live ACL before every subsequent read
-or grant operation. Archived workspaces and revoked browser sessions are denied.
-
-GET `/api/v1/arc/identity/invitations/list?workspace_id=<uuid>&after=<uuid>`
-uses `identity.v1.product.invitations.list`. Only live workspace owners/admins can
-read its email-bound invitation history. Results contain at most 100 entries,
-ordered by ID, with `pending`, `accepted`, `revoked`, `expired` or `invalidated`
-status, issuer ID and optional consumption/revocation timestamps. `invalidated`
-means the issuer is disabled or no longer an owner/admin. Accepted/revoked states
-take precedence over expiry and issuer state. Tokens and token hashes are never
-returned; archived workspace access is denied.
-
-Installation user administration uses GET
-`/api/v1/arc/identity/users/list?email=<email>&status=<active|disabled>&after=<uuid>`
-and POST `/api/v1/arc/identity/users/status` with `user_id` and `status`.
-All list filters are optional. Email lookup is exact after trimming and
-lowercasing; pages contain at most 100 entries ordered by ID, exposing only ID,
-email, status and creation time. Gate accepts email query values up to 254 bytes.
-Both operations require a live browser session and an installation administrator
-from signed `AdminUsers`; workspace owner/admin roles do not grant this authority.
-Gate also needs the exact `identity.v1.product.users.list` or
-`identity.v1.product.users.status` bootstrap approval. Status commands require
-Origin, CSRF and `Idempotency-Key`; live administrator authority is checked inside
-the transaction before command replay. The browser API rejects self-disable.
-
-Disabling an account atomically updates its status, revokes all sessions and
-refresh families, revokes its outstanding issued workspace invitations and writes
-the audit. Unknown users return not found. Re-enabling changes account status
-only: previous sessions, refresh families and revoked invitations stay revoked;
-workspace memberships, groups and resources are preserved. A status response is
-an empty object. Registration policy configuration remains separate work.
-
-Account APIs use the same Gate-only product namespace and live browser
-session/CSRF checks:
-
-| Method and path under `/api/v1/arc/identity/` | Input | Behavior |
-|---|---|---|
-| GET `account/sessions/list` | Optional `after` UUID | At most 100 own live sessions ordered by ID, including channel and creation/expiry times; no secrets or hashes |
-| POST `account/sessions/revoke` | `id` | Revoke one own session and its refresh families, including the current session; normal command replay applies while the calling session remains live |
-| POST `account/password/change` | `current_password`, `new_password` | Verify the current password, change it and revoke all own sessions/refresh families; clear browser cookies |
-
-Account POSTs require Origin, CSRF and `Idempotency-Key` like other product
-commands. Password changes use a one-shot credential protocol: neither passwords
-nor responses enter persistent command replay storage, and the revoked session
-cannot repeat a successful change. Each operation requires its exact signed
-`identity.v1.product.account.*` bootstrap approval for Gate.
-
-POST `/api/v1/arc/auth/recover` accepts `email`, `code` and `password` without an
-existing session, with an allowed Origin and per-client/Core rate limits. The
-exact signed `identity.v1.users.recover` approval is required. Core verifies the
-one-time recovery code, rotates its hash, replaces the password and revokes all
-account sessions/refresh families atomically. The response returns the next code
-as `code` once, with `Cache-Control: no-store`; Gate clears auth cookies and does
-not log the user in. Incorrect email/code pairs have the same authentication
-error. A lost success response cannot recover the next code by replaying the old
-one. Email delivery and a recovery UI remain separate work.
-
-Profile/settings migration `000013_profile_settings` adds global name,
-display name and profile revision, personal preferences and workspace slugs.
-GET `identity/profile` also returns the current installation-admin flag derived
-from signed policy, never from request data; member/group user projections omit
-that flag. POST `identity/account/profile/update` changes only the caller's name
-and display name with optimistic profile revision. Email and authority fields
-cannot be changed through this operation. Avatar metadata is null until a
-separately authorized asset upload is installed.
-
-GET `identity/account/preferences/get` returns caller-only presentation settings
-with revision 0 for defaults. POST `identity/account/preferences/update` accepts
-`revision` and a partial `changes` object, merges only known typed preference
-keys and validates the complete result. Null values are rejected. Settings are
-bounded to 32 KiB and carry no authority or foreign content. The write, audit and
-idempotent result commit together. Workspace removal does not remove personal
-preferences.
-
-Workspace create optionally accepts a lowercase slug; omitted slugs default to
-the new UUID. Workspace rename can also change its slug by current revision.
-Slugs are globally unique address aliases, 3–63 characters, lowercase letters,
-digits and internal hyphens. Reserved application routes and another workspace's
-UUID are rejected. Existing workspaces retain their IDs and initially use them
-as slugs. GET `identity/workspaces/by_slug?slug=...` resolves only an active
-workspace with live membership and returns its canonical workspace/root IDs.
-All subsequent authorization remains UUID/root-bound. A renamed slug has no
-implicit redirect or reserved old alias.
-
-Each protected request validates session online, exchanges a target invocation, and signs a fresh Gate proof. The recipient repeats invocation, domain binding and ACL checks. Preserve request ID, traceparent, deadline and original idempotency key. Missing responder → 503, deadline → 504, authority outage → fail closed. Snapshots do not cache authorization. Public auth exposes no installation or Runtime administration.
-
-WS and DAV are planned adapters behind Gate, with the same resource checks. CalDAV requires iCalendar, recurrence/timezone, ETag/sync tokens and distinct free/busy rights; scheduling follows client compatibility work. CardDAV preserves vCard extension fields. WebDAV requires approved method/client coverage and private HTTP/object streaming. Public shares use scoped revocable tokens; DAV credentials and browser sessions are distinct. Remote DAV sources belong to Connectors, not server adapters.
+The optional Gate `/api/v1/arc/realtime` WSS adapter is implemented but disabled by default. It requires live browser Origin/session/CSRF, exact private event subscriptions and metadata-only invalidations with authorized refetch; see [Realtime](REALTIME.md). DAV remains a planned Gate adapter with the same ACL, revocation, opaque storage and protocol-specific validation. Browser auth is not a DAV credential.
 
 ## 7. Runtime Control and Infrastructure Agent
 
@@ -478,117 +368,24 @@ M6: integrated single-node Docker lifecycle, approved templates, desired/observe
 
 ## 8. Domain services and tools
 
-| Service | Planned scope |
+| Owner | Scope / contract |
 |---|---|
-| Task | Tasks/projects/statuses/subtasks/boards/views; GitHub optional |
-| Calendars | Personal/shared calendars, events and CalDAV |
-| Contacts | Address books and CardDAV |
-| Files | Files/versions/shares, local/S3 storage and WebDAV |
-| Pages | Owner-local personal/workspace Tiptap pages, tree, versions/restore, templates and authorized resource refs; see [Pages](PAGES.md) |
-| Agents | Bounded runs, approved tools and consent |
-| Workflows | Events/schedules, CEL, Starlark, durable typed actions |
-| Connectors | Owner connections, external APIs, webhooks and optional DAV sources |
+| Task | Teams, workflow, projects, work items, views, templates, scoped grants and resource links; [Task](TASK-MODEL.md) |
+| Files | Owner-local file/folder metadata, quotas, resumable bytes and private signed mTLS stream; [Files](FILES.md) |
+| Pages | Personal/workspace Tiptap tree, versions, restore and referenced resources; [Pages](PAGES.md) |
+| Notify | Per-user Inbox, approved subscriptions, transactional hints and optional signed HTTPS webhook; [Notify](NOTIFY.md) |
+| Calendars / Contacts | Planned CalDAV, CardDAV and free/busy under the same ACL |
+| Agents / Workflows / Connectors | Bounded approved tools, durable events, delegation and external credentials; [Requirements](REQUIREMENTS.md) |
 
-Resource links grant no access to targets. Search and previews recheck resource ACL. Existing Task/Notify are proof services, not the full Kuayle migration. Task create/get/list uses verified workspace roots; lists are limited to 100 own tasks. Reserve/domain receipt/activate establishes roots.
+Each domain process owns its SQLite schema and transactional replay/outbox; no cross-owner SQL or implicit grants. A task attachment, avatar or page reference is an opaque pointer **not** a permission; target title/preview/bytes require a fresh actor-scoped target read and exact signed invocation edge. Cross-root moves are rejected, archives deny content at the next check, and failure to resolve policy fails closed. [Resource references](RESOURCE-REFERENCES.md) define those checks.
 
-Files' initial local byte backend has exactly one process owning its database
-and storage directory. Orphan reconciliation requires the owner database's
-single connection: promoted bytes are deleted only after the completion
-transaction commits or rolls back, a successful lookup finds no catalog
-reference in any state, and the object is older than 26 hours. A different
-connection limit disables this pass with an error. Referenced bytes are never
-collected by crash recovery; retention is a separate policy. See
-[Files](FILES.md#abandoned-promoted-objects).
+File bytes never travel over NATS. Files private Gate streaming checks Core proof/ACL before and during transfers, enforces offset/digest/quotas and cancels on revoke. Durable orphan cleanup never deletes an object referenced by any catalog state. [Files](FILES.md) specifies the implementation limits and operator setup.
 
-Files catalog rename/move/archive operations require a current revision and
-transactional replay/audit/outbox. Moves remain inside the bound root;
-archive hides metadata and stops downloads at their next ready-state check
-without deleting retained bytes. Metadata uses revision CAS; byte ETags remain
-content hashes. The exact routes and actions are specified in
-[Files catalog mutations](FILES.md#file-catalog-mutations-files-040).
-Filename search uses the same live read policy and ready-file/root constraints;
-its literal matching and bounded pagination are specified in
-[Files name search](FILES.md#file-name-search-files-050).
+Task root grants require live `access.grants.manage`, correct bound workspace/root and principal validation, plus stable command replay. Grant listing is a separately signed management operation and never follows from content read alone; a grant cannot authorize its own escalation. See the actual [Task model](TASK-MODEL.md) and approved domain manifests.
 
-Files upload initiation reserves workspace capacity across users and roots in
-the replay transaction. Ready/archived file bytes and slots remain charged;
-active upload reservations are converted on completion and released on
-abort/expiry. Operator limits and conflict semantics are specified in
-[Files workspace capacity](FILES.md#workspace-capacity-files-051).
+Notify never trusts event fields to select recipients. The approved consumer checks producer/digest/subject/durable and live target read; inbox rows, dedup, optional outbound intent and realtime hints commit before ACK. Webhook delivery is at-least-once with durable keys, fenced leases, HMAC, bounded retry and no target content. Default outbound remains disabled; [Notify](NOTIFY.md) defines its exact channel contract.
 
-Personal Files sections use distinct `files.personal.*` operations and
-`files.personal` roots with an immutable user owner and empty workspace scope.
-Workspace operations cannot authorize a personal root, or vice versa; shared
-personal access comes only from live Core user grants. The same ownership
-binding selects owner-wide quota accounting, including grantee uploads. See
-[Files personal sections](FILES.md#personal-sections-files-060).
-Files root grants use scope-bound user-only add/revoke commands, with live
-`access.grants.manage`, Core-owned persistence and stable downstream replay
-keys. Chunk authorization shares the current Files transaction only for local
-root resolution; each remote Core session/ACL check remains live. This avoids
-re-entering the single owner SQLite connection during streamed writes.
-
-Pages content snapshots and embedded references use a closed compound read
-check for the exact pages create/update/restore and template create/update/use
-sources. Their signed Access.Check mappings may include pages.read alongside
-the declared write/create action. Restore/template use perform this read check
-before replay. Native Pages references resolve through Go interfaces and the
-same live root check; cross-domain references use the signed read edges above.
-Moves/archives return only mutation metadata. See [Pages](PAGES.md).
-
-`task.roots.grants` is exposed as POST
-`/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/grants`. Adding requires
-`action` (`task.read` or `task.create`), `principal_kind` (`user`, `role` or `group`)
-and `principal_id`. Revoking uses `grant_id`; legacy descriptive fields are
-optional and do not choose the grant being revoked. Path-bound workspace/root
-fields cannot also appear in the HTTP body. Both paths require live
-`access.grants.manage`, an active domain root bound to that workspace and exact
-approved Gate/Task/downstream Access operations. Browser mutations require
-Origin/CSRF; CLI uses its separate Bearer flow. An `Idempotency-Key` is required.
-Task rechecks domain binding and management authority before local command replay.
-
-Task passes the bound root as `resource_id` on Access revoke. Access rejects a
-grant from another root before applying the mutation, and rechecks the actual
-grant's action authority. User recipients must be active workspace members,
-groups must belong to that workspace, and roles must be one of its four roles.
-Grants permit only the two content actions above; this endpoint cannot delegate
-ACL administration. Mutations retain Access audit/revision and cross-service
-idempotency. Permissions UI remains separate work.
-
-GET `/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/grants?limit=100`
-uses `task.roots.grants.list` and an exact downstream `access.v1.grants.list`
-invocation. Task checks the domain root/workspace binding and live
-`access.grants.manage` before forwarding; Access repeats live caller/session and
-management checks in the same policy/time snapshot as the query. Content read or
-bounded share permission alone cannot enumerate grants. No direct HTTP Access
-route is exposed.
-
-The required `limit` is 1–100; optional `cursor` is the last grant UUID from the
-previous page. The response includes `resource_id`, `grants`, `policy_revision`
-and optional `next_cursor`. Each entry has ID, principal kind/ID, action and
-optional expiry. Only stored direct, unrevoked, unexpired grants are listed;
-this is not an effective-permission calculation and can include grants whose
-principals no longer qualify. Inherited grants, implicit owner authority and
-revocation history are excluded. Each page is independently authorized and
-snapshot-consistent; concurrent edits may change later pages and their revisions.
-
-Private `identity.v1.invocations.verify` checks recipient audience, JWT/proof/nonce and live state, returning a Core-signed response bound to full envelope hash, subject, claims and five-second expiry. Domain services receive no Core DB credential. `auth.workspace_from` provides an exchange context selector, not membership authority.
-
-Notify installations pin each Task/Pages/Files provider, current artifact digest,
-subject and durable consumer. `ctl.arc.fabric.event_permit` requires current
-approvals/readiness before pull/effect. Recipients come from verified user
-subscriptions (or operator-managed addressing), never event fields. Inbox,
-notification, optional outbound intent and realtime hint commit together before
-ACK. Inbox lists/counts/mark-all-read apply current `task.read`, `pages.read` or
-`files.read` for the actual target root. Exact signed user-only Notify read edges
-to Access are permitted for these operations and subscription creation; they
-confer no mutation or bootstrap authority. An operator-enabled HTTPS webhook
-sends generic Inbox wakeups with HMAC signatures and stable persisted keys.
-Delivery claims a fenced lease in a short transaction and performs I/O after
-commit, with bounded retry/exhaustion. The provider must deduplicate uncertain
-external effects; no external exactly-once guarantee is made. Default outbound
-is disabled; fake delivery is a fixture. See [Notify](NOTIFY.md). Product UI and
-the full M7 matrix remain separate work.
+Runtime host management has a separate signed node boundary; ordinary workspace roles cannot become infrastructure administrators. Domain availability, successful compilation and tests do not imply installation or M7 readiness.
 
 ## 9. Storage, observability and resilience
 
@@ -596,7 +393,7 @@ Use owner-local SQLite with WAL, foreign keys, 10-second busy timeout, explicit 
 
 Back up using SQLite backup API or stop the owner while preserving committed WAL, plus objects, secrets and relevant JetStream state. Workspace export is not disaster recovery. Online authorization cannot fall back to a saved snapshot during Core outage. Jobs require leases or idempotent distribution.
 
-Required diagnostics include safe structured logs, request/trace IDs, operation latency/errors, auth/ACL denial, delivery lag and desired/observed health. The M0 [diagnostic baseline](DEVELOPMENT.md#correlated-diagnostics) correlates nested RPCs, Agent reconciliation and JetStream publication/inbox processing. Correlation metadata grants no authority and does not change signed input, replay keys or transaction boundaries. Full health/log reporting and the M7 matrix remain separate. Never log payloads, credentials or secret env. Do not turn M0 into a general policy engine, scheduler or plugin platform.
+Required diagnostics include safe structured logs, request/trace IDs, operation latency/errors, auth/ACL denial, delivery lag and desired/observed health. The M0 [diagnostic baseline](DEVELOPMENT.md#diagnostics) correlates nested RPCs, Agent reconciliation and JetStream publication/inbox processing. Correlation metadata grants no authority and does not change signed input, replay keys or transaction boundaries. Full health/log reporting and the M7 matrix remain separate. Never log payloads, credentials or secret env. Do not turn M0 into a general policy engine, scheduler or plugin platform.
 
 ## 10. Verification policy
 
@@ -627,9 +424,9 @@ After M6 feature freeze, execute exhaustive business/unit, permission, browser/a
 ## 11. Repository layout
 
 ```text
-cmd/{arc-core,arc-gate,arc-agent,arc-task,arc-notify}/
+cmd/{arc-core,arc-gate,arc-agent,arc-task,arc-notify,arc-files,arc-pages}/
 services/core/modules/{identity,access,fabric,runtime}/
-services/{gate,agent,task,notify}/
+services/{gate,agent,task,notify,files,pages}/
 services/<owner>/migrations/
 services/<service>/api/
 sdk/                       # library in the root Go module

@@ -4,6 +4,23 @@ Independent Linux process: `cmd/arc-agent` → `services/agent`. Core owns Runti
 state; SDK owns shared contracts. Agent has no Core database or inbound HTTP/RPC
 listener and initiates private TLS/NKey NATS connections.
 
+## Package layout
+
+Like Core, Task and Notify, the Agent uses `services/agent` for bootstrap and
+service composition, with implementation packages under `modules/`:
+
+- `modules/reconcile`: bounded online desired-state reconciliation and receipts
+- `modules/runtime`: validated, signed workload execution boundary
+- `modules/journal`: durable local high-water marks and pending receipts
+- `modules/host`: read-only local Ubuntu/Linux host observation
+- `modules/apt`: package inventory and signed, **read-only** profile previews
+- `modules/docker` and `modules/systemd`: privileged approved workload drivers
+
+The node has no public API listener or Core-owned database. Wire contracts and
+signature verification remain in `sdk/agent`; adding artificial `api/v1`,
+`models`, or `migrations` packages would misrepresent its ownership.
+LXD execution and signed package mutation are future, separately guarded stages.
+
 ## Startup
 
 ```sh

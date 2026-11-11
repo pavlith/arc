@@ -18,6 +18,7 @@ import (
 	"github.com/pavlith/arc/services/notify/modules/delivery"
 	"github.com/pavlith/arc/services/notify/modules/health"
 	"github.com/pavlith/arc/services/notify/modules/inbox"
+	"github.com/pavlith/arc/services/notify/modules/userinbox"
 	taskv1 "github.com/pavlith/arc/services/task/api/v1"
 	"gorm.io/gorm"
 )
@@ -113,6 +114,7 @@ func New(cfg Config) (*Service, error) {
 			Name: "notify", APIMajor: 1, Kind: service.Domain,
 			Modules: []module.Module{
 				&health.Module{ServiceID: cfg.Identity.ServiceID}, receiver, sender,
+				&userinbox.Module{GormDB: cfg.GormDB, Identity: cfg.Identity},
 			},
 		},
 		Runtime: cfg.Runtime,

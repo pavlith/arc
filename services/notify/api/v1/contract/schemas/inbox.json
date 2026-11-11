@@ -1,0 +1,91 @@
+{
+  "type": "object",
+  "properties": {
+    "notifications": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "read_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "archived_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "snoozed_until": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "acl_root_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "task_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "task.created"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "read_at",
+          "archived_at",
+          "snoozed_until",
+          "revision",
+          "workspace_id",
+          "acl_root_id",
+          "task_id",
+          "kind",
+          "created_at"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "unread_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "next_cursor": {
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "required": [
+    "notifications",
+    "unread_count"
+  ],
+  "additionalProperties": false
+}

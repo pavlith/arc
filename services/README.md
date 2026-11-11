@@ -5,7 +5,7 @@
 | `core/` | `cmd/arc-core`, owner SQLite, private RPC and signed approval for Identity profile, workspace lifecycle and invitations, member/group management and administrator provisioning | Runtime policy and adapter #13 |
 | `gate/` | `cmd/arc-gate`, browser cookies, CLI tokens, signed domain routes, Identity routes and optional UI assets | WS/DAV adapters |
 | `task/` | `cmd/arc-task`, scoped Teams/workflow, shared work items, projects/labels, comments/history, saved-view APIs and atomic replay/outbox | Subtasks/links/templates/bulk and UI adaptation #10 |
-| `notify/` | `cmd/arc-notify`, internal inbox/notification and persisted fake outbound intents | User inbox/subscriptions, realtime and real channels #9/#12 |
+| `notify/` | `cmd/arc-notify`, personal Inbox/subscriptions and persisted fake outbound intents | Realtime and real channels #9/#12 |
 | `agent/` | `cmd/arc-agent`, private node RPC, durable journal, restricted systemd and Docker drivers | Admin/Gate/UI, live Docker acceptance, LXD and Core reconcile #13 |
 
 The first Svelte workspace and Task view is in `client/web/`. Historical reports of
@@ -37,7 +37,7 @@ key is a JSON base64 string. Never pass Core/operator private keys to a domain
 service or mount another owner's database. `deploy/docker/Dockerfile.domain`
 accepts `SERVICE=task|notify`.
 
-Task artifact: `task/api/v1/contract/`; Notify: `notify/api/v1/contract.go`.
+Task artifact: `task/api/v1/contract/`; Notify: `notify/api/v1/contract/`.
 `fabric.Core.Approve` requires operator signature and exact identity/deployment.
 Notify pins Task provider/digest/subject/durable and uses operator-managed recipient
 addressing. The proof fixture provisions Task/DLQ streams; it is not an operator
@@ -293,3 +293,47 @@ The administrative policy/Gate adapter, Core reconciler/hint publisher and full
 health/log APIs are missing. See [architecture §7](../docs/ARCHITECTURE.md#7-runtime-control-and-infrastructure-agent)
 and [Agent operations](agent/README.md). Run `make runtime-smoke` for the private
 protocol and standalone Agent lifecycle; live host effects are a separate check.
+
+## Personal Inbox and subscriptions
+
+Notify 0.1.0 adds signed HTTP operations under `/api/v1/notify/`:
+
+| Method | Path | Input / result |
+|---|---|---|
+| GET | `notifications?limit=100&cursor=...&tab=unread` | Own notifications and visible unread count |
+| POST | `notifications/{id}/state` | `revision`, `action`, optional snooze `until` |
+| POST | `notifications/mark-all-read` | Empty object; number of visible receipts updated |
+| POST | `subscriptions/subscribe` | `workspace_id`, `acl_root_id` |
+| POST | `subscriptions/unsubscribe` | `workspace_id`, `acl_root_id` |
+| GET | `subscriptions?limit=100&cursor=...` | Own currently readable active subscriptions |
+
+Commands require an Idempotency-Key. State actions are `read`, `unread`,
+`archive`, `unarchive`, `snooze`, `unsnooze`; snooze must end within 365 days.
+Tabs are `all` (default active), `unread`, `archived`, `snoozed`.
+List cursors are ascending UUIDs. No request accepts a recipient identifier.
+
+These service-owned personal operations use the existing manifest `service`
+auth mode with a trusted module guard requiring an online-verified user session,
+exact operation and no delegation. This mode does not imply a service actor;
+health still requires the Notify service actor. SQL always binds receipt and
+subscription ownership to the verified user. Mutation, personal audit and replay
+are atomic in Notify's database. Individual receipt changes return state only;
+a user may clear their own stale receipt/subscription after losing root access.
+
+Lists, unread counts and mark-all-read check current `task.read` through Core
+Access, fail closed on dependency failure, and never reuse decisions across
+requests. Subscribing additionally binds the invocation workspace and checks
+that root. Business subscription membership grants no Task rights. At most 1000
+active subscriptions are allowed per user. Old notification rows without trusted
+workspace/root/task provenance are retained but hidden; new task-created effects
+persist provenance in the existing event inbox transaction.
+
+Apply Notify migration `000002_user_inbox` explicitly before deployment. Replace
+the signed Notify artifact approval and routes; allow the six exact user operation
+subjects in its manifest. The subscription-create source operation needs approved
+downstream `access.v1.check`; Inbox list, mark-all-read and subscription-list need
+`access.v1.check_many`, with action `task.read` and their exact source audience and
+operation. Also approve `identity.v1.invocations.exchange_service` for Notify.
+Gate needs the corresponding user invocation exchange policies. Health policy
+remains service-only. This delivery does not enable a real outbound provider or
+realtime delivery; fake outbound intents remain unchanged.

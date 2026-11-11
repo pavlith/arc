@@ -1,0 +1,34 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "read",
+        "unread",
+        "archive",
+        "unarchive",
+        "snooze",
+        "unsnooze"
+      ]
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "until": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "action",
+    "revision"
+  ],
+  "additionalProperties": false
+}

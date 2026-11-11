@@ -31,7 +31,8 @@ type Query[Req, Res any] struct{ ID string }
 type Command[Req, Res any] struct{ ID string }
 
 // Policy is operation-specific; Resource MUST prove ownership/root binding and
-// perform an online ACL decision. Trusted MUST verify the permitted service actor.
+// perform an online ACL decision. Trusted MUST verify the permitted actor and
+// service/owner binding for an operation without an ACL-root selector.
 // Neither callback is an authentication substitute; the SDK verifies proof first.
 type Policy struct {
 	Resource func(context.Context, string, string) error

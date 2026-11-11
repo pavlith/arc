@@ -1,0 +1,39 @@
+{
+  "type": "object",
+  "properties": {
+    "subscriptions": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "acl_root_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "acl_root_id",
+          "active"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "next_cursor": {
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "required": [
+    "subscriptions"
+  ],
+  "additionalProperties": false
+}

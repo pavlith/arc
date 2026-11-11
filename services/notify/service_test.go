@@ -14,8 +14,8 @@ func TestNotifyApprovedArtifact(t *testing.T) {
 		t.Fatal(err)
 	}
 	if compiled.Manifest.Service.Name != "notify" ||
-		compiled.Manifest.Service.APIMajor != 1 || len(compiled.Manifest.Operations) != 1 {
-		t.Fatal("Notifications contract diverged from M0-06")
+		compiled.Manifest.Service.APIMajor != 1 || len(compiled.Manifest.Operations) != 7 {
+		t.Fatal("Notifications contract operation set diverged")
 	}
 	if _, err := compiled.Operation(notifyv1.HealthQuery.ID); err != nil {
 		t.Fatal(err)

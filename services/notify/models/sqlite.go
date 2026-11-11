@@ -22,12 +22,18 @@ type Subscription struct {
 func (Subscription) TableName() string { return "subscriptions" }
 
 type Notification struct {
-	ID          string     `gorm:"column:id;primaryKey"`
-	RecipientID string     `gorm:"column:recipient_user_id;not null"`
-	EventID     string     `gorm:"column:event_id;not null"`
-	Kind        string     `gorm:"column:kind;not null"`
-	CreatedAt   time.Time  `gorm:"column:created_at;not null"`
-	ReadAt      *time.Time `gorm:"column:read_at"`
+	ID           string     `gorm:"column:id;primaryKey"`
+	RecipientID  string     `gorm:"column:recipient_user_id;not null"`
+	EventID      string     `gorm:"column:event_id;not null"`
+	Kind         string     `gorm:"column:kind;not null"`
+	CreatedAt    time.Time  `gorm:"column:created_at;not null"`
+	ReadAt       *time.Time `gorm:"column:read_at"`
+	WorkspaceID  string     `gorm:"column:workspace_id"`
+	RootID       string     `gorm:"column:acl_root_id"`
+	TaskID       string     `gorm:"column:task_id"`
+	ArchivedAt   *time.Time `gorm:"column:archived_at"`
+	SnoozedUntil *time.Time `gorm:"column:snoozed_until"`
+	Revision     int64      `gorm:"column:revision;default:1"`
 }
 
 func (Notification) TableName() string { return "notifications" }

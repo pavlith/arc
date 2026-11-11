@@ -1,14 +1,24 @@
 package v1
 
 import (
+	"embed"
 	"encoding/json"
+
 	"github.com/pavlith/arc/sdk/contract"
 )
 
 const Health = "notify.health"
 
+//go:embed contract/manifest.json contract/schemas/*.json
+var files embed.FS
+
 func Artifact() contract.Artifact {
-	m := contract.Manifest{ManifestVersion: 1, Service: contract.Service{Name: "notify", BuildVersion: "0.0.7", APIMajor: 1}, Resources: []contract.Resource{{Type: "notify.service", Actions: []string{"notify.health", "notify.create", "notify.share", "notify.delete", "access.grants.manage"}, ShareAction: "notify.share", CreateAction: "notify.create", DeleteAction: "notify.delete"}}, Operations: []contract.Operation{{ID: Health, Subject: "rpc.notify.v1.health", Kind: "query", RequestSchema: "schemas/empty.json", ResponseSchema: "schemas/empty.json", Auth: contract.Auth{Mode: "service", Action: "notify.health"}, Idempotency: "none", TimeoutMS: 5000}}}
-	b, _ := json.Marshal(m)
-	return contract.Artifact{Manifest: b, Schemas: map[string]json.RawMessage{"schemas/empty.json": json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`)}}
+	b, _ := files.ReadFile("contract/manifest.json")
+	a := contract.Artifact{Manifest: b, Schemas: map[string]json.RawMessage{}}
+	entries, _ := files.ReadDir("contract/schemas")
+	for _, e := range entries {
+		b, _ := files.ReadFile("contract/schemas/" + e.Name())
+		a.Schemas["schemas/"+e.Name()] = b
+	}
+	return a
 }

@@ -1,0 +1,200 @@
+{
+  "manifest_version": 1,
+  "service": {
+    "name": "notify",
+    "build_version": "0.1.0",
+    "api_major": 1
+  },
+  "resources": [
+    {
+      "type": "notify.service",
+      "actions": [
+        "notify.health",
+        "notify.create",
+        "notify.share",
+        "notify.delete",
+        "access.grants.manage",
+        "notify.read",
+        "notify.write"
+      ],
+      "share_action": "notify.share",
+      "create_action": "notify.create",
+      "delete_action": "notify.delete"
+    }
+  ],
+  "operations": [
+    {
+      "id": "notify.health",
+      "subject": "rpc.notify.v1.health",
+      "kind": "query",
+      "request_schema": "schemas/empty.json",
+      "response_schema": "schemas/empty.json",
+      "auth": {
+        "mode": "service",
+        "action": "notify.health"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000
+    },
+    {
+      "id": "notify.inbox.list",
+      "subject": "rpc.notify.v1.inbox.list",
+      "kind": "query",
+      "request_schema": "schemas/page.json",
+      "response_schema": "schemas/inbox.json",
+      "auth": {
+        "mode": "service",
+        "action": "notify.read"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/notify/notifications",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "query",
+            "name": "limit",
+            "field": "limit",
+            "type": "integer"
+          },
+          {
+            "source": "query",
+            "name": "cursor",
+            "field": "cursor",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "tab",
+            "field": "tab",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "notify.inbox.update",
+      "subject": "rpc.notify.v1.inbox.update",
+      "kind": "command",
+      "request_schema": "schemas/change.json",
+      "response_schema": "schemas/state.json",
+      "auth": {
+        "mode": "service",
+        "action": "notify.write"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/notify/notifications/{id}/state",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "id",
+            "field": "id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "notify.inbox.mark_all_read",
+      "subject": "rpc.notify.v1.inbox.mark_all_read",
+      "kind": "command",
+      "request_schema": "schemas/empty.json",
+      "response_schema": "schemas/mark_all.json",
+      "auth": {
+        "mode": "service",
+        "action": "notify.write"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/notify/notifications/mark-all-read",
+        "success_status": 200,
+        "bindings": []
+      }
+    },
+    {
+      "id": "notify.subscriptions.subscribe",
+      "subject": "rpc.notify.v1.subscriptions.subscribe",
+      "kind": "command",
+      "request_schema": "schemas/scope.json",
+      "response_schema": "schemas/subscription.json",
+      "auth": {
+        "mode": "service",
+        "action": "notify.write",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/notify/subscriptions/subscribe",
+        "success_status": 200,
+        "bindings": []
+      }
+    },
+    {
+      "id": "notify.subscriptions.unsubscribe",
+      "subject": "rpc.notify.v1.subscriptions.unsubscribe",
+      "kind": "command",
+      "request_schema": "schemas/scope.json",
+      "response_schema": "schemas/subscription.json",
+      "auth": {
+        "mode": "service",
+        "action": "notify.write"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/notify/subscriptions/unsubscribe",
+        "success_status": 200,
+        "bindings": []
+      }
+    },
+    {
+      "id": "notify.subscriptions.list",
+      "subject": "rpc.notify.v1.subscriptions.list",
+      "kind": "query",
+      "request_schema": "schemas/subscription_page.json",
+      "response_schema": "schemas/subscriptions.json",
+      "auth": {
+        "mode": "service",
+        "action": "notify.read"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/notify/subscriptions",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "query",
+            "name": "limit",
+            "field": "limit",
+            "type": "integer"
+          },
+          {
+            "source": "query",
+            "name": "cursor",
+            "field": "cursor",
+            "type": "string"
+          }
+        ]
+      }
+    }
+  ]
+}

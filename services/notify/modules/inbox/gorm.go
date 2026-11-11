@@ -43,6 +43,7 @@ func (s *Service) Effect(ctx context.Context, tx *gorm.DB, ev events.Envelope) e
 		id := newID()
 		if err := tx.WithContext(ctx).Create(&models.Notification{
 			ID: id, RecipientID: recipient, EventID: ev.ID, Kind: "task.created",
+			WorkspaceID: q.WorkspaceID, RootID: q.RootID, TaskID: q.TaskID, Revision: 1,
 		}).Error; err != nil {
 			return err
 		}

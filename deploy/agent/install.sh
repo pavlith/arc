@@ -8,7 +8,7 @@ docker_socket=/var/run/docker.sock
 unit_source="$(dirname -- "${BASH_SOURCE[0]}")/arc-agent.service"
 
 usage() {
-  printf '%s\n' 'Usage: bash deploy/agent/install.sh list | plan | apply /path/to/arc-agent'
+  printf '%s\n' 'Usage: bash deploy/agent/install.sh list | plan | apply /path/to/arc-agent [--with-docker]'
 }
 
 fail() {
@@ -89,29 +89,33 @@ apply() {
   [[ -f $unit_source ]] || fail 'the bundled Agent unit is missing'
   "$(realpath -- "$source")" -config "$agent_config" -check-config
 
-  setup_docker
+  if [[ ${2:-} == --with-docker ]]; then
+    setup_docker
+  fi
   setup_agent "$source"
-  docker_ready || fail 'Docker Engine is unavailable'
   systemctl is-active --quiet arc-agent.service || fail 'Arc Agent is inactive'
-  printf '%s\n' 'Docker Engine is reachable and arc-agent.service is active.'
+  if [[ ${2:-} == --with-docker ]]; then
+    docker_ready || fail 'Docker Engine is unavailable'
+  fi
+  printf '%s\n' 'arc-agent.service is active. Docker is optional and managed separately.'
 }
 
 case "${1:-}" in
   list)
     [[ $# == 1 ]] || { usage >&2; exit 2; }
-    printf '%s\n' preflight docker.ensure agent.install verify
+    printf '%s\n' preflight agent.install verify docker.optional
     ;;
   plan)
     [[ $# == 1 ]] || { usage >&2; exit 2; }
     printf '%s\n' \
       'preflight     Validate Ubuntu, systemd, the Agent binary and its config.' \
-      'docker.ensure Reuse the local engine, start its unit or install Ubuntu docker.io.' \
+      'docker.optional Optionally install Ubuntu docker.io with --with-docker.' \
       'agent.install Install and enable the Agent systemd unit and binary.' \
       'verify        Check the local Docker API and Agent systemd status.'
     ;;
   apply)
-    [[ $# == 2 ]] || { usage >&2; exit 2; }
-    apply "$2"
+    [[ $# == 2 || ( $# == 3 && $3 == --with-docker ) ]] || { usage >&2; exit 2; }
+    apply "$2" "${3:-}"
     ;;
   -h|--help) usage ;;
   *) usage >&2; exit 2 ;;

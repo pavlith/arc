@@ -9,7 +9,6 @@ import (
 
 	"github.com/pavlith/arc/sdk/events"
 	"github.com/pavlith/arc/sdk/module"
-	"github.com/pavlith/arc/sdk/rpc"
 	taskv1 "github.com/pavlith/arc/services/task/api/v1"
 	"github.com/pavlith/arc/services/task/models"
 	"gorm.io/gorm"
@@ -33,9 +32,9 @@ func toTemplate(row models.WorkTemplate) (taskv1.WorkTemplate, error) {
 		return taskv1.WorkTemplate{}, unavailable(errors.New("invalid stored template"))
 	}
 	return taskv1.WorkTemplate{
-		Scope: taskv1.Scope{WorkspaceID: row.WorkspaceID, RootID: row.RootID},
+		Scope:         taskv1.Scope{WorkspaceID: row.WorkspaceID, RootID: row.RootID},
 		TemplateInput: taskv1.TemplateInput{Name: row.Name, WorkInput: input},
-		ID: row.ID, Revision: row.Revision, Archived: row.ArchivedAt != nil,
+		ID:            row.ID, Revision: row.Revision, Archived: row.ArchivedAt != nil,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}, nil
 }
@@ -229,6 +228,3 @@ func (s *Service) bindTemplates(r *module.Registry, policy module.Policy, store 
 	return nil
 }
 
-// Every write is guarded by the live Action check supplied by the approved
-// contract. The command layer owns atomic audit, outbox and replay.
-var _ = rpc.CodeValidation

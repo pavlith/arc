@@ -16,9 +16,9 @@ import (
 	"github.com/pavlith/arc/sdk/rpc"
 	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/agent/modules/docker"
-	"github.com/pavlith/arc/services/agent/modules/systemd"
 	"github.com/pavlith/arc/services/agent/modules/host"
 	"github.com/pavlith/arc/services/agent/modules/journal"
+	"github.com/pavlith/arc/services/agent/modules/systemd"
 	"github.com/pavlith/arc/services/core/modules/identity"
 )
 

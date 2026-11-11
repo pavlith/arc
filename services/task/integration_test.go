@@ -187,6 +187,9 @@ func TestM006(t *testing.T) {
 			}
 
 		}
+		if _, err := access.NewContracts(operator.Public().(ed25519.PublicKey), []access.Approved{approval(operator, baseline), approval(operator, p)}); err != nil {
+			t.Fatalf("invalid %s installation access policy: %v", m.Manifest.Service.Name, err)
+		}
 		i := fabric.Installation{Publisher: "m006-fixture", Account: account, Deployment: deployment, Artifact: a, Subjects: subjects, Policy: approval(operator, p), Subscriptions: subs}
 		raw, sig := signed(operator, i)
 		_, e = f.Approve(ctx, fabric.SignedInstallation{Payload: raw, Signature: sig})

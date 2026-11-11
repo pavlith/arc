@@ -379,9 +379,9 @@ func (s *Module) listFiles(ctx context.Context, q filesv1.FileListRequest) (file
 
 // NATS deliberately does not carry upload/download bytes. These handlers
 // bind the signed contract for Fabric/Core approval but deny RPC-only calls.
-func (s *Module) noPrivateChunk(context.Context, *gorm.DB, filesv1.PrivateChunkRequest) (filesv1.PrivateUnavailable, error) {
-	return filesv1.PrivateUnavailable{}, security.ErrDenied
+func (s *Module) noPrivateChunk(context.Context, *gorm.DB, filesv1.PrivateChunkRequest) (filesv1.Upload, error) {
+	return filesv1.Upload{}, security.ErrDenied
 }
-func (s *Module) noPrivateDownload(context.Context, filesv1.FileRef) (filesv1.PrivateUnavailable, error) {
-	return filesv1.PrivateUnavailable{}, security.ErrDenied
+func (s *Module) noPrivateDownload(context.Context, filesv1.FileRef) (filesv1.File, error) {
+	return filesv1.File{}, security.ErrDenied
 }

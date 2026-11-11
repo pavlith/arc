@@ -544,7 +544,7 @@
       "subject": "rpc.files.v1.uploads.chunk",
       "kind": "command",
       "request_schema": "schemas/private-chunk.json",
-      "response_schema": "schemas/private-unavailable.json",
+      "response_schema": "schemas/upload.json",
       "auth": {
         "mode": "resource",
         "resource_type": "files.workspace",
@@ -563,7 +563,7 @@
       "subject": "rpc.files.v1.files.download",
       "kind": "query",
       "request_schema": "schemas/private-download.json",
-      "response_schema": "schemas/private-unavailable.json",
+      "response_schema": "schemas/file.json",
       "auth": {
         "mode": "resource",
         "resource_type": "files.workspace",

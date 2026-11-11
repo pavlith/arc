@@ -10,7 +10,7 @@ import (
 // SQLite is executed only by the separate owner migrator before traffic.
 func SQLite() []*gormigrate.Migration {
 	return []*gormigrate.Migration{{
-		ID: "000001_baseline",
+		ID: "000001_notify_baseline",
 		Migrate: func(tx *gorm.DB) error {
 			for _, sql := range baselineSchema {
 				if err := tx.Exec(sql).Error; err != nil {

@@ -25,7 +25,7 @@ func TestOneBaselinePerOwnerRejectsOldHistory(t *testing.T) {
 		{"pages", pagesmigrations.SQLite()},
 	} {
 		t.Run(owner.name, func(t *testing.T) {
-			if len(owner.migrations) != 1 || owner.migrations[0].ID != "000001_baseline" {
+			if len(owner.migrations) != 1 || owner.migrations[0].ID != "000001_"+owner.name+"_baseline" {
 				t.Fatalf("expected only current baseline: %+v", owner.migrations)
 			}
 			ctx := context.Background()

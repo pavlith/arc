@@ -227,4 +227,3 @@ func (s *Service) bindTemplates(r *module.Registry, policy module.Policy, store 
 	}
 	return nil
 }
-

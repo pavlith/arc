@@ -34,7 +34,7 @@ func deliveryDB(t *testing.T) *gorm.DB {
 			t.Fatal(e)
 		}
 	}
-	if e = db.Exec(`INSERT INTO notifications(id,recipient_user_id,event_id,kind) VALUES('n','u','e','task.created')`).Error; e != nil {
+	if e = db.Exec(`INSERT INTO notifications(id,recipient_user_id,event_id,kind,resource_kind,resource_id) VALUES('n','u','e','task.created','task','t')`).Error; e != nil {
 		t.Fatal(e)
 	}
 	return db

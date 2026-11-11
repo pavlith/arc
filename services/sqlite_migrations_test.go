@@ -45,16 +45,16 @@ func TestNotifySQLiteOwnerConstraints(t *testing.T) {
 	if err := database.Migrate(context.Background(), db, notifymigrations.SQLite()); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("INSERT INTO notifications(id,recipient_user_id,event_id,kind) VALUES('n','u','e','task.created')").Error; err != nil {
+	if err := db.Exec("INSERT INTO notifications(id,recipient_user_id,event_id,kind,resource_kind,resource_id) VALUES('n','u','e','task.created','task','t')").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("INSERT INTO notifications(id,recipient_user_id,event_id,kind) VALUES('n2','u','e','task.created')").Error; err == nil {
+	if err := db.Exec("INSERT INTO notifications(id,recipient_user_id,event_id,kind,resource_kind,resource_id) VALUES('n2','u','e','task.created','task','t')").Error; err == nil {
 		t.Fatal("duplicate notification accepted")
 	}
 	if err := db.Exec("INSERT INTO delivery_intents(notification_id,recipient_user_id,channel,dedup_key) VALUES('missing','u','fake','key')").Error; err == nil {
 		t.Fatal("missing notification reference accepted")
 	}
-	if err := db.Exec("INSERT INTO subscriptions(workspace_id,acl_root_id,recipient_user_id,active) VALUES('w','r','u',2)").Error; err == nil {
+	if err := db.Exec("INSERT INTO subscriptions(workspace_id,acl_root_id,recipient_user_id,active,resource_kind) VALUES('w','r','u',2,'task')").Error; err == nil {
 		t.Fatal("invalid operator subscription accepted")
 	}
 }

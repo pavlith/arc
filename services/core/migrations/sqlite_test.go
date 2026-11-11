@@ -113,3 +113,13 @@ func TestCoreFabricAndRuntimeSQLiteConstraints(t *testing.T) {
 	execOK(t, db, "INSERT INTO runtime_desired_deployments(id,service_name,spec,replicas) VALUES('d','task','{}',1)")
 	execReject(t, db, "UPDATE runtime_desired_deployments SET replicas=-1 WHERE id='d'")
 }
+
+func TestFreshCoreRequiresExplicitSessionChannel(t *testing.T) {
+	db := openCore(t)
+	execOK(t, db, "INSERT INTO identity_users(id,email) VALUES('u','user@example.test')")
+	execReject(t, db, "INSERT INTO identity_sessions(id,user_id,secret_hash,csrf_hash,expires_at) VALUES('implicit','u',x'01',x'02',datetime('now','+1 day'))")
+	for _, channel := range []string{"legacy", "none"} {
+		execReject(t, db, "INSERT INTO identity_sessions(id,user_id,secret_hash,csrf_hash,expires_at,auth_channel) VALUES('bad','u',x'01',x'02',datetime('now','+1 day'),?)", channel)
+	}
+	execOK(t, db, "INSERT INTO identity_sessions(id,user_id,secret_hash,csrf_hash,expires_at,auth_channel) VALUES('browser','u',x'01',x'02',datetime('now','+1 day'),'browser')")
+}

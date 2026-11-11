@@ -274,7 +274,7 @@ func TestM006(t *testing.T) {
 		_, e = (&access.Client{RPC: rc}).AddGrant(grantCtx("grants.add"), access.GrantRequest{ResourceID: scope.RootID, PrincipalKind: "role", PrincipalID: "member", Action: action})
 		must(e)
 	}
-	_, e = ndb.Exec(`INSERT INTO subscriptions(workspace_id,acl_root_id,recipient_user_id) VALUES(?,?,?)`, workspace, scope.RootID, owner)
+	_, e = ndb.Exec(`INSERT INTO subscriptions(workspace_id,acl_root_id,recipient_user_id,resource_kind) VALUES(?,?,?,'task')`, workspace, scope.RootID, owner)
 	must(e)
 	// Dedicated credentials are denied cross-service subscriptions/publications.
 	taskNC, e := sdk.Connect(ctx, cfg("m006-task-fixture", "nats-task.seed"))

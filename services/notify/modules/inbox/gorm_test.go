@@ -31,7 +31,7 @@ func TestSQLiteInboxAndDeliveryStableKey(t *testing.T) {
 	taskID := "00000000-0000-4000-8000-000000000004"
 	eventID := "00000000-0000-4000-8000-000000000005"
 	if err := db.Exec(
-		"INSERT INTO subscriptions(workspace_id,acl_root_id,recipient_user_id,active) VALUES(?,?,?,1)",
+		"INSERT INTO subscriptions(workspace_id,acl_root_id,recipient_user_id,active,resource_kind) VALUES(?,?,?,1,'task')",
 		workspace, root, user).Error; err != nil {
 		t.Fatal(err)
 	}

@@ -9,7 +9,7 @@ import (
 	"github.com/pavlith/arc/services/files/migrations"
 )
 
-func TestPersonalRootUpgradeRetainsWorkspaceData(t *testing.T) {
+func TestBaselinePersonalAndWorkspaceRoots(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "files.sqlite")
 	db, err := database.Open(ctx, path)
@@ -18,7 +18,7 @@ func TestPersonalRootUpgradeRetainsWorkspaceData(t *testing.T) {
 	}
 	defer func() { database.Close(db) }()
 	all := migrations.SQLite()
-	if err := database.Migrate(ctx, db, all[:2]); err != nil {
+	if err := database.Migrate(ctx, db, all); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec("INSERT INTO roots(acl_root_id,workspace_id,state) VALUES('root','workspace','active')").Error; err != nil {
@@ -49,6 +49,6 @@ func TestPersonalRootUpgradeRetainsWorkspaceData(t *testing.T) {
 	}
 	// A valid personal root cannot make an existing workspace folder cross scope.
 	if err := db.Exec("UPDATE folders SET acl_root_id='personal' WHERE id='folder'").Error; err == nil {
-		t.Fatal("cross-scope folder FK weakened by upgrade")
+		t.Fatal("cross-scope folder FK weakened by baseline")
 	}
 }

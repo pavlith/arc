@@ -105,10 +105,21 @@ func (c *Core) BootstrapUser(ctx context.Context, email, password string) (strin
 	return c.provisionUser(ctx, email, password, "core")
 }
 
-func (c *Core) provisionUser(ctx context.Context, email, password, actor string) (string, string, error) {
+func (c *Core) provisionUser(ctx context.Context, email, password, actor string, names ...string) (string, string, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if !strings.Contains(email, "@") || len(email) > 254 {
 		return "", "", ErrDenied
+	}
+	name := ""
+	if len(names) > 0 {
+		name = names[0]
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = strings.SplitN(email, "@", 2)[0]
+	}
+	if len(name) > 128 {
+		return "", "", productInvalid()
 	}
 	encoded, e := HashPassword(password)
 	if e != nil {
@@ -123,7 +134,7 @@ func (c *Core) provisionUser(ctx context.Context, email, password, actor string)
 		return "", "", e
 	}
 	e = c.tx(ctx, func(t *gorm.DB) error {
-		if e := t.WithContext(ctx).Exec(`INSERT INTO identity_users(id,email) VALUES( ?,?)`, id, email).Error; e != nil {
+		if e := t.WithContext(ctx).Exec(`INSERT INTO identity_users(id,email,name,display_name) VALUES( ?,?,?,?)`, id, email, name, name).Error; e != nil {
 			return e
 		}
 		if e := t.WithContext(ctx).Exec(`INSERT INTO identity_password_credentials(user_id,password_hash,recovery_hash) VALUES( ?,?,?)`, id, encoded, hash(recovery)).Error; e != nil {

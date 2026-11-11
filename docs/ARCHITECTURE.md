@@ -368,6 +368,33 @@ not log the user in. Incorrect email/code pairs have the same authentication
 error. A lost success response cannot recover the next code by replaying the old
 one. Email delivery and a recovery UI remain separate work.
 
+Profile/settings migration `000013_profile_settings` adds global name,
+display name and profile revision, personal preferences and workspace slugs.
+GET `identity/profile` also returns the current installation-admin flag derived
+from signed policy, never from request data; member/group user projections omit
+that flag. POST `identity/account/profile/update` changes only the caller's name
+and display name with optimistic profile revision. Email and authority fields
+cannot be changed through this operation. Avatar metadata is null until a
+separately authorized asset upload is installed.
+
+GET `identity/account/preferences/get` returns caller-only presentation settings
+with revision 0 for defaults. POST `identity/account/preferences/update` accepts
+`revision` and a partial `changes` object, merges only known typed preference
+keys and validates the complete result. Null values are rejected. Settings are
+bounded to 32 KiB and carry no authority or foreign content. The write, audit and
+idempotent result commit together. Workspace removal does not remove personal
+preferences.
+
+Workspace create optionally accepts a lowercase slug; omitted slugs default to
+the new UUID. Workspace rename can also change its slug by current revision.
+Slugs are globally unique address aliases, 3–63 characters, lowercase letters,
+digits and internal hyphens. Reserved application routes and another workspace's
+UUID are rejected. Existing workspaces retain their IDs and initially use them
+as slugs. GET `identity/workspaces/by_slug?slug=...` resolves only an active
+workspace with live membership and returns its canonical workspace/root IDs.
+All subsequent authorization remains UUID/root-bound. A renamed slug has no
+implicit redirect or reserved old alias.
+
 Each protected request validates session online, exchanges a target invocation, and signs a fresh Gate proof. The recipient repeats invocation, domain binding and ACL checks. Preserve request ID, traceparent, deadline and original idempotency key. Missing responder → 503, deadline → 504, authority outage → fail closed. Snapshots do not cache authorization. Public auth exposes no installation or Runtime administration.
 
 WS and DAV are planned adapters behind Gate, with the same resource checks. CalDAV requires iCalendar, recurrence/timezone, ETag/sync tokens and distinct free/busy rights; scheduling follows client compatibility work. CardDAV preserves vCard extension fields. WebDAV requires approved method/client coverage and private HTTP/object streaming. Public shares use scoped revocable tokens; DAV credentials and browser sessions are distinct. Remote DAV sources belong to Connectors, not server adapters.

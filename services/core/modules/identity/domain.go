@@ -18,6 +18,9 @@ func (c *Core) lockSession(ctx context.Context, t *gorm.DB, s Session) error {
 	return keyError(e)
 }
 func (c *Core) CreateWorkspace(ctx context.Context, auth UserSession, name string) (string, error) {
+	return c.createWorkspace(ctx, auth, name, "")
+}
+func (c *Core) createWorkspace(ctx context.Context, auth UserSession, name, slug string) (string, error) {
 	s, e := c.user(ctx, auth)
 	if e != nil {
 		return "", e
@@ -29,12 +32,18 @@ func (c *Core) CreateWorkspace(ctx context.Context, auth UserSession, name strin
 	if e != nil {
 		return "", e
 	}
+	if slug == "" {
+		slug = id
+	}
+	if !validWorkspaceSlug(slug, id) {
+		return "", productInvalid()
+	}
 	e = c.tx(ctx, func(t *gorm.DB) error {
 		if e := c.lockSession(ctx, t, s); e != nil {
 			return e
 		}
-		if e := t.WithContext(ctx).Exec(`INSERT INTO identity_workspaces(id,name) VALUES( ?,?)`, id, name).Error; e != nil {
-			return e
+		if e := t.WithContext(ctx).Exec(`INSERT INTO identity_workspaces(id,name,slug) VALUES( ?,?,?)`, id, name, slug).Error; e != nil {
+			return identityWriteError(e)
 		}
 		if e := t.WithContext(ctx).Exec(`INSERT INTO identity_memberships(workspace_id,user_id,role) VALUES( ?,?,'owner')`, id, s.UserID).Error; e != nil {
 			return e

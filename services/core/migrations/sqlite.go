@@ -125,5 +125,6 @@ func SQLite() []*gormigrate.Migration {
 		runtimeHost(),
 		runtimeNodeProfiles(),
 		runtimeEnrollment(),
+		profileSettings(),
 	}
 }

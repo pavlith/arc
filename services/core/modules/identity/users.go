@@ -41,7 +41,7 @@ func (c *Core) users(ctx context.Context, user string, q UserPage) ([]ManagedUse
 		return nil, productInvalid()
 	}
 	out := []ManagedUser{}
-	err := c.db(ctx).WithContext(ctx).Raw(`SELECT id,email,status,created_at FROM identity_users
+	err := c.db(ctx).WithContext(ctx).Raw(`SELECT id,email,name,display_name,profile_revision AS revision,status,created_at FROM identity_users
 		WHERE id>? AND (?='' OR email=?) AND (?='' OR status=?) ORDER BY id LIMIT 100`,
 		q.After, q.Email, q.Email, q.Status, q.Status).Scan(&out).Error
 	if err != nil {

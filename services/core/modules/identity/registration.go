@@ -10,6 +10,7 @@ import (
 )
 
 type RegisterInvitedRequest struct {
+	Name     string `json:"name,omitempty"`
 	Email    string `json:"email"`
 	Password string `json:"password"`
 	Token    string `json:"token"`
@@ -36,6 +37,13 @@ func (c *Core) RegisterInvited(ctx context.Context, q RegisterInvitedRequest) (R
 	if len(email) > 254 || !strings.Contains(email, "@") {
 		return zero, ErrDenied
 	}
+	name := strings.TrimSpace(q.Name)
+	if name == "" {
+		name = strings.SplitN(email, "@", 2)[0]
+	}
+	if len(name) > 128 {
+		return zero, productInvalid()
+	}
 	encoded, err := HashPassword(q.Password)
 	if err != nil {
 		return zero, err
@@ -52,7 +60,7 @@ func (c *Core) RegisterInvited(ctx context.Context, q RegisterInvitedRequest) (R
 	err = c.tx(ctx, func(tx *gorm.DB) error {
 		// No account enumeration: invalid invitations and existing accounts have
 		// the same public error. The write lock serializes concurrent redemption.
-		res := tx.WithContext(ctx).Exec(`INSERT INTO identity_users(id,email) VALUES(?,?) ON CONFLICT(email) DO NOTHING`, uid, email)
+		res := tx.WithContext(ctx).Exec(`INSERT INTO identity_users(id,email,name,display_name) VALUES(?,?,?,?) ON CONFLICT(email) DO NOTHING`, uid, email, name, name)
 		if res.Error != nil {
 			return res.Error
 		}

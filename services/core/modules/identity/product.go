@@ -21,14 +21,23 @@ type ProductRequest[T any] struct {
 }
 
 type Profile struct {
-	ID    string `json:"id"`
-	Email string `json:"email"`
+	ID          string  `json:"id"`
+	Email       string  `json:"email"`
+	Name        string  `json:"name"`
+	DisplayName string  `json:"display_name"`
+	AvatarURL   *string `json:"avatar_url"`
+	Revision    int64   `json:"revision"`
+}
+type SelfProfile struct {
+	Profile
+	IsSysadmin bool `json:"is_sysadmin"`
 }
 
 type Workspace struct {
 	ID       string `json:"id"`
 	RootID   string `json:"acl_root_id"`
 	Name     string `json:"name"`
+	Slug     string `json:"slug"`
 	Role     string `json:"role"`
 	Revision int64  `json:"revision"`
 }
@@ -60,6 +69,7 @@ type WorkspaceInput struct {
 
 type WorkspaceCreate struct {
 	Name string `json:"name"`
+	Slug string `json:"slug,omitempty"`
 }
 
 type WorkspacePage struct {
@@ -69,8 +79,9 @@ type WorkspacePage struct {
 
 type WorkspaceUpdate struct {
 	WorkspaceInput
-	Name     string `json:"name"`
-	Revision int64  `json:"revision"`
+	Name     string  `json:"name"`
+	Revision int64   `json:"revision"`
+	Slug     *string `json:"slug,omitempty"`
 }
 
 type MembershipChange struct {
@@ -100,6 +111,7 @@ type GroupPage struct {
 type ProvisionUser struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
+	Name     string `json:"name,omitempty"`
 }
 
 var productID = regexp.MustCompile(`^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$`)
@@ -139,14 +151,14 @@ func (c *Core) productRole(ctx context.Context, workspace, user string, manager 
 
 func (c *Core) profile(ctx context.Context, user string) (Profile, error) {
 	var out Profile
-	err := c.db(ctx).WithContext(ctx).Raw(`SELECT id,email FROM identity_users WHERE id=? AND status='active'`, user).
-		Row().Scan(&out.ID, &out.Email)
+	err := c.db(ctx).WithContext(ctx).Raw(`SELECT id,email,name,display_name,profile_revision FROM identity_users WHERE id=? AND status='active'`, user).
+		Row().Scan(&out.ID, &out.Email, &out.Name, &out.DisplayName, &out.Revision)
 	return out, keyError(err)
 }
 
 func (c *Core) workspaces(ctx context.Context, user string, q Page) ([]Workspace, error) {
 	out := []Workspace{}
-	err := c.db(ctx).WithContext(ctx).Raw(`SELECT w.id,COALESCE(w.acl_root_id,'') AS root_id,w.name,w.revision,m.role
+	err := c.db(ctx).WithContext(ctx).Raw(`SELECT w.id,COALESCE(w.acl_root_id,'') AS root_id,w.name,COALESCE(w.slug,w.id) AS slug,w.revision,m.role
 		FROM identity_workspaces w JOIN identity_memberships m ON m.workspace_id=w.id
 		WHERE m.user_id=? AND m.revoked_at IS NULL AND w.archived_at IS NULL AND w.id>? ORDER BY w.id LIMIT 100`, user, q.After).Scan(&out).Error
 	return out, err
@@ -158,8 +170,8 @@ func (c *Core) workspace(ctx context.Context, user string, q WorkspaceInput) (Wo
 		return Workspace{}, err
 	}
 	out := Workspace{ID: q.WorkspaceID, Role: role}
-	err = c.db(ctx).WithContext(ctx).Raw(`SELECT name,revision,COALESCE(acl_root_id,'') FROM identity_workspaces WHERE id=?`, q.WorkspaceID).
-		Row().Scan(&out.Name, &out.Revision, &out.RootID)
+	err = c.db(ctx).WithContext(ctx).Raw(`SELECT name,revision,COALESCE(acl_root_id,''),COALESCE(slug,id) FROM identity_workspaces WHERE id=?`, q.WorkspaceID).
+		Row().Scan(&out.Name, &out.Revision, &out.RootID, &out.Slug)
 	return out, err
 }
 
@@ -168,10 +180,13 @@ func (c *Core) updateWorkspace(ctx context.Context, user string, q WorkspaceUpda
 	if err != nil || q.Revision < 1 {
 		return Workspace{}, productInvalid()
 	}
+	if q.Slug != nil && !validWorkspaceSlug(*q.Slug, q.WorkspaceID) {
+		return Workspace{}, productInvalid()
+	}
 	db := c.db(ctx).WithContext(ctx)
-	updated := db.Exec(`UPDATE identity_workspaces SET name=?,revision=revision+1 WHERE id=? AND revision=?`, name, q.WorkspaceID, q.Revision)
+	updated := db.Exec(`UPDATE identity_workspaces SET name=?,slug=COALESCE(?,slug),revision=revision+1 WHERE id=? AND revision=?`, name, q.Slug, q.WorkspaceID, q.Revision)
 	if updated.Error != nil {
-		return Workspace{}, updated.Error
+		return Workspace{}, identityWriteError(updated.Error)
 	}
 	if updated.RowsAffected != 1 {
 		return Workspace{}, ErrConflict
@@ -187,7 +202,7 @@ func (c *Core) members(ctx context.Context, user string, q WorkspacePage) ([]Mem
 		return nil, err
 	}
 	out := []Member{}
-	err := c.db(ctx).WithContext(ctx).Raw(`SELECT u.id,u.email,m.role FROM identity_memberships m
+	err := c.db(ctx).WithContext(ctx).Raw(`SELECT u.id,u.email,u.name,u.display_name,u.profile_revision AS revision,m.role FROM identity_memberships m
 		JOIN identity_users u ON u.id=m.user_id WHERE m.workspace_id=? AND m.revoked_at IS NULL
 		AND u.status='active' AND u.id>? ORDER BY u.id LIMIT 100`, q.WorkspaceID, q.After).Scan(&out).Error
 	return out, err
@@ -231,7 +246,7 @@ func (c *Core) groupMembers(ctx context.Context, user string, q GroupPage) ([]Pr
 		return nil, err
 	}
 	out := []Profile{}
-	err := c.db(ctx).WithContext(ctx).Raw(`SELECT u.id,u.email FROM identity_group_members g
+	err := c.db(ctx).WithContext(ctx).Raw(`SELECT u.id,u.email,u.name,u.display_name,u.profile_revision AS revision FROM identity_group_members g
 		JOIN identity_memberships m ON m.workspace_id=g.workspace_id AND m.user_id=g.user_id
 		JOIN identity_users u ON u.id=g.user_id WHERE g.workspace_id=? AND g.group_id=?
 		AND m.revoked_at IS NULL AND u.status='active' AND u.id>? ORDER BY u.id LIMIT 100`, q.WorkspaceID, q.GroupID, q.After).Scan(&out).Error
@@ -320,6 +335,8 @@ func (c *Core) bindProduct(s *sdk.Service) error {
 	registrations := []func() error{
 		func() error { return c.bindAccount(s) },
 		func() error { return c.bindUsers(s) },
+		func() error { return c.bindProfileSettings(s) },
+		func() error { return c.bindPreferences(s) },
 		func() error { return c.bindProductWorkspaceCreate(s) },
 		func() error { return c.bindProductWorkspaceArchive(s) },
 		func() error { return bindProductWrite(s, c, "invitations.create", true, c.createInvitation) },
@@ -328,10 +345,11 @@ func (c *Core) bindProduct(s *sdk.Service) error {
 		func() error { return c.bindInvitationAccept(s) },
 		func() error { return c.bindProductProvision(s) },
 		func() error {
-			return bindProductRead(s, c, "profile", func(ctx context.Context, user string, _ Empty) (Profile, error) { return c.profile(ctx, user) })
+			return bindProductRead(s, c, "profile", c.selfProfile)
 		},
 		func() error { return bindProductRead(s, c, "workspaces.list", c.workspaces) },
 		func() error { return bindProductRead(s, c, "workspaces.get", c.workspace) },
+		func() error { return bindProductRead(s, c, "workspaces.by_slug", c.workspaceBySlug) },
 		func() error { return bindProductRead(s, c, "members.list", c.members) },
 		func() error { return bindProductRead(s, c, "groups.list", c.groups) },
 		func() error { return bindProductRead(s, c, "task_roots.list", c.taskRoots) },
@@ -387,7 +405,7 @@ func (c *Core) bindProductWorkspaceCreate(s *sdk.Service) error {
 			return Workspace{}, err
 		}
 		id, err := runCommand(ctx, c, user, "identity.v1."+name, nil, func(ctx context.Context) (string, error) {
-			return c.CreateWorkspace(ctx, req.Session, nameInput)
+			return c.createWorkspace(ctx, req.Session, nameInput, req.Input.Slug)
 		})
 		if err != nil {
 			return Workspace{}, err
@@ -415,8 +433,11 @@ func (c *Core) bindProductProvision(s *sdk.Service) error {
 			if exists {
 				return Profile{}, ErrConflict
 			}
-			id, _, err := c.provisionUser(ctx, email, req.Input.Password, "user:"+user.UserID)
-			return Profile{ID: id, Email: email}, err
+			id, _, err := c.provisionUser(ctx, email, req.Input.Password, "user:"+user.UserID, req.Input.Name)
+			if err != nil {
+				return Profile{}, err
+			}
+			return c.profile(ctx, id)
 		})
 	})
 }

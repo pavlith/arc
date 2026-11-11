@@ -116,3 +116,46 @@ restarts with stable trust and verifies SIGTERM plus in-process cancellation
 release subscriptions/SQLite. See the [verification guide](../../docs/DEVELOPMENT.md#verification).
 Complete platform provisioning, Runtime integration and full M7 coverage are
 separate deliveries; command startup does not establish production readiness.
+
+## Profile, preferences and workspace addresses
+
+Apply Core migration `000013_profile_settings` before starting this version. It
+preserves IDs/membership and initializes names from existing email local parts
+and workspace slugs from existing UUIDs. New provisioning/invited-registration
+requests may provide optional `name`. The self profile includes `name`,
+`display_name`, `revision`, nullable `avatar_url` and live `is_sysadmin` in addition
+to ID/email. Workspace member/group profiles include names and profile revision
+without the installation-admin flag. Avatar upload is a separate asset feature;
+this migration alone does not create avatar storage.
+
+Allow these exact Gate bootstrap operations, audience `identity/v1`, actor kind
+`bootstrap`, with their matching broker RPC subjects:
+
+- `identity.v1.product.account.profile.update`: POST
+  `/api/v1/arc/identity/account/profile/update`, input `name`, `display_name` and
+  current profile `revision`; updates only the live caller's profile.
+- `identity.v1.product.account.preferences.get`: GET
+  `/api/v1/arc/identity/account/preferences/get`, returns caller-only settings and
+  revision (0 before the first stored update).
+- `identity.v1.product.account.preferences.update`: POST at the matching
+  `/api/v1/arc/identity/account/preferences/update`, input `revision` and `changes`;
+  partial merge into the existing settings with audit/replay/CAS.
+- `identity.v1.product.workspaces.by_slug`: GET
+  `/api/v1/arc/identity/workspaces/by_slug?slug=<slug>`, concealed membership-bound
+  lookup, returning canonical UUID/root/role/revision.
+
+Known preference keys match the reused UI: `font_size`, `pointer_cursors`,
+`theme_mode`, `light_theme`, `dark_theme`, `workflow_sort_mode`,
+`workflow_sort_order`, `team_workflow_sort_overrides`, `recent_due_dates` and
+`issues_group_by`. Font sizes are small/default/large; modes system/light/dark;
+grouping status/priority/assignee/project/none. Theme names and workflow modes are
+enumerated, override maps are capped at 100 UUID-keyed entries, and recent due
+dates at 20 YYYY-MM-DD strings. Workflow preference order uses the UI categories
+backlog/unstarted/started/completed/cancelled; it is presentation data and does
+not change Task workflow categories or permissions. Total stored data is capped
+at 32 KiB. Unknown keys, malformed values and null patches are rejected.
+
+Existing workspace create/update operations accept optional `slug`; update
+retains the current slug when omitted. UUID/root authorization and CSRF/command
+requirements are unchanged. Slug changes may invalidate bookmarks; no old-alias
+redirect is created. No Task artifact replacement is needed for this Core change.

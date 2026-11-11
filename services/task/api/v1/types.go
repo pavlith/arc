@@ -57,3 +57,24 @@ type GrantResult struct {
 	State      string `json:"state,omitempty"`
 	Revision   int64  `json:"policy_revision"`
 }
+
+type GrantsRequest struct {
+	Scope
+	Cursor string `json:"cursor,omitempty"`
+	Limit  int    `json:"limit"`
+}
+
+type RootGrant struct {
+	ID            string     `json:"id"`
+	PrincipalKind string     `json:"principal_kind"`
+	PrincipalID   string     `json:"principal_id"`
+	Action        string     `json:"action"`
+	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
+}
+
+type GrantsResult struct {
+	ResourceID string      `json:"resource_id"`
+	Grants     []RootGrant `json:"grants"`
+	NextCursor string      `json:"next_cursor,omitempty"`
+	Revision   int64       `json:"policy_revision"`
+}

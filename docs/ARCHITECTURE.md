@@ -159,6 +159,7 @@ Policy denial yields `PERMISSION_DENIED` or contract-defined concealing `NOT_FOU
 | `check_many` | At most 100 pairs from one consistent policy snapshot |
 | `list_accessible_roots` | Paginated owner/workspace/type/action filtering without hidden metadata |
 | `grants.add` / `revoke` | ACL management or bounded share authority; transaction, audit/revision; revoke optionally binds `resource_id` to the grant's actual root |
+| `grants.list` | Paginated direct unrevoked/unexpired grants for one root; live ACL management authority and policy snapshot; no implicit/inherited rights |
 
 Names use `access.v1.*`; concrete RPC subjects follow §5.3. Check payload contains resource/action, not trusted actor/caller. Listings also apply domain filters. Use batched checks rather than N+1 RPC. Denial diagnostics are limited to trusted auditors.
 
@@ -440,7 +441,24 @@ grant's action authority. User recipients must be active workspace members,
 groups must belong to that workspace, and roles must be one of its four roles.
 Grants permit only the two content actions above; this endpoint cannot delegate
 ACL administration. Mutations retain Access audit/revision and cross-service
-idempotency. Grant listing and Permissions UI remain separate work.
+idempotency. Permissions UI remains separate work.
+
+GET `/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/grants?limit=100`
+uses `task.roots.grants.list` and an exact downstream `access.v1.grants.list`
+invocation. Task checks the domain root/workspace binding and live
+`access.grants.manage` before forwarding; Access repeats live caller/session and
+management checks in the same policy/time snapshot as the query. Content read or
+bounded share permission alone cannot enumerate grants. No direct HTTP Access
+route is exposed.
+
+The required `limit` is 1–100; optional `cursor` is the last grant UUID from the
+previous page. The response includes `resource_id`, `grants`, `policy_revision`
+and optional `next_cursor`. Each entry has ID, principal kind/ID, action and
+optional expiry. Only stored direct, unrevoked, unexpired grants are listed;
+this is not an effective-permission calculation and can include grants whose
+principals no longer qualify. Inherited grants, implicit owner authority and
+revocation history are excluded. Each page is independently authorized and
+snapshot-consistent; concurrent edits may change later pages and their revisions.
 
 Private `identity.v1.invocations.verify` checks recipient audience, JWT/proof/nonce and live state, returning a Core-signed response bound to full envelope hash, subject, claims and five-second expiry. Domain services receive no Core DB credential. `auth.workspace_from` provides an exchange context selector, not membership authority.
 

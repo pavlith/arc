@@ -16,7 +16,7 @@ func TestTaskApprovedArtifactAndTypedBindings(t *testing.T) {
 	if c.Manifest.Service.Name != "task" || c.Manifest.Service.APIMajor != 1 {
 		t.Fatal("unexpected Tasks Fabric identity", c.Manifest.Service)
 	}
-	operations := []string{taskv1.Create.ID, taskv1.Get.ID, taskv1.List.ID, taskv1.Edit.ID, taskv1.Admin.ID}
+	operations := []string{taskv1.Create.ID, taskv1.Get.ID, taskv1.List.ID, taskv1.Edit.ID, taskv1.Admin.ID, taskv1.ListGrants.ID}
 	if len(c.Manifest.Operations) != len(operations) || len(c.Manifest.Events) != 1 {
 		t.Fatal("unexpected Task operation or event")
 	}

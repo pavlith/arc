@@ -66,6 +66,9 @@ func (s *Service) Register(r *module.Registry) error {
 	if err := module.BindQuery(r, taskv1.Get, policy, s.get); err != nil {
 		return err
 	}
+	if err := module.BindQuery(r, taskv1.ListGrants, policy, s.listGrants); err != nil {
+		return err
+	}
 	return module.BindQuery(r, taskv1.List, policy, s.list)
 }
 

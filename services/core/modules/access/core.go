@@ -171,6 +171,17 @@ type RevokeRequest struct {
 	GrantID    string `json:"grant_id"`
 	ResourceID string `json:"resource_id,omitempty"`
 }
+type ListGrantsRequest struct {
+	ResourceID string `json:"resource_id"`
+	Cursor     string `json:"cursor,omitempty"`
+	Limit      int    `json:"limit"`
+}
+type ListGrantsResult struct {
+	ResourceID string  `json:"resource_id"`
+	Grants     []Grant `json:"grants"`
+	NextCursor string  `json:"next_cursor,omitempty"`
+	Revision   int64   `json:"policy_revision"`
+}
 type MutationResult struct {
 	ResourceID string `json:"resource_id,omitempty"`
 	GrantID    string `json:"grant_id,omitempty"`

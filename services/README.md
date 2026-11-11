@@ -82,7 +82,15 @@ For a role principal, use `owner`, `admin`, `member` or `guest` as `principal_id
 Revoke at the same URL with `{"grant_id":"<grant UUID>"}`. Access verifies that
 the grant belongs to the root from the URL. The response includes the grant ID,
 state and policy revision. Browser callers use session cookies plus Origin/CSRF
-instead of Bearer. Grant listing is not exposed yet.
+instead of Bearer.
+
+GET the same URL with `?limit=100` to list direct grants; follow `next_cursor`
+using `&cursor=<grant UUID>`. The required limit is 1–100. The caller must have
+`access.grants.manage` even to read this list. The response contains `resource_id`,
+`grants`, `policy_revision` and optional `next_cursor`; entries expose grant ID,
+principal kind/ID, action and optional expiry. Revoked/expired grants and implicit
+or inherited rights are excluded. This lists stored grants rather than effective
+permissions. An empty list is returned as `[]`.
 
 This requires signed replacement approvals and updated Task/Notify deployment;
 see [development](../docs/DEVELOPMENT.md#browser-and-cli-setup). Deploy the updated

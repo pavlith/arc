@@ -50,5 +50,8 @@ func (c *Client) AddGrant(ctx context.Context, q GrantRequest) (MutationResult, 
 func (c *Client) RevokeGrant(ctx context.Context, q RevokeRequest) (MutationResult, error) {
 	return invokeRPC[RevokeRequest, MutationResult](ctx, c, "grants.revoke", q)
 }
+func (c *Client) ListGrants(ctx context.Context, q ListGrantsRequest) (ListGrantsResult, error) {
+	return invokeRPC[ListGrantsRequest, ListGrantsResult](ctx, c, "grants.list", q)
+}
 
 var _ Checker = (*Client)(nil)

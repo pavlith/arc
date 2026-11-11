@@ -204,6 +204,17 @@ not enable the endpoint in an existing deployment. Include
 permissions, and the existing Access grant RPC permissions for Task. API request
 and response examples are in [services](../services/README.md#task-permission-api).
 
+Task 0.0.9 adds GET on that grants URL via `task.roots.grants.list`. Add the exact
+Gate → Task operation with action `access.grants.manage`, the corresponding Task
+→ Access `check` approval, and `access.v1.grants.list` with action
+`access.grants.manage` and downstream source
+`task/v1:task.roots.grants.list`. Allow the new exact broker subjects
+`rpc.task.v1.roots.grants.list` (Gate publish/Task subscribe) and
+`rpc.access.v1.grants.list` (Task publish/Core subscribe). Deploy updated Core
+first, then replace the Task approval/routes and Notify producer digest using
+the same signed replacement workflow. No migration or event schema changes are
+required.
+
 ## Agent workflow
 
 Read `AGENTS.md`, applicable skill and only relevant normative sections. Project

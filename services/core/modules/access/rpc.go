@@ -51,6 +51,7 @@ func (c *Core) BindInternal(s *sdk.Service) error {
 		func() error { return bind(s, c, "list_accessible_roots", false, c.ListAccessibleRoots) },
 		func() error { return bind(s, c, "grants.add", true, c.AddGrant) },
 		func() error { return bind(s, c, "grants.revoke", true, c.RevokeGrant) },
+		func() error { return bind(s, c, "grants.list", false, c.ListGrants) },
 	}
 	for _, register := range registrations {
 		if e := register(); e != nil {

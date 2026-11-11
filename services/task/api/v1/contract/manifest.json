@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "service": {
     "name": "task",
-    "build_version": "0.0.8",
+    "build_version": "0.0.9",
     "api_major": 1
   },
   "resources": [
@@ -192,6 +192,34 @@
         "bindings": [
           { "source": "path", "name": "workspace_id", "field": "workspace_id", "type": "string" },
           { "source": "path", "name": "acl_root_id", "field": "acl_root_id", "type": "string" }
+        ]
+      }
+    },
+    {
+      "id": "task.roots.grants.list",
+      "subject": "rpc.task.v1.roots.grants.list",
+      "kind": "query",
+      "request_schema": "schemas/grants-list.json",
+      "response_schema": "schemas/grants.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "task.workspace",
+        "action": "access.grants.manage",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/grants",
+        "success_status": 200,
+        "bindings": [
+          { "source": "path", "name": "workspace_id", "field": "workspace_id", "type": "string" },
+          { "source": "path", "name": "acl_root_id", "field": "acl_root_id", "type": "string" },
+          { "source": "query", "name": "limit", "field": "limit", "type": "integer" },
+          { "source": "query", "name": "cursor", "field": "cursor", "type": "string" }
         ]
       }
     }

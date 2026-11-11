@@ -484,7 +484,7 @@ M6: integrated single-node Docker lifecycle, approved templates, desired/observe
 | Calendars | Personal/shared calendars, events and CalDAV |
 | Contacts | Address books and CardDAV |
 | Files | Files/versions/shares, local/S3 storage and WebDAV |
-| Pages | Hierarchical Tiptap documents/history/resource links; no Notion databases MVP |
+| Pages | Owner-local personal/workspace Tiptap pages, tree, versions/restore, templates and authorized resource refs; see [Pages](PAGES.md) |
 | Agents | Bounded runs, approved tools and consent |
 | Workflows | Events/schedules, CEL, Starlark, durable typed actions |
 | Connectors | Owner connections, external APIs, webhooks and optional DAV sources |
@@ -527,6 +527,14 @@ Files root grants use scope-bound user-only add/revoke commands, with live
 keys. Chunk authorization shares the current Files transaction only for local
 root resolution; each remote Core session/ACL check remains live. This avoids
 re-entering the single owner SQLite connection during streamed writes.
+
+Pages content snapshots and embedded references use a closed compound read
+check for the exact pages create/update/restore and template create/update/use
+sources. Their signed Access.Check mappings may include pages.read alongside
+the declared write/create action. Restore/template use perform this read check
+before replay. Native Pages references resolve through Go interfaces and the
+same live root check; cross-domain references use the signed read edges above.
+Moves/archives return only mutation metadata. See [Pages](PAGES.md).
 
 `task.roots.grants` is exposed as POST
 `/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/grants`. Adding requires

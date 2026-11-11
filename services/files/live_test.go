@@ -45,6 +45,9 @@ import (
 	"github.com/pavlith/arc/services/files/storage"
 	"github.com/pavlith/arc/services/files/stream"
 	gate "github.com/pavlith/arc/services/gate/modules/http"
+	pagesservice "github.com/pavlith/arc/services/pages"
+	pagesv1 "github.com/pavlith/arc/services/pages/api/v1"
+	pagesmigrations "github.com/pavlith/arc/services/pages/migrations"
 	taskservice "github.com/pavlith/arc/services/task"
 	taskv1 "github.com/pavlith/arc/services/task/api/v1"
 	"github.com/pavlith/arc/test/testdb"
@@ -85,7 +88,7 @@ func TestFilesLive(t *testing.T) {
 			t.Logf("RPC diagnostics: %s", logs.Bytes())
 		}
 	})
-	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 240*time.Second)
 	defer cancel()
 	must := func(err error) {
 		t.Helper()
@@ -126,7 +129,7 @@ func TestFilesLive(t *testing.T) {
 	pools.AppendCertsFromPEM(caPEM)
 	seedFiles := map[string]string{}
 	pubs := map[string]string{}
-	for _, role := range []string{"core", "gate", "files", "task", "admin"} {
+	for _, role := range []string{"core", "gate", "files", "task", "pages", "admin"} {
 		kp, e := nkeys.CreateUser()
 		must(e)
 		seed, e := kp.Seed()
@@ -147,11 +150,12 @@ jetstream {store_dir: %q}
 tls {cert_file: %q, key_file: %q}
 authorization {users: [
  {nkey: %q, permissions: {publish: ["_INBOX.>","evt.arc.fabric.routes.changed","ctl.arc.fabric.probe.>","$SRV.>"], subscribe: ["rpc.identity.v1.>","rpc.access.v1.>","ctl.arc.fabric.>","$SRV.>","_INBOX.>"]}},
- {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","rpc.files.v1.>","rpc.task.v1.>","ctl.arc.fabric.routes"], subscribe: ["_INBOX.>"]}},
+ {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","rpc.files.v1.>","rpc.task.v1.>","rpc.pages.v1.>","ctl.arc.fabric.routes"], subscribe: ["_INBOX.>"]}},
  {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","ctl.arc.fabric.>","evt.files.catalog.changed.v1","_INBOX.>","$SRV.>"], subscribe: ["rpc.files.v1.>","ctl.arc.fabric.probe.>","_INBOX.>","$SRV.>"]}},
  {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","rpc.files.v1.files.get","ctl.arc.fabric.>","evt.task.>","_INBOX.>","$SRV.>"], subscribe: ["rpc.task.v1.>","ctl.arc.fabric.probe.>","_INBOX.>","$SRV.>"]}},
+ {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","rpc.files.v1.files.get","rpc.files.v1.personal.files.get","rpc.task.v1.work.get","ctl.arc.fabric.>","evt.pages.catalog.changed.v1","_INBOX.>","$SRV.>"], subscribe: ["rpc.pages.v1.>","ctl.arc.fabric.probe.>","_INBOX.>","$SRV.>"]}},
  {nkey: %q}
-]}`, port, filepath.Join(dir, "js"), certFile, keyFile, pubs["core"], pubs["gate"], pubs["files"], pubs["task"], pubs["admin"])
+]}`, port, filepath.Join(dir, "js"), certFile, keyFile, pubs["core"], pubs["gate"], pubs["files"], pubs["task"], pubs["pages"], pubs["admin"])
 	confFile := write("nats.conf", []byte(conf))
 	logFile, e := os.Create(filepath.Join(dir, "nats.log"))
 	must(e)
@@ -200,7 +204,8 @@ authorization {users: [
 	must(e)
 	baseline := access.Approval{AdminUsers: []string{alice}, Deployments: []access.Deployment{{Definition: "gate", Instance: "live-gate"}, {Definition: "files", Instance: "live-files"}}}
 	taskKey := liveKey()
-	baseline.Deployments = append(baseline.Deployments, access.Deployment{Definition: "task", Instance: "live-task"})
+	pagesKey := liveKey()
+	baseline.Deployments = append(baseline.Deployments, access.Deployment{Definition: "task", Instance: "live-task"}, access.Deployment{Definition: "pages", Instance: "live-pages"})
 	static, e := access.NewContracts(operator.Public().(ed25519.PublicKey), []access.Approved{liveApproval(operator, baseline)})
 	must(e)
 	acl := &access.Core{GormDB: coreDB, Identity: id, Contracts: static, Domain: access.ReceiptVerifier{Keys: id.Verifier().Keys}}
@@ -212,6 +217,9 @@ authorization {users: [
 	taskAccount, e := id.RegisterService(ctx, sa, "task", "live-task")
 	must(e)
 	must(id.AddServiceKey(ctx, sa, taskAccount, "live-task", taskKey.Public().(ed25519.PublicKey), "mount:live", time.Now().Add(time.Hour)))
+	pagesAccount, e := id.RegisterService(ctx, sa, "pages", "live-pages")
+	must(e)
+	must(id.AddServiceKey(ctx, sa, pagesAccount, "live-pages", pagesKey.Public().(ed25519.PublicKey), "mount:live", time.Now().Add(time.Hour)))
 	for _, v := range []struct {
 		id, kid string
 		k       ed25519.PrivateKey
@@ -228,6 +236,9 @@ authorization {users: [
 
 	for _, op := range []string{"invocations.verify", "invocations.exchange_service"} {
 		baseline.Rules = append(baseline.Rules, access.Rule{Caller: taskAccount, Audience: "identity/v1", Operation: "identity.v1." + op, ActorKinds: []string{"bootstrap"}})
+	}
+	for _, op := range []string{"invocations.verify", "invocations.exchange_service"} {
+		baseline.Rules = append(baseline.Rules, access.Rule{Caller: pagesAccount, Audience: "identity/v1", Operation: "identity.v1." + op, ActorKinds: []string{"bootstrap"}})
 	}
 	f := &fabric.Core{GormDB: coreDB, Identity: id, ApprovalKey: operator.Public().(ed25519.PublicKey), Bootstrap: []access.Approved{liveApproval(operator, baseline)}, SnapshotKey: coreKey, SnapshotKid: id.SigningKid, RouteTrustKey: trust}
 	acl.ContractSource = f
@@ -630,6 +641,203 @@ authorization {users: [
 	avatarEnv, e := resource.ParseAvatar(avatar.Receipt)
 	must(e)
 	must(resource.VerifyAvatar(filesKey.Public().(ed25519.PublicKey), avatarEnv, time.Now()))
+
+	// Pages has its own database, signed installation, root lifecycle and event stream.
+	pageDB, e := database.Open(ctx, filepath.Join(dir, "pages.sqlite"))
+	must(e)
+	defer database.Close(pageDB)
+	must(database.Migrate(ctx, pageDB, pagesmigrations.SQLite()))
+	must(database.Migrate(ctx, pageDB, pagesmigrations.SQLite()))
+	pc, e := contract.Compile(pagesv1.Artifact())
+	must(e)
+	pagePolicy := access.Approval{ContractDigests: map[string]string{}}
+	for _, r := range pc.Manifest.Resources {
+		pagePolicy.ContractDigests[r.Type] = pc.Digest
+		pagePolicy.Types = append(pagePolicy.Types, access.TypeSpec{Type: r.Type, Provider: pagesAccount, Actions: r.Actions, ShareAction: r.ShareAction, CreateAction: r.CreateAction, DeleteAction: r.DeleteAction})
+	}
+	pageSubjects, pageSources := []string{}, []string{}
+	pageDown := map[string][]string{}
+	for _, op := range pc.Manifest.Operations {
+		pageSubjects = append(pageSubjects, op.Subject)
+		pagePolicy.Rules = append(pagePolicy.Rules, access.Rule{Caller: gateID, Audience: "pages/v1", Operation: op.ID, ActorKinds: []string{"user"}, Actions: []string{op.Auth.Action}})
+		src := "pages/v1:" + op.ID
+		pageSources = append(pageSources, src)
+		pageDown[src] = []string{op.Auth.Action}
+		baseID := strings.Replace(op.ID, "pages.personal.", "pages.", 1)
+		switch baseID {
+		case "pages.pages.create", "pages.pages.update", "pages.pages.restore", "pages.templates.create", "pages.templates.update", "pages.templates.use":
+			if op.Auth.Action != "pages.read" {
+				pageDown[src] = append(pageDown[src], "pages.read")
+			}
+		}
+	}
+	pageActions := pc.Manifest.Resources[0].Actions
+	pagePolicy.Rules = append(pagePolicy.Rules, access.Rule{Caller: pagesAccount, Audience: "access/v1", Operation: "access.v1.check", ActorKinds: []string{"user"}, Actions: pageActions, DownstreamFrom: pageSources, DownstreamActions: pageDown})
+	for _, op := range []string{"resources.reserve", "resources.activate", "grants.add", "grants.revoke"} {
+		sources := []string{"pages/v1:pages.pages.create", "pages/v1:pages.personal.pages.create"}
+		acts := []string{"pages.create"}
+		if strings.HasPrefix(op, "grants.") {
+			sources = []string{"pages/v1:pages.roots.grants", "pages/v1:pages.personal.roots.grants"}
+			acts = pageActions
+		}
+		bindings := map[string][]string{}
+		for _, src := range sources {
+			bindings[src] = acts
+		}
+		pagePolicy.Rules = append(pagePolicy.Rules, access.Rule{Caller: pagesAccount, Audience: "access/v1", Operation: "access.v1." + op, ActorKinds: []string{"user"}, Actions: acts, DownstreamFrom: sources, DownstreamActions: bindings})
+	}
+	for _, target := range []struct{ aud, op, action string }{{"files/v1", v1.FileGet.ID, "files.read"}, {"files/v1", v1.PersonalFileGet.ID, "files.read"}, {"task/v1", taskv1.WorkGet.ID, "task.read"}} {
+		sources := []string{}
+		bindings := map[string][]string{}
+		for _, op := range pc.Manifest.Operations {
+			baseID := strings.Replace(op.ID, "pages.personal.", "pages.", 1)
+			switch baseID {
+			case "pages.pages.create", "pages.pages.update", "pages.pages.restore", "pages.templates.create", "pages.templates.update", "pages.templates.use", "pages.pages.preview":
+				src := "pages/v1:" + op.ID
+				sources = append(sources, src)
+				bindings[src] = []string{target.action}
+			}
+		}
+		pagePolicy.Rules = append(pagePolicy.Rules, access.Rule{Caller: pagesAccount, Audience: target.aud, Operation: target.op, ActorKinds: []string{"user"}, Actions: []string{target.action}, DownstreamFrom: sources, DownstreamActions: bindings})
+	}
+	pi := fabric.Installation{Publisher: "office-live-fixture", Account: pagesAccount, Deployment: "live-pages", Artifact: pagesv1.Artifact(), Subjects: pageSubjects, Policy: liveApproval(operator, pagePolicy)}
+	pr, psig := liveSigned(operator, pi)
+	_, e = f.Approve(ctx, fabric.SignedInstallation{Payload: pr, Signature: psig})
+	must(e)
+	_, e = js.AddStream(&nats.StreamConfig{Name: "PAGES", Subjects: []string{pagesv1.ChangedSubject}, Storage: nats.FileStorage})
+	must(e)
+	pnc, e := sdk.Connect(ctx, cfg("pages"))
+	must(e)
+	defer pnc.Close()
+	prc, e := rpc.NewClient(pnc)
+	must(e)
+	pageClient := identity.Client{RPC: prc, ServiceID: pagesAccount, Kid: "live-pages", PrivateKey: pagesKey}
+	pageRegistry := &fabric.Client{Account: pagesAccount, Kid: "live-pages", Key: pagesKey, CoreKey: coreKey.Public().(ed25519.PublicKey)}
+	pageApp, e := pagesservice.New(pagesservice.Config{GormDB: pageDB, Identity: pageClient, CoreTrust: coreKey.Public().(ed25519.PublicKey), Runtime: sdk.AppConfig{Connection: cfg("pages"), Instance: "live-pages", Registry: pageRegistry}})
+	must(e)
+	must(pageApp.Start(ctx))
+	defer pageApp.Stop()
+	provisionPage := func(user string, session identity.UserSession, workspace string) pagesv1.Scope {
+		prefix := "pages."
+		if workspace == "" {
+			prefix = "pages.personal."
+		}
+		accessContext := func(op string) context.Context {
+			source := prefix + "pages.create"
+			if strings.HasPrefix(op, "grants.") {
+				source = prefix + "roots.grants"
+			}
+			return liveDomainAccess(t, ctx, gateClient, pageClient, session, workspace, source, op)
+		}
+		kind, typ, owner := "workspace", "pages.workspace", workspace
+		if workspace == "" {
+			kind, typ, owner = "user", "pages.personal", user
+		}
+		reserved, e := ac.Reserve(accessContext("resources.reserve"), access.ReserveRequest{Type: typ, OwnerKind: kind, OwnerID: owner, WorkspaceID: workspace})
+		must(e)
+		scope := pagesv1.Scope{WorkspaceID: workspace, RootID: reserved.ResourceID}
+		domainOwner := ""
+		if workspace == "" {
+			domainOwner = user
+		}
+		receipt, e := pageApp.Pages.PrepareRoot(ctx, scope, domainOwner, pagesKey, "live-pages", pagesAccount)
+		must(e)
+		_, e = ac.Activate(accessContext("resources.activate"), access.LifecycleRequest{ResourceID: scope.RootID, Receipt: receipt})
+		must(e)
+		must(pageApp.Pages.ActivateRoot(ctx, scope))
+		if workspace != "" {
+			for _, action := range []string{"pages.create", "pages.read", "pages.write", "pages.delete"} {
+				_, e = ac.AddGrant(accessContext("grants.add"), access.GrantRequest{ResourceID: scope.RootID, PrincipalKind: "user", PrincipalID: user, Action: action})
+				must(e)
+			}
+		}
+		return scope
+	}
+	pwa, pwb, ppa, ppb := provisionPage(alice, sa, wa), provisionPage(bob, sb, wb), provisionPage(alice, sa, ""), provisionPage(bob, sb, "")
+	must(g.Reconcile(ctx))
+	pageBase := func(scope pagesv1.Scope) string {
+		if scope.WorkspaceID == "" {
+			return "/api/v1/pages/personal/roots/" + scope.RootID
+		}
+		return "/api/v1/pages/workspaces/" + scope.WorkspaceID + "/roots/" + scope.RootID
+	}
+	emptyDocument := json.RawMessage(`{"type":"doc","content":[{"type":"paragraph"}]}`)
+	createPage := func(scope pagesv1.Scope, token, title, parent string, document json.RawMessage) pagesv1.Page {
+		body, _ := json.Marshal(map[string]any{"title": title, "document": document})
+		if parent != "" {
+			body, _ = json.Marshal(map[string]any{"title": title, "document": document, "parent_id": parent})
+		}
+		status, b := request("POST", pageBase(scope)+"/pages", string(body), token, "application/json")
+		if status != 201 {
+			t.Fatalf("page create: %d %s", status, b)
+		}
+		var page pagesv1.Page
+		must(json.Unmarshal(b, &page))
+		return page
+	}
+	for _, tc := range []struct {
+		scope        pagesv1.Scope
+		token, other string
+	}{{pwa, ta, tb}, {pwb, tb, ta}, {ppa, ta, tb}, {ppb, tb, ta}} {
+		page := createPage(tc.scope, tc.token, "Private page", "", emptyDocument)
+		status, b := request("GET", pageBase(tc.scope)+"/pages/"+page.ID, "", tc.other, "")
+		if !isDenied(status) || bytes.Contains(b, []byte("Private page")) {
+			t.Fatalf("private page leak: %d %s", status, b)
+		}
+	}
+	parent := createPage(pwa, ta, "Parent", "", emptyDocument)
+	child := createPage(pwa, ta, "Child", parent.ID, emptyDocument)
+	pagePath := pageBase(pwa) + "/pages/" + child.ID
+	status, body = request("POST", pageBase(pwa)+"/pages/"+parent.ID+"/move", fmt.Sprintf(`{"revision":%d,"parent_id":%q}`, parent.Revision, child.ID), ta, "application/json")
+	if status != 400 {
+		t.Fatalf("page cycle accepted: %d %s", status, body)
+	}
+	linkDoc, _ := json.Marshal(map[string]any{"type": "doc", "content": []any{map[string]any{"type": "fileAttachment", "attrs": map[string]any{"ref": targetRef}}}})
+	updatedBody, _ := json.Marshal(map[string]any{"title": "Updated child", "document": json.RawMessage(linkDoc), "revision": child.Revision})
+	status, body = request("PATCH", pagePath, string(updatedBody), ta, "application/json")
+	if status != 200 {
+		t.Fatalf("page update/ref: %d %s", status, body)
+	}
+	var changedPage pagesv1.Page
+	must(json.Unmarshal(body, &changedPage))
+	status, body = request("POST", pageBase(pwa)+"/grants", fmt.Sprintf(`{"principal_id":%q,"action":"pages.read"}`, bob), ta, "application/json")
+	if status != 200 {
+		t.Fatalf("page share: %d %s", status, body)
+	}
+	status, body = request("POST", pagePath+"/references/preview", string(previewBody), tb, "application/json")
+	if !isDenied(status) || bytes.Contains(body, []byte("live.bin")) {
+		t.Fatalf("page forbidden embed leaked: %d %s", status, body)
+	}
+	status, body = request("POST", pagePath+"/move", fmt.Sprintf(`{"revision":%d}`, changedPage.Revision), ta, "application/json")
+	if status != 200 {
+		t.Fatalf("page move: %d %s", status, body)
+	}
+	var movedPage pagesv1.Mutation
+	must(json.Unmarshal(body, &movedPage))
+	status, body = request("POST", pagePath+"/restore", fmt.Sprintf(`{"revision":%d,"version":1}`, movedPage.Revision), ta, "application/json")
+	if status != 200 {
+		t.Fatalf("page restore: %d %s", status, body)
+	}
+	var restoredPage pagesv1.Page
+	must(json.Unmarshal(body, &restoredPage))
+	if restoredPage.ParentID != "" || restoredPage.Title != "Child" {
+		t.Fatal("restore changed hierarchy or lost snapshot")
+	}
+	templateInput, _ := json.Marshal(map[string]any{"title": "Reusable", "document": emptyDocument})
+	status, body = request("POST", pageBase(pwa)+"/templates", string(templateInput), ta, "application/json")
+	if status != 201 {
+		t.Fatalf("page template: %d %s", status, body)
+	}
+	var template pagesv1.Template
+	must(json.Unmarshal(body, &template))
+	status, body = request("POST", pageBase(pwa)+"/templates/"+template.ID+"/use", `{}`, ta, "application/json")
+	if status != 201 {
+		t.Fatalf("template use: %d %s", status, body)
+	}
+	status, body = request("PATCH", pagePath, fmt.Sprintf(`{"revision":%d,"title":"unsafe","document":{"type":"doc","content":[{"type":"html","text":"<script>"}]}}`, restoredPage.Revision), ta, "application/json")
+	if status != 400 {
+		t.Fatalf("unsafe editor input accepted: %d %s", status, body)
+	}
 	// Share a personal file; revocation immediately denies the same known ID.
 	shared := upload(pa, ta)
 	path := base(pa) + "/files/" + shared.ID
@@ -696,5 +904,30 @@ authorization {users: [
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
-	t.Log("PASS: two users/two workspaces + personal roots, signed approvals/routes, TLS/NKey NATS, mTLS bytes, known-ID isolation, grant/session revoke during transfers, cross-root grant protection, scope substitution, migration replay/outbox, Task attachment preview/revoke and raster avatar receipt")
+	t.Log("PASS: two users/two workspaces + personal roots, signed approvals/routes, TLS/NKey NATS, mTLS bytes, known-ID isolation, grant/session revoke during transfers, cross-root grant protection, scope substitution, migration replay/outbox, Task attachment preview/revoke, raster avatar receipt, Pages scope/tree/editor/restore/template/denied embeds")
+}
+
+func liveDomainAccess(t *testing.T, ctx context.Context, gateClient, domain identity.Client, session identity.UserSession, ws, source, op string) context.Context {
+	t.Helper()
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	audience := strings.Split(source, ".")[0] + "/v1"
+	cred, err := gateClient.Credentials("identity.exchange_user")
+	must(err)
+	incoming, err := identity.Call[identity.UserExchange, identity.TokenResult](ctx, gateClient, "identity.v1.invocations.exchange_user", identity.UserExchange{Assertion: cred.Token, Session: session, Target: identity.Target{Audience: audience, Operation: source, WorkspaceID: ws}})
+	must(err)
+	outgoing, err := identity.Call[identity.ServiceExchange, identity.TokenResult](ctx, domain, "identity.v1.invocations.exchange_service", identity.ServiceExchange{IncomingToken: incoming.Token, IncomingOperation: source, Target: identity.Target{Audience: "access/v1", Operation: "access.v1." + op, WorkspaceID: ws}})
+	must(err)
+	parts := strings.Split(outgoing.Token, ".")
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	must(err)
+	var claims security.Claims
+	must(json.Unmarshal(raw, &claims))
+	return rpc.WithCredentials(ctx, rpc.Credentials{Token: outgoing.Token, IdempotencyKey: folders.NewID(), Proof: func(subject string, raw []byte) (security.Proof, error) {
+		return security.SignProof(domain.PrivateKey, subject, raw, claims.JTI, security.Proof{Kid: domain.Kid, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Nonce: folders.NewID()})
+	}})
 }

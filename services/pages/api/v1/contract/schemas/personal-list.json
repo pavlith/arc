@@ -1,0 +1,34 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "const": ""
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "parent_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "query": {
+      "type": "string",
+      "maxLength": 256
+    },
+    "cursor": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+    }
+  },
+  "required": [
+    "acl_root_id",
+    "limit"
+  ],
+  "additionalProperties": false
+}

@@ -5,6 +5,7 @@
 | `core/` | `cmd/arc-core`, owner SQLite, private RPC and signed approval for Identity profile, workspace lifecycle and invitations, member/group management and administrator provisioning | Runtime policy and adapter #13 |
 | `gate/` | `cmd/arc-gate`, browser cookies, CLI tokens, signed domain routes, Identity routes and optional UI assets | WS/DAV adapters (shared realtime protocol in docs/REALTIME.md) |
 | `task/` | `cmd/arc-task`, scoped Teams/workflow, shared work items, projects/labels, comments/history, subtasks/links, atomic bulk updates, saved-view APIs and atomic replay/outbox | Triage, UI adaptation and live template acceptance #10 |
+| `pages/` | `cmd/arc-pages`, owner SQLite, scoped Tiptap tree, revisions/restore, templates, target-authorized references and metadata outbox | UI, production installation and large-scale acceptance #11 |
 | `files/` | `cmd/arc-files`, owner SQLite, signed folder/file/upload metadata, hidden mTLS stream receiver, live ACL and bounded chunks, post-commit cleanup and metadata outbox | Operator installation, live certificate/Core acceptance, production installation and large-transfer acceptance #29 |
 | `notify/` | `cmd/arc-notify`, personal Inbox/subscriptions and persisted fake outbound intents | Realtime and real channels #9/#12 |
 | `agent/` | `cmd/arc-agent`, private node RPC, durable journal, restricted systemd and Docker drivers | Admin/Gate/UI, live Docker acceptance, LXD and Core reconcile #13 |
@@ -468,3 +469,8 @@ Files' personal/workspace live backend fixture: `bash scripts/test-files-live.sh
 Task Files attachments and Identity avatar asset binding:
 [resource integration](../docs/RESOURCE-REFERENCES.md). Task 0.9.0 requires
 migration `000009_attachments`; Core requires `000014_avatar_assets`.
+
+Pages startup: `bash scripts/migrate.sh pages /absolute/pages.sqlite`, then
+`go run ./cmd/arc-pages -config /path/to/pages.json`. Configuration example:
+[Pages](../deploy/pages/config.example.json). The Pages 0.1.0 artifact has 32
+approved operations across personal/workspace roots. See [Pages contract](../docs/PAGES.md).

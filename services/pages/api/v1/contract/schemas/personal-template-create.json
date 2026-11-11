@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "const": ""
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 256
+    },
+    "document": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "acl_root_id",
+    "title",
+    "document"
+  ],
+  "additionalProperties": false
+}

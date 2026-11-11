@@ -1,0 +1,31 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "const": ""
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "page_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "required": [
+    "acl_root_id",
+    "page_id",
+    "version",
+    "revision"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,49 @@
+{
+  "type": "object",
+  "properties": {
+    "templates": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "const": ""
+          },
+          "acl_root_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "workspace_id",
+          "acl_root_id",
+          "id",
+          "title",
+          "revision"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "next_cursor": {
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "required": [
+    "templates"
+  ],
+  "additionalProperties": false
+}

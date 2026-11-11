@@ -28,3 +28,19 @@ func referenceReadRule(r access.Rule, account, audience string, compiled *contra
 	}
 	return true
 }
+
+// Pages snapshots and resource embeds require a second, live read decision.
+// This closed compound contract cannot widen arbitrary source operations.
+func pagesReadCheck(source contract.Operation, target, action string) bool {
+	if target != "access.v1.check" || action != "pages.read" || source.Auth.Mode != "resource" || (source.Auth.ResourceType != "pages.workspace" && source.Auth.ResourceType != "pages.personal") {
+		return false
+	}
+	id := strings.Replace(source.ID, "pages.personal.", "pages.", 1)
+	switch id {
+	case "pages.pages.create", "pages.templates.use":
+		return source.Auth.Action == "pages.create"
+	case "pages.pages.update", "pages.pages.restore", "pages.templates.create", "pages.templates.update":
+		return source.Auth.Action == "pages.write"
+	}
+	return false
+}

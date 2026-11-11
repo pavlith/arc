@@ -31,3 +31,19 @@ func TestReferenceReadEdgesAreExactUserReads(t *testing.T) {
 		}
 	}
 }
+
+func TestPagesCompoundReadCheckDoesNotWidenOtherSources(t *testing.T) {
+	op := contract.Operation{ID: "pages.templates.use", Auth: contract.Auth{Mode: "resource", ResourceType: "pages.workspace", Action: "pages.create"}}
+	if !pagesReadCheck(op, "access.v1.check", "pages.read") {
+		t.Fatal("template compound read rejected")
+	}
+	op.Auth.Action = "pages.delete"
+	if pagesReadCheck(op, "access.v1.check", "pages.read") {
+		t.Fatal("mismatched source action accepted")
+	}
+	op.Auth.Action = "pages.create"
+	op.ID = "pages.pages.archive"
+	if pagesReadCheck(op, "access.v1.check", "pages.read") {
+		t.Fatal("unrelated source widened")
+	}
+}

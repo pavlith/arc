@@ -14,6 +14,7 @@ import (
 	coremigrations "github.com/pavlith/arc/services/core/migrations"
 	filesmigrations "github.com/pavlith/arc/services/files/migrations"
 	notifymigrations "github.com/pavlith/arc/services/notify/migrations"
+	pagesmigrations "github.com/pavlith/arc/services/pages/migrations"
 	taskmigrations "github.com/pavlith/arc/services/task/migrations"
 )
 
@@ -23,12 +24,14 @@ func ownerMigrations(owner string) ([]*gormigrate.Migration, error) {
 		return coremigrations.SQLite(), nil
 	case "task":
 		return taskmigrations.SQLite(), nil
+	case "pages":
+		return pagesmigrations.SQLite(), nil
 	case "files":
 		return filesmigrations.SQLite(), nil
 	case "notify":
 		return notifymigrations.SQLite(), nil
 	default:
-		return nil, fmt.Errorf("unsupported SQLite owner %q (core, task, notify, files)", owner)
+		return nil, fmt.Errorf("unsupported SQLite owner %q (core, task, notify, files, pages)", owner)
 	}
 }
 
@@ -49,7 +52,7 @@ func run(ctx context.Context, owner, path string) error {
 }
 
 func main() {
-	owner := flag.String("service", "", "SQLite service owner: core, task, notify or files")
+	owner := flag.String("service", "", "SQLite service owner: core, task, notify, files or pages")
 	path := flag.String("db", "", "absolute path to the service-owned SQLite file")
 	flag.Parse()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

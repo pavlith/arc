@@ -1,0 +1,40 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "const": ""
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 256
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "document": {
+      "type": "object"
+    },
+    "archived": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "acl_root_id",
+    "id",
+    "title",
+    "revision",
+    "document",
+    "archived"
+  ],
+  "additionalProperties": false
+}

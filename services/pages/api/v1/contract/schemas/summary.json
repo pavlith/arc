@@ -1,0 +1,57 @@
+{
+  "type": "object",
+  "properties": {
+    "ref": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "file",
+            "task",
+            "page"
+          ]
+        },
+        "workspace_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "const": ""
+            }
+          ]
+        },
+        "acl_root_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "required": [
+        "kind",
+        "workspace_id",
+        "acl_root_id",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 300
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "required": [
+    "ref",
+    "title",
+    "revision"
+  ],
+  "additionalProperties": false
+}

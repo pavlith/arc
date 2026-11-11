@@ -234,7 +234,7 @@ share revoke stops access; large uploads do not overflow NATS.
 - **P-04 (later):** Yjs collaboration; Notion databases excluded from MVP.
 
 Acceptance: create/move pages with correct section permissions; forbidden embeds
-reveal neither content nor preview. No Pages service/UI exists; work is #11.
+reveal neither content nor preview. The Pages backend is implemented under #11; UI remains paused.
 
 ### 2.10 Connectors (P2)
 

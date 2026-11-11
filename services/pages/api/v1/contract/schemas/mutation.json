@@ -1,0 +1,27 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "archived": {
+      "type": "boolean"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "revision",
+    "archived",
+    "updated_at"
+  ],
+  "additionalProperties": false
+}

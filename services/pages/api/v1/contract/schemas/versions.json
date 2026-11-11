@@ -1,0 +1,40 @@
+{
+  "type": "object",
+  "properties": {
+    "versions": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "revision",
+          "title",
+          "created_at"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "next_before": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "required": [
+    "versions"
+  ],
+  "additionalProperties": false
+}

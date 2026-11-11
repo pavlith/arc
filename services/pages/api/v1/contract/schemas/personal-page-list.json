@@ -1,0 +1,68 @@
+{
+  "type": "object",
+  "properties": {
+    "pages": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "const": ""
+          },
+          "acl_root_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "parent_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "acl_root_id",
+          "id",
+          "title",
+          "revision",
+          "archived",
+          "created_at",
+          "updated_at"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "next_cursor": {
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "required": [
+    "pages"
+  ],
+  "additionalProperties": false
+}

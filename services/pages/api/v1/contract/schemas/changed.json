@@ -1,0 +1,48 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "uuid"
+        },
+        {
+          "const": ""
+        }
+      ]
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "entity_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "action": {
+      "enum": [
+        "created",
+        "updated",
+        "moved",
+        "archived",
+        "restored",
+        "template.created",
+        "template.updated",
+        "template.archived"
+      ]
+    }
+  },
+  "required": [
+    "workspace_id",
+    "acl_root_id",
+    "entity_id",
+    "revision",
+    "action"
+  ],
+  "additionalProperties": false
+}

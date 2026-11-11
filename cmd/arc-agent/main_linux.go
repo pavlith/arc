@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"syscall"
 	"strings"
+	"syscall"
 
 	"github.com/pavlith/arc/services/agent"
 	"github.com/pavlith/arc/services/agent/drivers/apt"

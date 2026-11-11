@@ -1,8 +1,6 @@
 # Shared realtime subscription contract
 
-Owner: [#27](https://github.com/pavlith/arc/issues/27).
-Delivery: stage 2 of [shortplan](shortplan.md).
-The Notify event producer and an opt-in Gate WSS implementation are now in \`dev\`.\nThis is **not a deployment or acceptance claim**; exact broker permissions and\nrevocation/overflow integration checks are still outstanding.
+Owner: [#27](https://github.com/pavlith/arc/issues/27). Gate WSS and Notify invalidations exist in `main` but are disabled until an explicitly approved operator installation. This document defines the current protocol; code presence does not prove production readiness.
 
 ## Ownership and transport
 

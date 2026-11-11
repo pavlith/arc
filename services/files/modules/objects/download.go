@@ -92,3 +92,22 @@ func (s *Module) StreamDownload(ctx context.Context, ref filesv1.FileRef, dst io
 	}
 	return fileDTO(row), nil
 }
+
+// PrepareDownload checks live scope permissions before returning safe metadata.
+// Callers must still use StreamDownload, which rechecks on every block.
+func (s *Module) PrepareDownload(ctx context.Context, ref filesv1.FileRef) (filesv1.File, error) {
+	if s == nil || s.DB == nil || s.Authorize == nil || ctx == nil {
+		return filesv1.File{}, security.ErrUnavailable
+	}
+	cl, ok := rpc.VerifiedClaims(ctx)
+	meta, hasMeta := rpc.Metadata(ctx)
+	var scope filesv1.Scope
+	if !ok || !hasMeta || cl.SessionID == "" || cl.WorkspaceID != ref.WorkspaceID ||
+		json.Unmarshal(meta.Payload,&scope) != nil || scope != ref.Scope {
+		return filesv1.File{},security.ErrDenied
+	}
+	if err := s.Authorize(ctx,ref.RootID,"files.read"); err != nil {
+		return filesv1.File{},err
+	}
+	return s.getFile(ctx,ref)
+}

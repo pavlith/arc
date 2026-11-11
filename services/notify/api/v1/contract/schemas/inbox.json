@@ -51,10 +51,6 @@
             "type": "string",
             "format": "uuid"
           },
-          "task_id": {
-            "type": "string",
-            "format": "uuid"
-          },
           "kind": {
             "type": "string",
             "enum": [

@@ -54,9 +54,3 @@ func eventAction(ev events.Envelope) string {
 	_ = json.Unmarshal(ev.Payload, &v)
 	return v.Action
 }
-func legacyTask(kind, target string) string {
-	if kind == "task" {
-		return target
-	}
-	return ""
-}

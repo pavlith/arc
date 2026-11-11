@@ -63,7 +63,7 @@ func (m *Module) list(ctx context.Context, q notifyv1.InboxPage) (notifyv1.Inbox
 				if !allowed[(notifyv1.Scope{RootID: row.RootID, ResourceKind: row.ResourceKind}).Key()] {
 					continue
 				}
-				out.Notifications = append(out.Notifications, notifyv1.Notification{NotificationState: state(row), Scope: notifyv1.Scope{WorkspaceID: row.WorkspaceID, RootID: row.RootID, ResourceKind: row.ResourceKind}, TaskID: row.TaskID, ResourceID: row.ResourceID, Kind: row.Kind, CreatedAt: row.CreatedAt})
+				out.Notifications = append(out.Notifications, notifyv1.Notification{NotificationState: state(row), Scope: notifyv1.Scope{WorkspaceID: row.WorkspaceID, RootID: row.RootID, ResourceKind: row.ResourceKind}, ResourceID: row.ResourceID, Kind: row.Kind, CreatedAt: row.CreatedAt})
 				if len(out.Notifications) > q.Limit {
 					break
 				}

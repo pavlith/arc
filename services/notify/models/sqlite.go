@@ -33,7 +33,6 @@ type Notification struct {
 	ReadAt       *time.Time `gorm:"column:read_at"`
 	WorkspaceID  string     `gorm:"column:workspace_id"`
 	RootID       string     `gorm:"column:acl_root_id"`
-	TaskID       string     `gorm:"column:task_id"`
 	ArchivedAt   *time.Time `gorm:"column:archived_at"`
 	SnoozedUntil *time.Time `gorm:"column:snoozed_until"`
 	Revision     int64      `gorm:"column:revision;default:1"`

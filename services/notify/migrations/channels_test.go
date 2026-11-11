@@ -35,6 +35,10 @@ func TestChannelsUpgradePreservesLegacyStateAndForeignKeys(t *testing.T) {
 	if e = db.Raw(`SELECT d.dedup_key,d.attempts,d.delivered_at IS NOT NULL,n.resource_id,n.revision FROM delivery_intents d JOIN notifications n ON n.id=d.notification_id`).Row().Scan(&key, &attempts, &delivered, &target, &revision); e != nil || key != "stable" || attempts != 3 || !delivered || target != "target" || revision != 4 {
 		t.Fatal(key, attempts, delivered, target, revision, e)
 	}
+	var deprecated int
+	if e = db.Raw("SELECT count(*) FROM pragma_table_info('notifications') WHERE name='task_id'").Row().Scan(&deprecated); e != nil || deprecated != 0 {
+		t.Fatalf("duplicate task_id column survived migration: count=%d err=%v", deprecated, e)
+	}
 	if e = db.Exec(`INSERT INTO delivery_intents(notification_id,recipient_user_id,channel,dedup_key)VALUES('missing','u','webhook','bad')`).Error; e == nil {
 		t.Fatal("foreign key disabled")
 	}

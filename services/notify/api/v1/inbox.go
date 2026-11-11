@@ -26,7 +26,6 @@ type NotificationState struct {
 type Notification struct {
 	NotificationState
 	Scope
-	TaskID     string    `json:"task_id,omitempty"`
 	ResourceID string    `json:"resource_id"`
 	Kind       string    `json:"kind"`
 	CreatedAt  time.Time `json:"created_at"`

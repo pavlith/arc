@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/events"
 	"github.com/pavlith/arc/sdk/module"
 	"github.com/pavlith/arc/sdk/rpc"
@@ -21,9 +22,7 @@ import (
 type Service struct {
 	GormDB   *gorm.DB
 	Identity identity.Client
-	Contract interface {
-		Operation(string) (struct{}, error)
-	}
+	Contract *contract.Compiled
 	Check func(context.Context, string, string) error
 }
 
@@ -40,7 +39,7 @@ func NewID() string {
 func (*Service) ID() string { return "folders" }
 
 func (s *Service) Register(r *module.Registry) error {
-	if s == nil || s.GormDB == nil || s.Check == nil {
+	if s == nil || s.GormDB == nil || s.Contract == nil || s.Check == nil {
 		return security.ErrUnavailable
 	}
 	policy := module.Policy{Resource: s.Authorize}

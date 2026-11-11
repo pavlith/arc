@@ -2,6 +2,7 @@ package folders
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -10,7 +11,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/mattn/go-sqlite3"
-	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/events"
 	"github.com/pavlith/arc/sdk/rpc"
 	"github.com/pavlith/arc/services/core/modules/access"
@@ -262,11 +262,7 @@ func (s *Service) changed(ctx context.Context, tx *gorm.DB, scope filesv1.Scope,
 	if err != nil {
 		return unavailable(err)
 	}
-	compiled, err := contract.Compile(filesv1.Artifact())
-	if err != nil {
-		return unavailable(err)
-	}
-	return (events.Store{DB: s.GormDB}).Enqueue(ctx, tx, compiled, filesv1.CatalogChangedSubject,
+	return (events.Store{DB: s.GormDB}).Enqueue(ctx, tx, s.Contract, filesv1.CatalogChangedSubject,
 		events.Envelope{ID: NewID(), Type: filesv1.CatalogChangedName,
 			Version: 1, AggregateID: row.ID, OccurredAt: row.UpdatedAt,
 			Traceparent: meta.Traceparent, Payload: payload})
@@ -274,7 +270,7 @@ func (s *Service) changed(ctx context.Context, tx *gorm.DB, scope filesv1.Scope,
 
 // ProvisionRoot is an internal domain lifecycle, not a browser mutation.
 func (s *Service) PrepareRoot(ctx context.Context, scope filesv1.Scope,
-	key []byte, kid, provider string) (string, error) {
+	key ed25519.PrivateKey, kid, provider string) (string, error) {
 	if err := s.GormDB.WithContext(ctx).Exec(
 		"INSERT INTO roots(acl_root_id,workspace_id,state) VALUES(?,?,'prepared') ON CONFLICT(acl_root_id) DO NOTHING",
 		scope.RootID, scope.WorkspaceID).Error; err != nil {

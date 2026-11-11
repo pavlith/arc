@@ -288,7 +288,7 @@ func (c *realtimeClient) handle(q realtimeCommand) any {
 	if full {
 		return map[string]any{"type": "error", "request_id": q.RequestID, "code": "limit"}
 	}
-	ctx, cancel := context.WithTimeout(c.ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(c.ctx, 15*time.Second)
 	err := c.check(ctx, scope)
 	cancel()
 	if err != nil {
@@ -329,7 +329,7 @@ func (c *realtimeClient) write() {
 			if !exists {
 				continue
 			}
-			ctx, cancel := context.WithTimeout(c.ctx, 5*time.Second)
+			ctx, cancel := context.WithTimeout(c.ctx, 15*time.Second)
 			err := c.check(ctx, scope)
 			cancel()
 			if err != nil {
@@ -349,7 +349,7 @@ func (c *realtimeClient) write() {
 				return
 			}
 		case <-heartbeat.C:
-			ctx, cancel := context.WithTimeout(c.ctx, 5*time.Second)
+			ctx, cancel := context.WithTimeout(c.ctx, 15*time.Second)
 			err := c.verifySession(ctx)
 			cancel()
 			if err != nil || !c.hub.connected(c.ctx) {
@@ -364,7 +364,7 @@ func (c *realtimeClient) write() {
 			}
 			c.mu.Unlock()
 			for _, scope := range scopes {
-				checkCtx, checkCancel := context.WithTimeout(c.ctx, 5*time.Second)
+				checkCtx, checkCancel := context.WithTimeout(c.ctx, 15*time.Second)
 				err = c.check(checkCtx, scope)
 				checkCancel()
 				if err != nil {

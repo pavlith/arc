@@ -146,3 +146,7 @@ are not configured, leave the switch off; code push does not imply rollout.
 ### Strict event binding
 
 The Gate hub rejects Task invalidations without valid workspace, root, entity UUID and positive revision; Inbox events require a valid recipient UUID, optional valid notification UUID and nonnegative revision. A schema-valid but unbound broker event is never routed to a browser. This is defense in depth beyond the signed artifact schema and does not authorize a producer by itself.
+
+### CI latency and negative tests
+
+The live Task subscription runs an authorization pipeline through Identity, Task and Access. The per-subscription/per-invalidation/heartbeat bounded authorization deadline is 15 seconds to tolerate slow isolated CI brokers; failure at that deadline still terminates/denies access. The invalid-proof integration fixture uses an explicit 15-second RPC deadline (rather than 1 second), so a busy runner does not return a deadline error before exercising cryptographic rejection. Neither check caches grants or weakens fail-closed behavior.

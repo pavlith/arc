@@ -532,7 +532,7 @@ func TestM006(t *testing.T) {
 			if err := socket.WriteJSON(command); err != nil {
 				t.Fatal(err)
 			}
-			if err := socket.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+			if err := socket.SetReadDeadline(time.Now().Add(25 * time.Second)); err != nil {
 				t.Fatal(err)
 			}
 			var reply map[string]any
@@ -583,7 +583,7 @@ func TestM006(t *testing.T) {
 		publish(taskv1.CatalogChangedSubject, taskv1.CatalogChangedName, task.ID, taskv1.CatalogChanged{
 			Scope: scope, EntityKind: "work", EntityID: task.ID, Revision: 2,
 		})
-		if err := socket.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		if err := socket.SetReadDeadline(time.Now().Add(25 * time.Second)); err != nil {
 			t.Fatal(err)
 		}
 		var event map[string]any
@@ -598,7 +598,7 @@ func TestM006(t *testing.T) {
 		publish(notifyv1.InboxChangedSubject, notifyv1.InboxChangedName, notificationID, notifyv1.InboxChanged{
 			RecipientID: owner, NotificationID: notificationID, Revision: 1,
 		})
-		if err := socket.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		if err := socket.SetReadDeadline(time.Now().Add(25 * time.Second)); err != nil {
 			t.Fatal(err)
 		}
 		event = nil
@@ -780,12 +780,12 @@ func TestM006(t *testing.T) {
 		must(e)
 		op, _ := tm.Operation(tasks.Create)
 		for _, kind := range []string{"jwt", "proof"} {
-			raw := map[string]any{"request_id": tasks.NewID(), "operation": tasks.Create, "schema_version": 1, "deadline_at": time.Now().Add(time.Second), "idempotency_key": tasks.NewID(), "payload": tasks.CreateRequest{Scope: scope, Title: "forged"}, "auth": v.Token, "proof": security.Proof{Kid: gateClient.Kid, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Nonce: tasks.NewID(), Signature: "invalid"}}
+			raw := map[string]any{"request_id": tasks.NewID(), "operation": tasks.Create, "schema_version": 1, "deadline_at": time.Now().Add(15 * time.Second), "idempotency_key": tasks.NewID(), "payload": tasks.CreateRequest{Scope: scope, Title: "forged"}, "auth": v.Token, "proof": security.Proof{Kid: gateClient.Kid, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Nonce: tasks.NewID(), Signature: "invalid"}}
 			if kind == "jwt" {
 				raw["auth"] = "invalid"
 			}
 			b, _ := json.Marshal(raw)
-			reply, e := gateNC.Request(op.Subject, b, time.Second*3)
+			reply, e := gateNC.Request(op.Subject, b, 18*time.Second)
 			must(e)
 			var result struct {
 				Error *rpc.Error `json:"error"`

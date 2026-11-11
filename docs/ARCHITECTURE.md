@@ -495,6 +495,12 @@ Filename search uses the same live read policy and ready-file/root constraints;
 its literal matching and bounded pagination are specified in
 [Files name search](FILES.md#file-name-search-files-050).
 
+Files upload initiation reserves workspace capacity across users and roots in
+the replay transaction. Ready/archived file bytes and slots remain charged;
+active upload reservations are converted on completion and released on
+abort/expiry. Operator limits and conflict semantics are specified in
+[Files workspace capacity](FILES.md#workspace-capacity-files-051).
+
 `task.roots.grants` is exposed as POST
 `/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/grants`. Adding requires
 `action` (`task.read` or `task.create`), `principal_kind` (`user`, `role` or `group`)

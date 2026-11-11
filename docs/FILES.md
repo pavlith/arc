@@ -1,7 +1,7 @@
 # Files service — initial implementation contract
 
 Tracking: [#29](https://github.com/pavlith/arc/issues/29). Stage 3 of
-[shortplan](shortplan.md). **Implementation in dev:** signed Files 0.5.0 has 16 public folder/upload/file metadata operations and 2 hidden private byte operations, scoped root lifecycle, owner SQLite migrations, audit/replay/outbox, SQL/disk-synchronized chunk append, cleanup and repeated ACL checks during streaming. **Private streaming is opt-in** and routed through Gate using Core-verified Ed25519 proof and mTLS. Deployment and two-user acceptance remain open.
+[shortplan](shortplan.md). **Implementation in dev:** signed Files 0.5.1 has 16 public folder/upload/file metadata operations and 2 hidden private byte operations, scoped root lifecycle, owner SQLite migrations, audit/replay/outbox, SQL/disk-synchronized chunk append, cleanup and repeated ACL checks during streaming. **Private streaming is opt-in** and routed through Gate using Core-verified Ed25519 proof and mTLS. Deployment and two-user acceptance remain open.
 
 ## Ownership and authorization
 
@@ -114,7 +114,7 @@ explicitly. The resource type is `files.workspace`, with actions
 prepared with a signed Files provider receipt, activated in Access, and then
 activated in Files before browser requests can succeed.
 
-**Still open:** personal file sections, full tenant-level quotas, production NATS grants, private CA/cert provisioning, operator-approved service installations and two-user/two-workspace live upload/download acceptance. The opt-in private streaming code does not imply successful production deployment.
+**Still open:** personal file sections, production NATS grants, private CA/cert provisioning, operator-approved service installations and two-user/two-workspace live upload/download acceptance. The opt-in private streaming code does not imply successful production deployment.
 
 ## Local byte adapter (internal, not an upload API)
 
@@ -145,11 +145,10 @@ still required before public use. No production installation is implied.
 
 ### Pending upload reservation guardrail
 
-Until tenant-level quotas are implemented, the Files metadata owner caps each
-actor to 10 unexpired pending upload sessions and 2 GiB reserved bytes. This
-is a strict temporary protection, not a complete tenant quota or cleanup
-subsystem. The service must not be exposed for arbitrary byte transfer until
-expiry, cross-owner quotas, and the private Gate stream authorization are live.
+Files caps each actor to 10 unexpired pending upload sessions and 2 GiB of
+reserved bytes, independently of workspace quotas. Both caps are checked in
+the upload command transaction. Completion replaces the reservation with a
+catalog row; abort or expiry releases it. See workspace capacity below.
 
 ## Private chunk transaction (internal Files adapter)
 
@@ -306,3 +305,29 @@ not a snapshot: callers retain the same query/folder while paging and refetch
 after invalidations. The response is the existing bounded `FilesResult` shape.
 No full-text index, schema migration or browser UI is introduced. Deploying
 0.5.0 requires approving its new complete artifact and refreshing Gate routes.
+
+## Workspace capacity (Files 0.5.1)
+
+Operator-only `quota.workspace_bytes` and `quota.workspace_files` settings
+apply to each workspace across **all roots and users**. Defaults are 10 GiB
+and 10,000 files; zero selects the default, negative values are invalid.
+Supported maxima are 1 PiB and 1,000,000 files. Configuration changes require
+a service restart; clients cannot choose or override their limits.
+
+Before creating an upload, Files counts all persisted file rows (including
+archives) plus unexpired pending uploads. File size and expected upload size
+consume byte capacity; zero-byte uploads still reserve a file slot. A command
+that would exceed either limit returns the existing generic conflict error,
+without exposing other users' filenames, counts or usage. The quota decision
+and new reservation share the serialized replay transaction, so concurrent
+users cannot reserve the same remaining capacity. Replays do not reserve twice.
+
+Completion converts a reservation to an equal-sized file and slot. Abort or
+expiry frees only the reservation; the cleanup worker removes abandoned bytes.
+Archived files retain both their bytes and capacity until an explicit future
+retention policy removes them. Lowering limits below existing usage preserves
+data and denies additional uploads. Read/download, metadata operations and
+abort remain available. These are catalog/reservation quotas, not a measurement
+of filesystem free space; orphan recovery and operator disk monitoring remain
+necessary. Workspace quotas do not claim personal-root support or per-workspace
+self-service quota management. No migration or new public route is required.

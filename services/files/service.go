@@ -23,6 +23,7 @@ import (
 var ErrInvalid = errors.New("files: invalid service dependencies")
 
 type Config struct {
+	Quota     objects.Quota
 	GormDB    *gorm.DB
 	Runtime   sdk.AppConfig
 	Identity  identity.Client
@@ -47,6 +48,10 @@ func New(cfg Config) (*Service, error) {
 		cfg.Runtime.SelfCheck != nil {
 		return nil, ErrInvalid
 	}
+	quota, err := cfg.Quota.Effective()
+	if err != nil {
+		return nil, ErrInvalid
+	}
 	artifact := filesv1.Artifact()
 	compiled, err := contract.Compile(artifact)
 	if err != nil {
@@ -67,7 +72,7 @@ func New(cfg Config) (*Service, error) {
 	cfg.Runtime.SelfCheck = owner.PingContext
 	s := &Service{}
 	foldersModule := &folders.Service{GormDB: cfg.GormDB, Identity: cfg.Identity, Contract: compiled, Check: folders.OnlineCheck(cfg.Identity)}
-	objectsModule := &objects.Module{DB: cfg.GormDB, Contract: compiled, Storage: cfg.Storage, Authorize: foldersModule.Authorize}
+	objectsModule := &objects.Module{Quota: quota, DB: cfg.GormDB, Contract: compiled, Storage: cfg.Storage, Authorize: foldersModule.Authorize}
 	registration := sdk.Registration{
 		Service: "files", Instance: cfg.Runtime.Instance,
 		Build: compiled.Manifest.Service.BuildVersion, Digest: compiled.Digest,

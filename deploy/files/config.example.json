@@ -15,5 +15,9 @@
   "stream_listen": "127.0.0.1:9482",
   "stream_tls_cert_file": "/run/arc/files-private-tls.crt",
   "stream_tls_key_file": "/run/arc/files-private-tls.key",
-  "stream_client_ca_file": "/run/arc/gate-client-ca.crt"
+  "stream_client_ca_file": "/run/arc/gate-client-ca.crt",
+  "quota": {
+    "workspace_bytes": 10737418240,
+    "workspace_files": 10000
+  }
 }

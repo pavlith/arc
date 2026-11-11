@@ -10,11 +10,13 @@ import (
 	"github.com/pavlith/arc/services/core/modules/fabric"
 	"github.com/pavlith/arc/services/core/modules/identity"
 	filesv1 "github.com/pavlith/arc/services/files/api/v1"
+	"github.com/pavlith/arc/services/files/modules/objects"
 	"github.com/pavlith/arc/services/files/storage"
 	"github.com/pavlith/arc/services/files/stream"
 )
 
 type BootstrapConfig struct {
+	Quota objects.Quota `json:"quota"`
 	bootstrap.Config
 	StoragePath        string `json:"storage_path"`
 	StreamListen       string `json:"stream_listen,omitempty"`
@@ -42,6 +44,7 @@ func Run(ctx context.Context, path string) error {
 		Account: cfg.ServiceID, Kid: cfg.Kid, Key: deps.Key, CoreKey: deps.CoreTrust,
 	}
 	app, err := New(Config{
+		Quota:  cfg.Quota,
 		GormDB: deps.GormDB, Runtime: deps.RuntimeConfig(cfg.Config, registry),
 		Identity: identity.Client{
 			RPC: deps.RPC, ServiceID: cfg.ServiceID,

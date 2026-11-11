@@ -29,6 +29,7 @@ import (
 var hashPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 type Module struct {
+	Quota     Quota
 	DB        *gorm.DB
 	Contract  *contract.Compiled
 	Storage   *storage.Local
@@ -205,6 +206,9 @@ func (s *Module) initiate(ctx context.Context, tx *gorm.DB, q filesv1.UploadInit
 	}
 	if reservation.Count >= 10 || q.ExpectedSize > 2*storage.MaxObjectSize-reservation.Bytes {
 		return filesv1.Upload{}, conflict()
+	}
+	if err := s.checkWorkspaceQuota(ctx, tx, q.WorkspaceID, q.ExpectedSize, now); err != nil {
+		return filesv1.Upload{}, err
 	}
 	id := folders.NewID()
 	v := models.Upload{

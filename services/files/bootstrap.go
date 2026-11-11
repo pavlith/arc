@@ -3,6 +3,7 @@ package files
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/pavlith/arc/sdk/bootstrap"
 	"github.com/pavlith/arc/sdk/contract"
@@ -81,7 +82,11 @@ func Run(ctx context.Context, path string) error {
 		if err = private.Start(); err != nil {
 			return err
 		}
-		defer private.Stop(context.Background())
+		defer func() {
+			shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			_ = private.Stop(shutdown)
+		}()
 	}
 	err = app.App.Wait(ctx)
 	if errors.Is(err, context.Canceled) && ctx.Err() != nil {

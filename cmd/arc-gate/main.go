@@ -144,6 +144,10 @@ func run(file string) error {
 			cfg.FilesStreamClientKeyFile == "" {
 			return errors.New("gate: incomplete private Files mTLS configuration")
 		}
+		clientKey, e := os.Stat(cfg.FilesStreamClientKeyFile)
+		if e != nil || !clientKey.Mode().IsRegular() || clientKey.Mode().Perm()&0077 != 0 {
+			return errors.New("gate: private Files client TLS key permissions must be private")
+		}
 		cert, e := tls.LoadX509KeyPair(cfg.FilesStreamClientCertFile, cfg.FilesStreamClientKeyFile)
 		if e != nil {
 			return errors.New("gate: private Files client certificate unavailable")

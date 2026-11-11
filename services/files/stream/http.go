@@ -212,6 +212,10 @@ func (s *Server) Start() error {
 	if s.server != nil {
 		return security.ErrUnavailable
 	}
+	privateKey, err := os.Stat(s.cfg.TLSKeyFile)
+	if err != nil || !privateKey.Mode().IsRegular() || privateKey.Mode().Perm()&0077 != 0 {
+		return security.ErrUnavailable
+	}
 	cert, err := tls.LoadX509KeyPair(s.cfg.TLSCertFile, s.cfg.TLSKeyFile)
 	if err != nil {
 		return security.ErrUnavailable

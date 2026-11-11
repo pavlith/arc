@@ -17,7 +17,6 @@ import (
 	"github.com/pavlith/arc/sdk/database"
 	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/agent/modules/journal"
-	"github.com/pavlith/arc/services/core/migrations"
 	"github.com/pavlith/arc/services/core/modules/runtime"
 	"github.com/pavlith/arc/test/testdb"
 	"gorm.io/gorm"
@@ -386,35 +385,6 @@ func TestControlAtomicityAndConcurrentCAS(t *testing.T) {
 	}
 	if wins != 1 || countRows(t, f.db, "runtime_operations") != 2 || countRows(t, f.db, "runtime_outbox") != 2 {
 		t.Fatalf("CAS did not serialize: %d", wins)
-	}
-}
-
-func TestRuntimeControlMigrationUpgradePreservesLegacy(t *testing.T) {
-	ctx := context.Background()
-	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "core.sqlite"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer database.Close(db)
-	all := migrations.SQLite()
-	if err := database.Migrate(ctx, db, all[:5]); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Exec(`INSERT INTO runtime_desired_deployments(id,service_name,spec,replicas,revision) VALUES('legacy','task','{"image":"old:tag"}',1,7)`).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := database.Migrate(ctx, db, all); err != nil {
-		t.Fatal(err)
-	}
-	if err := database.Migrate(ctx, db, all); err != nil {
-		t.Fatal(err)
-	}
-	var revision int64
-	if err := db.Table("runtime_desired_deployments").Select("revision").Where("id='legacy'").Scan(&revision).Error; err != nil || revision != 7 {
-		t.Fatalf("legacy changed: %d %v", revision, err)
-	}
-	if countRows(t, db, "runtime_resources") != 0 {
-		t.Fatal("legacy arbitrary spec became executable")
 	}
 }
 

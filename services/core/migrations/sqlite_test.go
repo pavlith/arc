@@ -45,7 +45,7 @@ func TestCoreSQLiteMigrationsAndOwnerIsolation(t *testing.T) {
 		"identity_command_results", "access_resource_types", "access_policy_state",
 		"access_operations", "access_policy_audit", "fabric_contracts",
 		"fabric_instances", "fabric_route_state", "fabric_outbox",
-		"runtime_desired_deployments", "runtime_nodes", "runtime_templates", "runtime_resources",
+		"runtime_nodes", "runtime_templates", "runtime_resources",
 		"runtime_operations", "runtime_revisions", "runtime_reports", "runtime_observations", "runtime_audit", "runtime_outbox", "runtime_node_profiles", "runtime_enrollment_offers", "schema_migrations",
 	} {
 		if !db.Migrator().HasTable(name) {
@@ -109,9 +109,6 @@ func TestCoreFabricAndRuntimeSQLiteConstraints(t *testing.T) {
 	execOK(t, db, "UPDATE fabric_contracts SET revoked_at='2026-01-01' WHERE digest=?", digest)
 	execReject(t, db, "UPDATE fabric_contracts SET revoked_at=NULL WHERE digest=?", digest)
 	execReject(t, db, "DELETE FROM fabric_contracts WHERE digest=?", digest)
-	execReject(t, db, "INSERT INTO runtime_desired_deployments(id,service_name,spec,replicas) VALUES('d','task','not-json',1)")
-	execOK(t, db, "INSERT INTO runtime_desired_deployments(id,service_name,spec,replicas) VALUES('d','task','{}',1)")
-	execReject(t, db, "UPDATE runtime_desired_deployments SET replicas=-1 WHERE id='d'")
 }
 
 func TestFreshCoreRequiresExplicitSessionChannel(t *testing.T) {

@@ -140,13 +140,6 @@ var baselineSchema = []string{
 	`CREATE TABLE runtime_audit (
     id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL,
     target_id TEXT NOT NULL, operation_id TEXT, occurred_at DATETIME NOT NULL)`,
-	`CREATE TABLE runtime_desired_deployments (
- id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 128),
- service_name TEXT NOT NULL CHECK(length(service_name) BETWEEN 1 AND 128),
- spec TEXT NOT NULL CHECK(json_valid(spec)),
- replicas INTEGER NOT NULL CHECK(replicas>=0),
- revision INTEGER NOT NULL DEFAULT 1 CHECK(revision>0),
- updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
 	`CREATE TABLE runtime_enrollment_offers (
 				id TEXT PRIMARY KEY,
 				node_id TEXT NOT NULL,

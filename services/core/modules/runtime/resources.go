@@ -46,7 +46,7 @@ type Operation struct {
 }
 
 // Apply commits desired state, immutable revision, operation, audit and hint
-// outbox together. It never calls a host driver or reinterprets legacy JSON specs.
+// outbox together. It never calls a host driver or accepts untyped desired JSON.
 func (c *Control) Apply(ctx context.Context, change Change) (Receipt, error) {
 	var out Receipt
 	if change.Spec.Revision != 0 || change.Spec.TemplateDigest != "" || change.ExpectedRevision < 0 || change.ExpectedRevision >= 1<<53-1 || len(change.IdempotencyKey) == 0 || len(change.IdempotencyKey) > 128 {

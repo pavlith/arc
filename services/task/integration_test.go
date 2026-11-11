@@ -199,7 +199,7 @@ func TestM006(t *testing.T) {
 			}
 			p.Rules = append(p.Rules, access.Rule{Caller: account, Audience: "access/v1", Operation: "access.v1.check", ActorKinds: []string{"user"}, Actions: actions, DownstreamFrom: from, DownstreamActions: down})
 			for _, op := range []string{"resources.reserve", "resources.activate"} {
-				p.Rules = append(p.Rules, access.Rule{Caller: account, Audience: "access/v1", Operation: "access.v1." + op, ActorKinds: []string{"user"}, Actions: []string{"task.create"}, DownstreamFrom: []string{"task/v1:" + tasks.Create}, DownstreamActions: map[string][]string{"task/v1:" + tasks.Create: {"task.create"}}})
+				p.Rules = append(p.Rules, access.Rule{Caller: account, Audience: "access/v1", Operation: "access.v1." + op, ActorKinds: []string{"user"}, Actions: []string{"task.create"}, DownstreamFrom: []string{"task/v1:" + taskv1.WorkCreate.ID}, DownstreamActions: map[string][]string{"task/v1:" + taskv1.WorkCreate.ID: {"task.create"}}})
 			}
 			for _, op := range []string{"grants.add", "grants.revoke"} {
 				p.Rules = append(p.Rules, access.Rule{Caller: account, Audience: "access/v1", Operation: "access.v1." + op, ActorKinds: []string{"user"}, Actions: []string{"access.grants.manage", "task.read", "task.create"}, DownstreamFrom: []string{"task/v1:" + tasks.Admin}, DownstreamActions: map[string][]string{"task/v1:" + tasks.Admin: {"access.grants.manage", "task.read", "task.create"}}})
@@ -222,7 +222,7 @@ func TestM006(t *testing.T) {
 	// Provision roots through the real Reserve/domain receipt/Activate protocol.
 	domain := &tasks.Service{GormDB: taskDB, Contract: tm}
 	accessContext := func(workspace, op string) context.Context {
-		source := tasks.Create
+		source := taskv1.WorkCreate.ID
 		if strings.HasPrefix(op, "grants.") {
 			source = tasks.Admin
 		}
@@ -255,6 +255,15 @@ func TestM006(t *testing.T) {
 		return scope
 	}
 	scope, otherScope := provision(workspace), provision(otherWorkspace)
+	// Seed a product Team/status so this vertical tests signed Work endpoints.
+	teamID, statusID := tasks.NewID(), tasks.NewID()
+	seededAt := time.Now().UTC()
+	_, e = tdb.Exec(`INSERT INTO teams(id,workspace_id,acl_root_id,name,key,revision,created_at,updated_at)
+		VALUES(?,?,?,'Proof','PROOF',1,?,?)`, teamID, workspace, scope.RootID, seededAt, seededAt)
+	must(e)
+	_, e = tdb.Exec(`INSERT INTO workflow_statuses(id,workspace_id,acl_root_id,team_id,name,category,is_default,revision,created_at,updated_at)
+		VALUES(?,?,?,?,'Backlog','backlog',1,1,?,?)`, statusID, workspace, scope.RootID, teamID, seededAt, seededAt)
+	must(e)
 	grantCtx := func(op string) context.Context { return accessContext(workspace, op) }
 
 	grants := map[string]string{}
@@ -426,7 +435,7 @@ func TestM006(t *testing.T) {
 	// Use HTTP login bearer token to avoid mixing browser cookies and bearer auth.
 	token := loginHTTP("proof-owner@example.test")
 	client.Jar = nil
-	base := fmt.Sprintf("/api/v1/task/workspaces/%s/roots/%s/tasks", workspace, scope.RootID)
+	base := fmt.Sprintf("/api/v1/task/workspaces/%s/roots/%s/work", workspace, scope.RootID)
 	var countsMu sync.Mutex
 	counts := map[string]int{}
 	observer, e := coreSvc.Connection().Subscribe("rpc.identity.v1.>", func(m *nats.Msg) { countsMu.Lock(); counts[m.Subject]++; countsMu.Unlock() })
@@ -438,7 +447,7 @@ func TestM006(t *testing.T) {
 	must(coreSvc.Connection().Flush())
 	taskCount, notificationCount := 1, 1
 	begun := time.Now()
-	status, b := request(client, "POST", base, `{"title":"Proof"}`, token, "m006-create")
+	status, b := request(client, "POST", base, fmt.Sprintf(`{"title":"Proof","team_id":%q}`, teamID), token, "m006-create")
 	if status != 201 {
 		t.Fatalf("create HTTP %d: %s", status, b)
 	}
@@ -468,7 +477,7 @@ func TestM006(t *testing.T) {
 	if status != 200 {
 		t.Fatalf("list %d %s", status, b)
 	}
-	status, b = request(client, "POST", base, `{"title":"Proof"}`, token, "m006-create")
+	status, b = request(client, "POST", base, fmt.Sprintf(`{"title":"Proof","team_id":%q}`, teamID), token, "m006-create")
 	if status != 201 {
 		t.Fatalf("replay %d %s", status, b)
 	}
@@ -477,13 +486,13 @@ func TestM006(t *testing.T) {
 	if replay.ID != task.ID || count(tdb, `SELECT count(*) FROM tasks`) != taskCount {
 		t.Fatal("command replay duplicated task")
 	}
-	status, b = request(client, "POST", base, `{"title":"Changed"}`, token, "m006-create")
+	status, b = request(client, "POST", base, fmt.Sprintf(`{"title":"Changed","team_id":%q}`, teamID), token, "m006-create")
 	if status != 409 {
 		t.Fatalf("changed payload %d %s", status, b)
 	}
 	// Consumer absent: committed event remains in JetStream until its first delivery.
 	eventually(t, func() bool {
-		return count(tdb, `SELECT count(*) FROM outbox WHERE published_at IS NOT NULL`) == 1
+		return count(tdb, `SELECT count(*) FROM outbox WHERE published_at IS NOT NULL`) == 2
 	}, nil)
 	if count(ndb, `SELECT count(*) FROM notifications`) != 0 {
 		t.Fatal("effect before consumer")
@@ -663,7 +672,7 @@ func TestM006(t *testing.T) {
 				if entry["traceparent"] != trace || entry["duration_ms"] == nil || entry["error_code"] != "" {
 					continue
 				}
-				rpcFound = rpcFound || entry["msg"] == "arc rpc" && entry["operation"] == tasks.Create && entry["request_id"] == "m006-request"
+				rpcFound = rpcFound || entry["msg"] == "arc rpc" && entry["operation"] == taskv1.WorkCreate.ID && entry["request_id"] == "m006-request"
 				stage := "publish"
 				if kind == "notify" {
 					stage = "consume"
@@ -687,7 +696,7 @@ func TestM006(t *testing.T) {
 	counts = map[string]int{}
 	countsMu.Unlock()
 	warmStart := time.Now()
-	status, b = request(client, "POST", base, `{"title":"Latency proof"}`, token, "latency-proof")
+	status, b = request(client, "POST", base, fmt.Sprintf(`{"title":"Latency proof","team_id":%q}`, teamID), token, "latency-proof")
 	if status != 201 {
 		t.Fatalf("warm create %d %s", status, b)
 	}
@@ -704,7 +713,7 @@ func TestM006(t *testing.T) {
 	latencies := []time.Duration{time.Since(warmStart)}
 	for i := 0; i < 9; i++ {
 		started := time.Now()
-		status, b = request(client, "POST", base, fmt.Sprintf(`{"title":"Running consumer sample %d"}`, i), token, fmt.Sprintf("latency-sample-%d", i))
+		status, b = request(client, "POST", base, fmt.Sprintf(`{"title":"Running consumer sample %d","team_id":%q}`, i, teamID), token, fmt.Sprintf("latency-sample-%d", i))
 		if status != 201 {
 			t.Fatalf("sample %d create %d %s", i, status, b)
 		}
@@ -714,7 +723,7 @@ func TestM006(t *testing.T) {
 		notificationCount++
 		eventually(t, func() bool {
 			var eventID string
-			if e := tdb.QueryRow(`SELECT event_id FROM outbox WHERE envelope->>'aggregate_id'=?`, created.ID).Scan(&eventID); e != nil {
+			if e := tdb.QueryRow(`SELECT event_id FROM outbox WHERE subject='evt.task.task.created.v1' AND envelope->>'aggregate_id'=?`, created.ID).Scan(&eventID); e != nil {
 				return false
 			}
 			return count(ndb, `SELECT count(*) FROM notifications n JOIN delivery_intents d ON d.notification_id=n.id WHERE n.event_id=? AND d.delivered_at IS NOT NULL`, eventID) == 1
@@ -738,7 +747,7 @@ func TestM006(t *testing.T) {
 	})
 	t.Run("security", func(t *testing.T) {
 		outsiderToken := loginHTTP("proof-outsider@example.test")
-		for _, op := range []struct{ method, path, body string }{{"POST", base, `{"title":"denied"}`}, {"GET", base + "/" + task.ID, ""}} {
+		for _, op := range []struct{ method, path, body string }{{"POST", base, fmt.Sprintf(`{"title":"denied","team_id":%q}`, teamID)}, {"GET", base + "/" + task.ID, ""}} {
 			s, b := request(client, op.method, op.path, op.body, outsiderToken, tasks.NewID())
 			if s != 403 {
 				t.Fatalf("outsider %d %s", s, b)
@@ -782,7 +791,7 @@ func TestM006(t *testing.T) {
 		countsMu.Lock()
 		checksBefore := counts["rpc.access.v1.check"]
 		countsMu.Unlock()
-		spoof := fmt.Sprintf("/api/v1/task/workspaces/%s/roots/%s/tasks/%s", otherWorkspace, otherScope.RootID, task.ID)
+		spoof := fmt.Sprintf("/api/v1/task/workspaces/%s/roots/%s/work/%s", otherWorkspace, otherScope.RootID, task.ID)
 		s, b = request(client, "GET", spoof, "", token, "")
 		if s != 403 {
 			t.Fatalf("domain-owner spoof %d %s", s, b)
@@ -796,11 +805,11 @@ func TestM006(t *testing.T) {
 		// Original envelopes with broken JWT/proof cannot reach mutation.
 		creds, e := gateClient.Credentials("identity.exchange_service")
 		must(e)
-		v, e := remote.Exchange(ctx, identity.UserExchange{Assertion: creds.Token, Session: session, Target: identity.Target{Audience: "task/v1", Operation: tasks.Create, WorkspaceID: workspace}})
+		v, e := remote.Exchange(ctx, identity.UserExchange{Assertion: creds.Token, Session: session, Target: identity.Target{Audience: "task/v1", Operation: taskv1.WorkCreate.ID, WorkspaceID: workspace}})
 		must(e)
-		op, _ := tm.Operation(tasks.Create)
+		op, _ := tm.Operation(taskv1.WorkCreate.ID)
 		for _, kind := range []string{"jwt", "proof"} {
-			raw := map[string]any{"request_id": tasks.NewID(), "operation": tasks.Create, "schema_version": 1, "deadline_at": time.Now().Add(15 * time.Second), "idempotency_key": tasks.NewID(), "payload": tasks.CreateRequest{Scope: scope, Title: "forged"}, "auth": v.Token, "proof": security.Proof{Kid: gateClient.Kid, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Nonce: tasks.NewID(), Signature: "invalid"}}
+			raw := map[string]any{"request_id": tasks.NewID(), "operation": taskv1.WorkCreate.ID, "schema_version": 1, "deadline_at": time.Now().Add(15 * time.Second), "idempotency_key": tasks.NewID(), "payload": taskv1.WorkCreateRequest{Scope: scope, WorkInput: taskv1.WorkInput{Title: "forged", TeamID: teamID}}, "auth": v.Token, "proof": security.Proof{Kid: gateClient.Kid, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Nonce: tasks.NewID(), Signature: "invalid"}}
 			if kind == "jwt" {
 				raw["auth"] = "invalid"
 			}
@@ -823,11 +832,11 @@ func TestM006(t *testing.T) {
 		_, e = tdb.Exec(`CREATE TRIGGER reject_fixture BEFORE INSERT ON outbox BEGIN SELECT RAISE(ABORT,'fixture outbox failure'); END`)
 		must(e)
 		t.Cleanup(func() { _, _ = tdb.Exec(`DROP TRIGGER IF EXISTS reject_fixture`) })
-		status, b := request(client, "POST", base, `{"title":"rollback"}`, token, "rollback-key")
+		status, b := request(client, "POST", base, fmt.Sprintf(`{"title":"rollback","team_id":%q}`, teamID), token, "rollback-key")
 		if status != 503 {
 			t.Fatalf("rollback %d %s", status, b)
 		}
-		if count(tdb, `SELECT count(*) FROM tasks`) != taskCount || count(tdb, `SELECT count(*) FROM command_results WHERE operation=?`, tasks.Create) != taskCount {
+		if count(tdb, `SELECT count(*) FROM tasks`) != taskCount || count(tdb, `SELECT count(*) FROM command_results WHERE operation=?`, taskv1.WorkCreate.ID) != taskCount {
 			t.Fatal("rollback left partial domain/command effect")
 		}
 		_, e = tdb.Exec(`DROP TRIGGER reject_fixture`)
@@ -835,7 +844,7 @@ func TestM006(t *testing.T) {
 	})
 	t.Run("inbox-replay-rollback-concurrent", func(t *testing.T) {
 		var raw []byte
-		must(tdb.QueryRow(`SELECT envelope FROM outbox`).Scan(&raw))
+		must(tdb.QueryRow(`SELECT envelope FROM outbox WHERE subject='evt.task.task.created.v1' LIMIT 1`).Scan(&raw))
 		notify := &notifyinbox.Service{GormDB: notifyDB}
 		store := events.Store{DB: notifyDB}
 		var wg sync.WaitGroup
@@ -902,7 +911,7 @@ func TestM006(t *testing.T) {
 		if notifyRegistry.EventPermit(ctx, nr, subscription) == nil {
 			t.Fatal("revoked consumer still has event permit")
 		}
-		status, b := request(client, "POST", base, `{"title":"While consumer revoked"}`, token, "revoked-consumer-proof")
+		status, b := request(client, "POST", base, fmt.Sprintf(`{"title":"While consumer revoked","team_id":%q}`, teamID), token, "revoked-consumer-proof")
 		if status != 201 {
 			t.Fatalf("create while consumer revoked %d %s", status, b)
 		}
@@ -974,13 +983,13 @@ func TestM006(t *testing.T) {
 		if _, e = delivery.PublishBatch(ctx, closedJS, 10); e == nil {
 			t.Fatal("closed publisher succeeded")
 		}
-		if count(tdb, `SELECT count(*) FROM outbox WHERE published_at IS NULL`) != taskCount {
+		if count(tdb, `SELECT count(*) FROM outbox WHERE published_at IS NULL`) != 2*taskCount {
 			t.Fatal("event lost on publish failure")
 		}
 		// More than one publisher batch can be pending after the latency samples.
 		n, e := delivery.PublishBatch(ctx, js, 100)
 		must(e)
-		if n != taskCount {
+		if n != 2*taskCount {
 			t.Fatal("publisher retry did not recover")
 		}
 		if count(tdb, `SELECT count(*) FROM tasks`) != taskCount {
@@ -994,17 +1003,17 @@ func TestM006(t *testing.T) {
 		must(coreSvc.Connection().Flush())
 		start("task", provider, taskClient.Kid, taskKey, fabric.EventSubscription{})
 		must(accessSvc.Stop())
-		s, b := request(client, "POST", base, `{"title":"core down"}`, token, "core-down")
+		s, b := request(client, "POST", base, fmt.Sprintf(`{"title":"core down","team_id":%q}`, teamID), token, "core-down")
 		if s != 503 {
 			t.Fatalf("Access unavailable %d %s", s, b)
 		}
 		closeControl()
-		s, b = request(client, "POST", base, `{"title":"fabric down"}`, token, "fabric-down")
+		s, b = request(client, "POST", base, fmt.Sprintf(`{"title":"fabric down","team_id":%q}`, teamID), token, "fabric-down")
 		if s != 503 {
 			t.Fatalf("Fabric unavailable %d %s", s, b)
 		}
 		must(coreSvc.Stop())
-		s, b = request(client, "POST", base, `{"title":"identity down"}`, token, "identity-down")
+		s, b = request(client, "POST", base, fmt.Sprintf(`{"title":"identity down","team_id":%q}`, teamID), token, "identity-down")
 		if s != 503 {
 			t.Fatalf("Identity unavailable %d %s", s, b)
 		}

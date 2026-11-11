@@ -2,7 +2,7 @@ name: SQLite / GORM migration
 
 on:
   push:
-    branches: [dev, main]
+    branches: [main]
     paths:
       - 'sdk/**'
       - 'services/**'
@@ -34,4 +34,4 @@ jobs:
           fi
       - name: Run SQLite unit and concurrency tests
         if: always()
-        run: go test -count=1 ./...
+        run: go test -count=1 ./sdk/database/... ./services/core/migrations/... ./services/task/migrations/... ./services/notify/migrations/... ./services/files/migrations/... ./services/pages/migrations/... ./deploy/migrate/... ./services

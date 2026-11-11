@@ -1,0 +1,29 @@
+name: Arc browser and TypeScript clients
+on:
+  push:
+    branches: [main]
+    paths:
+      - "client/**"
+      - ".github/actions/install-ui/**"
+      - ".github/workflows/client.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "client/**"
+      - ".github/actions/install-ui/**"
+      - ".github/workflows/client.yml"
+permissions:
+  contents: read
+jobs:
+  client:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/install-ui
+      - name: Check typed contracts
+        run: npm --prefix client run check --workspace @arc/client
+      - name: Check Svelte
+        run: npm --prefix client run check --workspace ui
+      - name: Build Svelte
+        run: npm --prefix client run build --workspace ui

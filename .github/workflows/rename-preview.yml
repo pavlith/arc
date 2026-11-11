@@ -1,7 +1,7 @@
 name: Arc service rename preview
 on:
   push:
-    branches: [dev]
+    branches: [main]
     paths:
       - ".github/scripts/rename_services.py"
       - ".github/workflows/rename-preview.yml"

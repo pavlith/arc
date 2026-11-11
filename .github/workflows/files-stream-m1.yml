@@ -2,7 +2,7 @@ name: M1 Files private Gate transport (independent of UI)
 
 on:
   push:
-    branches: [dev]
+    branches: [main]
     paths:
       - ".github/workflows/files-stream-m1.yml"
       - "services/files/**"
@@ -14,7 +14,7 @@ on:
       - "go.mod"
       - "go.sum"
   pull_request:
-    branches: [dev]
+    branches: [main]
     paths:
       - ".github/workflows/files-stream-m1.yml"
       - "services/files/**"

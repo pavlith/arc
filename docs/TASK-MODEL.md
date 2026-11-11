@@ -12,10 +12,7 @@ Multiple Teams can share a root and therefore its access boundary. Independently
 private Teams require independently provisioned roots; a boolean on a Team never
 creates privacy or another permission engine.
 
-Task IDs, titles, creators, timestamps, replay and outbox survive additive
-migrations. Product `task.work.*` is the only public Task CRUD interface. New product APIs and schemas are explicit approved operations rather
-than an implicit reinterpretation of old credentials. Rich descriptions are data,
-never executable HTML; clients render/sanitize them before display.
+Task IDs, creators, timestamps, replay and outbox survive additive migrations. `task.work.*` is the sole public Task CRUD interface, governed by exact signed schemas. Descriptions are inert data and must be rendered safely.
 
 Kuayle source is a behavior/interface reference, not a database migration source.
 There is no automatic external database import in this delivery. An explicit
@@ -47,17 +44,11 @@ subscribers must reacquire permission to fetch content.
 
 ## Work-item projection
 
-`tasks` retains the immutable proof storage shape; additive `task_details` and
-`task_assignees` hold product fields. New `task.work.*` operations use the same
-Task IDs and titles while returning workflow category/status ID, Team, stable
-creation identifier, description, priority, due date, card order and assignees.
-Tasks without Team assignment appear in the read model with status `open`, revision 1, no Team
-and their UUID as identifier until explicitly assigned to a Team by an update.
+`tasks` stores immutable identities/timestamps; `task_details` and `task_assignees` hold workflow fields. The Work API returns the Team, status/category, stable identifier, description, priority, due date, card order and assignees. Previously stored unassigned tasks remain readable with status `open` until moved into a Team; no old CRUD route can create them.
 Identifiers allocated from a Team key/counter remain stable if the task moves
 between Teams inside the same root. Cross-root moves are not supported.
 
-Product reads list all tasks permitted by the root's `task.read`, including other
-creators; the original proof-only list has been retired. Root `task.create` is the
+Product reads all tasks permitted by the root's `task.read`, regardless of creator. Root `task.create` is the
 explicit write authority for shared product edits. Such edits require both the
 current product revision and base `updated_at`, so concurrent title edits
 also conflict rather than overwrite. Archive needs `task.delete` and returns only

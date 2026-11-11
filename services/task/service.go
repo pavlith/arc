@@ -13,6 +13,7 @@ import (
 	"github.com/pavlith/arc/sdk/module"
 	"github.com/pavlith/arc/sdk/service"
 	"github.com/pavlith/arc/services/core/modules/identity"
+	"github.com/pavlith/arc/services/resources"
 	taskv1 "github.com/pavlith/arc/services/task/api/v1"
 	"github.com/pavlith/arc/services/task/modules/outbox"
 	"github.com/pavlith/arc/services/task/modules/tasks"
@@ -68,7 +69,7 @@ func New(cfg Config) (*Service, error) {
 	cfg.Runtime.SelfCheck = owner.PingContext
 
 	s := &Service{}
-	tasksModule := &tasks.Service{
+	tasksModule := &tasks.Service{Resolve: (resources.Resolver{Identity: cfg.Identity}).Lookup,
 		GormDB: cfg.GormDB, Identity: cfg.Identity, Contract: compiled,
 		Check: tasks.OnlineCheck(cfg.Identity),
 	}

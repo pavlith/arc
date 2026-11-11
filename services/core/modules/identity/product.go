@@ -151,8 +151,10 @@ func (c *Core) productRole(ctx context.Context, workspace, user string, manager 
 
 func (c *Core) profile(ctx context.Context, user string) (Profile, error) {
 	var out Profile
-	err := c.db(ctx).WithContext(ctx).Raw(`SELECT id,email,name,display_name,profile_revision FROM identity_users WHERE id=? AND status='active'`, user).
-		Row().Scan(&out.ID, &out.Email, &out.Name, &out.DisplayName, &out.Revision)
+	var avatar *string
+	err := c.db(ctx).WithContext(ctx).Raw(`SELECT id,email,name,display_name,profile_revision,avatar_ref FROM identity_users WHERE id=? AND status='active'`, user).
+		Row().Scan(&out.ID, &out.Email, &out.Name, &out.DisplayName, &out.Revision, &avatar)
+	out.AvatarURL = avatarPath(avatar)
 	return out, keyError(err)
 }
 
@@ -202,9 +204,12 @@ func (c *Core) members(ctx context.Context, user string, q WorkspacePage) ([]Mem
 		return nil, err
 	}
 	out := []Member{}
-	err := c.db(ctx).WithContext(ctx).Raw(`SELECT u.id,u.email,u.name,u.display_name,u.profile_revision AS revision,m.role FROM identity_memberships m
+	err := c.db(ctx).WithContext(ctx).Raw(`SELECT u.id,u.email,u.name,u.display_name,u.profile_revision AS revision,u.avatar_ref AS avatar_url,m.role FROM identity_memberships m
 		JOIN identity_users u ON u.id=m.user_id WHERE m.workspace_id=? AND m.revoked_at IS NULL
 		AND u.status='active' AND u.id>? ORDER BY u.id LIMIT 100`, q.WorkspaceID, q.After).Scan(&out).Error
+	for i := range out {
+		out[i].AvatarURL = avatarPath(out[i].AvatarURL)
+	}
 	return out, err
 }
 
@@ -246,10 +251,13 @@ func (c *Core) groupMembers(ctx context.Context, user string, q GroupPage) ([]Pr
 		return nil, err
 	}
 	out := []Profile{}
-	err := c.db(ctx).WithContext(ctx).Raw(`SELECT u.id,u.email,u.name,u.display_name,u.profile_revision AS revision FROM identity_group_members g
+	err := c.db(ctx).WithContext(ctx).Raw(`SELECT u.id,u.email,u.name,u.display_name,u.profile_revision AS revision,u.avatar_ref AS avatar_url FROM identity_group_members g
 		JOIN identity_memberships m ON m.workspace_id=g.workspace_id AND m.user_id=g.user_id
 		JOIN identity_users u ON u.id=g.user_id WHERE g.workspace_id=? AND g.group_id=?
 		AND m.revoked_at IS NULL AND u.status='active' AND u.id>? ORDER BY u.id LIMIT 100`, q.WorkspaceID, q.GroupID, q.After).Scan(&out).Error
+	for i := range out {
+		out[i].AvatarURL = avatarPath(out[i].AvatarURL)
+	}
 	return out, err
 }
 

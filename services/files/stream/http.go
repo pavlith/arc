@@ -192,12 +192,13 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusBadRequest)
 		return
 	}
-	var ref filesv1.FileRef
-	if json.Unmarshal(env.Payload, &ref) != nil {
+	var q filesv1.PrivateDownloadRequest
+	if json.Unmarshal(env.Payload, &q) != nil {
 		sendError(w, http.StatusBadRequest)
 		return
 	}
 	// All response headers are set ONLY after an authorized metadata lookup.
+	ref := q.FileRef
 	file, err := s.cfg.Objects.PrepareDownload(ctx, ref)
 	if err != nil {
 		sendError(w, http.StatusForbidden)
@@ -205,6 +206,14 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", `attachment; filename="download.bin"`)
+	if q.Image {
+		if file.MIME != "image/png" && file.MIME != "image/jpeg" {
+			sendError(w, http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Type", file.MIME)
+		w.Header().Set("Content-Disposition", `inline; filename="avatar"`)
+	}
 	w.Header().Set("ETag", file.ETag)
 	w.Header().Set("Content-Length", strconv.FormatInt(file.Size, 10))
 	// A failed/revoked stream after a 200 terminates early. Its declared size

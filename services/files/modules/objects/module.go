@@ -19,6 +19,7 @@ import (
 	"github.com/pavlith/arc/sdk/module"
 	"github.com/pavlith/arc/sdk/rpc"
 	"github.com/pavlith/arc/sdk/security"
+	"github.com/pavlith/arc/services/core/modules/identity"
 	filesv1 "github.com/pavlith/arc/services/files/api/v1"
 	"github.com/pavlith/arc/services/files/models"
 	"github.com/pavlith/arc/services/files/modules/folders"
@@ -29,6 +30,7 @@ import (
 var hashPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 type Module struct {
+	Signer    identity.Client
 	Quota     Quota
 	DB        *gorm.DB
 	Contract  *contract.Compiled
@@ -118,6 +120,9 @@ func (s *Module) Register(r *module.Registry) error {
 		return err
 	}
 	if err := module.BindQuery(r, filesv1.PersonalPrivateDownload, policy, s.noPrivateDownload); err != nil {
+		return err
+	}
+	if err := module.BindQuery(r, filesv1.AvatarPrepare, policy, s.prepareAvatar); err != nil {
 		return err
 	}
 	return r.AddWorker(module.Worker{ID: "files-upload-cleanup", Run: s.RunCleanup})
@@ -213,7 +218,7 @@ func actor(ctx context.Context) (string, string, error) {
 func (s *Module) initiate(ctx context.Context, tx *gorm.DB, q filesv1.UploadInitiateRequest) (filesv1.Upload, error) {
 	name, err := validFilename(q.Filename)
 	if err != nil || q.ExpectedSize < 0 || q.ExpectedSize > storage.MaxObjectSize ||
-		q.MIME != "application/octet-stream" || q.ExpectedSHA256 != "" && !hashPattern.MatchString(q.ExpectedSHA256) {
+		(q.MIME != "application/octet-stream" && q.MIME != "image/png" && q.MIME != "image/jpeg") || (q.MIME != "application/octet-stream" && q.ExpectedSize > 4<<20) || q.ExpectedSHA256 != "" && !hashPattern.MatchString(q.ExpectedSHA256) {
 		return filesv1.Upload{}, invalid()
 	}
 	subject, session, err := actor(ctx)
@@ -330,8 +335,9 @@ func (s *Module) complete(ctx context.Context, tx *gorm.DB, q filesv1.UploadRef)
 	if offset != v.Offset || offset != v.ExpectedSize {
 		return filesv1.File{}, conflict()
 	}
-	// The first version accepts binary-only uploads. Content is always
-	// downloaded as an attachment; no user-supplied active MIME executes.
+	if err := s.validateImage(ctx, v.TempKey, v.DeclaredMIME, v.ExpectedSize); err != nil {
+		return filesv1.File{}, err
+	}
 	fileID := folders.NewID()
 	obj, err := s.Storage.Promote(ctx, v.TempKey, fileID, v.ExpectedSize, v.ExpectedSHA256)
 	if err != nil {
@@ -435,6 +441,6 @@ func (s *Module) listFiles(ctx context.Context, q filesv1.FileListRequest) (file
 func (s *Module) noPrivateChunk(context.Context, *gorm.DB, filesv1.PrivateChunkRequest) (filesv1.Upload, error) {
 	return filesv1.Upload{}, security.ErrDenied
 }
-func (s *Module) noPrivateDownload(context.Context, filesv1.FileRef) (filesv1.File, error) {
+func (s *Module) noPrivateDownload(context.Context, filesv1.PrivateDownloadRequest) (filesv1.File, error) {
 	return filesv1.File{}, security.ErrDenied
 }

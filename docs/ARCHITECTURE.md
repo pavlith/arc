@@ -263,6 +263,21 @@ Events include stable `event_id`, type/version, aggregate ID, occurrence time an
 
 Downstream `incoming_api_major` defaults to 1 and must match the incoming signed audience and approved source operation/action map. It cannot change identity or expand authority.
 
+Fabric retains at most 32 immutable compiled artifacts, keyed by a SHA-256 of
+the complete manifest and schema map. Each lookup still verifies the operator
+signature, active installation and current Identity/Access state. This bounds
+repeated schema compilation during multi-domain reads without caching grants.
+
+Cross-domain resource references use a closed signed read edge: exact source
+resource operation, target read operation/action and user actor only. The
+initial targets are Task work GET, Files metadata GET (personal/workspace) and
+Pages GET (personal/workspace). Each edge requires an explicit installation
+rule with exact DownstreamFrom/DownstreamActions; no wildcard or mutation is
+accepted. Identity preserves workspace/session provenance. Target owners check
+live ACL and actual object/root binding. Read summaries contain only authorized
+ID/title/revision; cross-workspace references are initially denied. A stored
+reference never grants access. See [resource integration](RESOURCE-REFERENCES.md).
+
 ### 5.4. Routes and versioning
 
 Fabric validates method, normalized path and major, including static/parameter/wildcard collisions. System prefixes such as `/api/v1/arc/*`, `/health*` and `/dav/*` cannot be captured by domain contracts. Runtime announcements do not create public routes.

@@ -1,7 +1,7 @@
 # Files service — initial implementation contract
 
 Tracking: [#29](https://github.com/pavlith/arc/issues/29). Stage 3 of
-[shortplan](shortplan.md). **Implementation in dev:** signed Files 0.6.0 has 34 public folder/upload/file/grant operations and 4 hidden private byte operations, scoped root lifecycle, owner SQLite migrations, audit/replay/outbox, SQL/disk-synchronized chunk append, cleanup and repeated ACL checks during streaming. **Private streaming is opt-in** and routed through Gate using Core-verified Ed25519 proof and mTLS. Isolated live acceptance is described below; production deployment remains open.
+[shortplan](shortplan.md). **Implementation in dev:** signed Files 0.7.0 has 35 public folder/upload/file/grant/avatar operations and 4 hidden private byte operations, scoped root lifecycle, owner SQLite migrations, audit/replay/outbox, SQL/disk-synchronized chunk append, cleanup and repeated ACL checks during streaming. **Private streaming is opt-in** and routed through Gate using Core-verified Ed25519 proof and mTLS. Isolated live acceptance is described below; production deployment remains open.
 
 ## Ownership and authorization
 
@@ -428,3 +428,11 @@ budgets because each request verifies/exchanges multiple Ed25519 invocations.
 The current full-network instrumented run hit a metadata deadline; it is not
 reported as a passing live guardrail. Focused Files/Gate package race checks
 and the ordinary live network scenario are recorded independently.
+
+## Attachments and avatar assets (Files 0.7.0)
+
+Validated PNG/JPEG uploads and owner/session-bound avatar receipts are specified
+in [resource integration](RESOURCE-REFERENCES.md). Image routes use the same
+private signed Files download operation with an explicit signed `image` flag;
+ordinary content remains an attachment. Target metadata reads used by Task or
+Pages require exact signed read edges, preserving workspace scope and live ACL.

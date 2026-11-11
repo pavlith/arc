@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "service": {
     "name": "files",
-    "build_version": "0.6.0",
+    "build_version": "0.7.0",
     "api_major": 1
   },
   "resources": [
@@ -1464,6 +1464,41 @@
             "source": "path",
             "name": "acl_root_id",
             "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "files.personal.avatars.prepare",
+      "subject": "rpc.files.v1.personal.avatars.prepare",
+      "kind": "query",
+      "request_schema": "schemas/personal-file-ref.json",
+      "response_schema": "schemas/avatar-result.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "files.personal",
+        "action": "files.read",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/files/personal/roots/{acl_root_id}/files/{file_id}/avatar",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "file_id",
+            "field": "file_id",
             "type": "string"
           }
         ]

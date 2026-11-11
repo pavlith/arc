@@ -12,6 +12,8 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"image"
+	"image/png"
 	"io"
 	"math/big"
 	"net"
@@ -30,6 +32,7 @@ import (
 	"github.com/pavlith/arc/sdk"
 	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/database"
+	"github.com/pavlith/arc/sdk/resource"
 	"github.com/pavlith/arc/sdk/rpc"
 	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/core/modules/access"
@@ -42,6 +45,8 @@ import (
 	"github.com/pavlith/arc/services/files/storage"
 	"github.com/pavlith/arc/services/files/stream"
 	gate "github.com/pavlith/arc/services/gate/modules/http"
+	taskservice "github.com/pavlith/arc/services/task"
+	taskv1 "github.com/pavlith/arc/services/task/api/v1"
 	"github.com/pavlith/arc/test/testdb"
 	"github.com/pavlith/arc/test/testlog"
 )
@@ -121,7 +126,7 @@ func TestFilesLive(t *testing.T) {
 	pools.AppendCertsFromPEM(caPEM)
 	seedFiles := map[string]string{}
 	pubs := map[string]string{}
-	for _, role := range []string{"core", "gate", "files", "admin"} {
+	for _, role := range []string{"core", "gate", "files", "task", "admin"} {
 		kp, e := nkeys.CreateUser()
 		must(e)
 		seed, e := kp.Seed()
@@ -142,10 +147,11 @@ jetstream {store_dir: %q}
 tls {cert_file: %q, key_file: %q}
 authorization {users: [
  {nkey: %q, permissions: {publish: ["_INBOX.>","evt.arc.fabric.routes.changed","ctl.arc.fabric.probe.>","$SRV.>"], subscribe: ["rpc.identity.v1.>","rpc.access.v1.>","ctl.arc.fabric.>","$SRV.>","_INBOX.>"]}},
- {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","rpc.files.v1.>","ctl.arc.fabric.routes"], subscribe: ["_INBOX.>"]}},
+ {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","rpc.files.v1.>","rpc.task.v1.>","ctl.arc.fabric.routes"], subscribe: ["_INBOX.>"]}},
  {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","ctl.arc.fabric.>","evt.files.catalog.changed.v1","_INBOX.>","$SRV.>"], subscribe: ["rpc.files.v1.>","ctl.arc.fabric.probe.>","_INBOX.>","$SRV.>"]}},
+ {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","rpc.files.v1.files.get","ctl.arc.fabric.>","evt.task.>","_INBOX.>","$SRV.>"], subscribe: ["rpc.task.v1.>","ctl.arc.fabric.probe.>","_INBOX.>","$SRV.>"]}},
  {nkey: %q}
-]}`, port, filepath.Join(dir, "js"), certFile, keyFile, pubs["core"], pubs["gate"], pubs["files"], pubs["admin"])
+]}`, port, filepath.Join(dir, "js"), certFile, keyFile, pubs["core"], pubs["gate"], pubs["files"], pubs["task"], pubs["admin"])
 	confFile := write("nats.conf", []byte(conf))
 	logFile, e := os.Create(filepath.Join(dir, "nats.log"))
 	must(e)
@@ -193,6 +199,8 @@ authorization {users: [
 	wb, e := id.CreateWorkspace(ctx, sb, "Bob workspace")
 	must(e)
 	baseline := access.Approval{AdminUsers: []string{alice}, Deployments: []access.Deployment{{Definition: "gate", Instance: "live-gate"}, {Definition: "files", Instance: "live-files"}}}
+	taskKey := liveKey()
+	baseline.Deployments = append(baseline.Deployments, access.Deployment{Definition: "task", Instance: "live-task"})
 	static, e := access.NewContracts(operator.Public().(ed25519.PublicKey), []access.Approved{liveApproval(operator, baseline)})
 	must(e)
 	acl := &access.Core{GormDB: coreDB, Identity: id, Contracts: static, Domain: access.ReceiptVerifier{Keys: id.Verifier().Keys}}
@@ -201,6 +209,9 @@ authorization {users: [
 	must(e)
 	provider, e := id.RegisterService(ctx, sa, "files", "live-files")
 	must(e)
+	taskAccount, e := id.RegisterService(ctx, sa, "task", "live-task")
+	must(e)
+	must(id.AddServiceKey(ctx, sa, taskAccount, "live-task", taskKey.Public().(ed25519.PublicKey), "mount:live", time.Now().Add(time.Hour)))
 	for _, v := range []struct {
 		id, kid string
 		k       ed25519.PrivateKey
@@ -215,6 +226,9 @@ authorization {users: [
 		baseline.Rules = append(baseline.Rules, access.Rule{Caller: provider, Audience: "identity/v1", Operation: "identity.v1." + op, ActorKinds: []string{"bootstrap"}})
 	}
 
+	for _, op := range []string{"invocations.verify", "invocations.exchange_service"} {
+		baseline.Rules = append(baseline.Rules, access.Rule{Caller: taskAccount, Audience: "identity/v1", Operation: "identity.v1." + op, ActorKinds: []string{"bootstrap"}})
+	}
 	f := &fabric.Core{GormDB: coreDB, Identity: id, ApprovalKey: operator.Public().(ed25519.PublicKey), Bootstrap: []access.Approved{liveApproval(operator, baseline)}, SnapshotKey: coreKey, SnapshotKid: id.SigningKid, RouteTrustKey: trust}
 	acl.ContractSource = f
 	coreSvc, e := sdk.NewService(ctx, sdk.ServiceConfig{Name: "arc-bootstrap", Version: "0.6.0", Connection: cfg("core")})
@@ -454,6 +468,168 @@ authorization {users: [
 			}
 		}
 	}
+
+	// Stage 4 integration: a separately owned Task service reads Files through
+	// an exact signed reference edge, never through the Files database.
+	taskDB, _ := testdb.Open(t, "task")
+	taskContract, e := contract.Compile(taskv1.Artifact())
+	must(e)
+	tr := taskContract.Manifest.Resources[0]
+	taskPolicy := access.Approval{ContractDigests: map[string]string{tr.Type: taskContract.Digest}, Types: []access.TypeSpec{{Type: tr.Type, Provider: taskAccount, Actions: tr.Actions, ShareAction: tr.ShareAction, CreateAction: tr.CreateAction, DeleteAction: tr.DeleteAction}}}
+	taskSubjects, taskSources := []string{}, []string{}
+	taskDown := map[string][]string{}
+	for _, op := range taskContract.Manifest.Operations {
+		taskSubjects = append(taskSubjects, op.Subject)
+		taskPolicy.Rules = append(taskPolicy.Rules, access.Rule{Caller: gateID, Audience: "task/v1", Operation: op.ID, ActorKinds: []string{"user"}, Actions: []string{op.Auth.Action}})
+		src := "task/v1:" + op.ID
+		taskSources = append(taskSources, src)
+		taskDown[src] = []string{op.Auth.Action}
+	}
+	taskPolicy.Rules = append(taskPolicy.Rules, access.Rule{Caller: taskAccount, Audience: "access/v1", Operation: "access.v1.check", ActorKinds: []string{"user"}, Actions: tr.Actions, DownstreamFrom: taskSources, DownstreamActions: taskDown})
+	for _, op := range []string{"resources.reserve", "resources.activate", "grants.add", "grants.revoke"} {
+		src := "task/v1:" + taskv1.CreateID
+		acts := []string{"task.create"}
+		if strings.HasPrefix(op, "grants.") {
+			src = "task/v1:" + taskv1.AdminID
+			acts = tr.Actions
+		}
+		taskPolicy.Rules = append(taskPolicy.Rules, access.Rule{Caller: taskAccount, Audience: "access/v1", Operation: "access.v1." + op, ActorKinds: []string{"user"}, Actions: acts, DownstreamFrom: []string{src}, DownstreamActions: map[string][]string{src: acts}})
+	}
+	referenceSources := []string{"task/v1:" + taskv1.AttachmentChangeOp.ID, "task/v1:" + taskv1.ReferencePreviewOp.ID}
+	taskPolicy.Rules = append(taskPolicy.Rules, access.Rule{Caller: taskAccount, Audience: "files/v1", Operation: v1.FileGet.ID, ActorKinds: []string{"user"}, Actions: []string{"files.read"}, DownstreamFrom: referenceSources, DownstreamActions: map[string][]string{referenceSources[0]: {"files.read"}, referenceSources[1]: {"files.read"}}})
+	taskInstall := fabric.Installation{Publisher: "files-live-fixture", Account: taskAccount, Deployment: "live-task", Artifact: taskv1.Artifact(), Subjects: taskSubjects, Policy: liveApproval(operator, taskPolicy)}
+	taskRaw, taskSig := liveSigned(operator, taskInstall)
+	_, e = f.Approve(ctx, fabric.SignedInstallation{Payload: taskRaw, Signature: taskSig})
+	must(e)
+	_, e = js.AddStream(&nats.StreamConfig{Name: "TASK", Subjects: []string{taskv1.CreatedSubject, taskv1.CatalogChangedSubject}, Storage: nats.FileStorage})
+	must(e)
+	taskNC, e := sdk.Connect(ctx, cfg("task"))
+	must(e)
+	defer taskNC.Close()
+	trc, e := rpc.NewClient(taskNC)
+	must(e)
+	taskClient := identity.Client{RPC: trc, ServiceID: taskAccount, Kid: "live-task", PrivateKey: taskKey}
+	taskRegistry := &fabric.Client{Account: taskAccount, Kid: "live-task", Key: taskKey, CoreKey: coreKey.Public().(ed25519.PublicKey)}
+	taskApp, e := taskservice.New(taskservice.Config{GormDB: taskDB, Identity: taskClient, CoreTrust: coreKey.Public().(ed25519.PublicKey), Runtime: sdk.AppConfig{Connection: cfg("task"), Instance: "live-task", Registry: taskRegistry}})
+	must(e)
+	must(taskApp.Start(ctx))
+	defer taskApp.Stop()
+	taskAccess := func(op string) context.Context {
+		source := taskv1.CreateID
+		if strings.HasPrefix(op, "grants.") {
+			source = taskv1.AdminID
+		}
+		cred, e := gateClient.Credentials("identity.exchange_user")
+		must(e)
+		incoming, e := identity.Call[identity.UserExchange, identity.TokenResult](ctx, gateClient, "identity.v1.invocations.exchange_user", identity.UserExchange{Assertion: cred.Token, Session: sa, Target: identity.Target{Audience: "task/v1", Operation: source, WorkspaceID: wa}})
+		must(e)
+		outgoing, e := identity.Call[identity.ServiceExchange, identity.TokenResult](ctx, taskClient, "identity.v1.invocations.exchange_service", identity.ServiceExchange{IncomingToken: incoming.Token, IncomingOperation: source, Target: identity.Target{Audience: "access/v1", Operation: "access.v1." + op, WorkspaceID: wa}})
+		must(e)
+		parts := strings.Split(outgoing.Token, ".")
+		b, e := base64.RawURLEncoding.DecodeString(parts[1])
+		must(e)
+		var cl security.Claims
+		must(json.Unmarshal(b, &cl))
+		return rpc.WithCredentials(ctx, rpc.Credentials{Token: outgoing.Token, IdempotencyKey: folders.NewID(), Proof: func(subject string, raw []byte) (security.Proof, error) {
+			return security.SignProof(taskKey, subject, raw, cl.JTI, security.Proof{Kid: "live-task", Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Nonce: folders.NewID()})
+		}})
+	}
+	reserved, e := ac.Reserve(taskAccess("resources.reserve"), access.ReserveRequest{Type: tr.Type, OwnerKind: "workspace", OwnerID: wa, WorkspaceID: wa})
+	must(e)
+	taskScope := taskv1.Scope{WorkspaceID: wa, RootID: reserved.ResourceID}
+	taskReceipt, e := taskApp.Tasks.PrepareRoot(ctx, taskScope, taskKey, "live-task", taskAccount)
+	must(e)
+	_, e = ac.Activate(taskAccess("resources.activate"), access.LifecycleRequest{ResourceID: taskScope.RootID, Receipt: taskReceipt})
+	must(e)
+	must(taskApp.Tasks.ActivateRoot(ctx, taskScope))
+	must(id.SetMembership(ctx, sa, wa, bob, "member", false))
+	for _, v := range []struct{ user, action string }{{alice, "task.read"}, {alice, "task.create"}, {bob, "task.read"}} {
+		_, e = ac.AddGrant(taskAccess("grants.add"), access.GrantRequest{ResourceID: taskScope.RootID, PrincipalKind: "user", PrincipalID: v.user, Action: v.action})
+		must(e)
+	}
+	must(g.Reconcile(ctx))
+	taskBase := "/api/v1/task/workspaces/" + wa + "/roots/" + taskScope.RootID
+	status, body := request("POST", taskBase+"/teams", `{"name":"Live","key":"LIVE","description":"","color":""}`, ta, "application/json")
+	if status != 201 {
+		t.Fatalf("team: %d %s", status, body)
+	}
+	var team taskv1.Team
+	must(json.Unmarshal(body, &team))
+	workInput, _ := json.Marshal(taskv1.WorkInput{Title: "Attachment task", TeamID: team.ID})
+	status, body = request("POST", taskBase+"/work", string(workInput), ta, "application/json")
+	if status != 201 {
+		t.Fatalf("work: %d %s", status, body)
+	}
+	var work taskv1.WorkItem
+	must(json.Unmarshal(body, &work))
+	targetFile := upload(wsa, ta)
+	targetRef := resource.Ref{Kind: "file", WorkspaceID: wa, RootID: wsa.RootID, ID: targetFile.ID}
+	attachBody, _ := json.Marshal(map[string]any{"file": targetRef, "remove": false, "revision": work.Revision, "expected_updated_at": work.UpdatedAt})
+	workPath := taskBase + "/work/" + work.ID
+	status, body = request("POST", workPath+"/attachments", string(attachBody), ta, "application/json")
+	if status != 200 {
+		t.Fatalf("attach: %d %s", status, body)
+	}
+	previewBody, _ := json.Marshal(map[string]any{"target": targetRef})
+	status, body = request("POST", workPath+"/references/preview", string(previewBody), ta, "application/json")
+	if status != 200 || !bytes.Contains(body, []byte("live.bin")) {
+		t.Fatalf("authorized preview: %d %s", status, body)
+	}
+	status, body = request("POST", workPath+"/references/preview", string(previewBody), tb, "application/json")
+	if !isDenied(status) || bytes.Contains(body, []byte("live.bin")) {
+		t.Fatalf("target-denied preview leak: %d %s", status, body)
+	}
+	status, body = request("POST", base(wsa)+"/grants", fmt.Sprintf(`{"principal_id":%q,"action":"files.read"}`, bob), ta, "application/json")
+	if status != 200 {
+		t.Fatalf("share attachment: %d %s", status, body)
+	}
+	var attachmentGrant v1.GrantResult
+	must(json.Unmarshal(body, &attachmentGrant))
+	status, body = request("POST", workPath+"/references/preview", string(previewBody), tb, "application/json")
+	if status != 200 {
+		t.Fatalf("shared preview: %d %s", status, body)
+	}
+	status, body = request("POST", base(wsa)+"/grants", fmt.Sprintf(`{"grant_id":%q}`, attachmentGrant.GrantID), ta, "application/json")
+	if status != 200 {
+		t.Fatalf("revoke attachment: %d %s", status, body)
+	}
+	status, body = request("POST", workPath+"/references/preview", string(previewBody), tb, "application/json")
+	if !isDenied(status) || bytes.Contains(body, []byte("live.bin")) {
+		t.Fatalf("revoked preview leak: %d %s", status, body)
+	}
+	// Safe raster image and owner-bound avatar receipt travel through real Gate.
+	var raster bytes.Buffer
+	must(png.Encode(&raster, image.NewRGBA(image.Rect(0, 0, 2, 2))))
+	imageInput, _ := json.Marshal(map[string]any{"filename": "avatar.png", "mime": "image/png", "expected_size": raster.Len()})
+	status, body = request("POST", base(pa)+"/uploads", string(imageInput), ta, "application/json")
+	if status != 201 {
+		t.Fatalf("image initiate: %d %s", status, body)
+	}
+	var imageUpload v1.Upload
+	must(json.Unmarshal(body, &imageUpload))
+	status, body = request("PATCH", base(pa)+"/uploads/"+imageUpload.ID+"/bytes", raster.String(), ta, "application/octet-stream")
+	if status != 200 {
+		t.Fatalf("image bytes: %d %s", status, body)
+	}
+	status, body = request("POST", base(pa)+"/uploads/"+imageUpload.ID+"/complete", `{}`, ta, "application/json")
+	if status != 201 {
+		t.Fatalf("image complete: %d %s", status, body)
+	}
+	var imageFile v1.File
+	must(json.Unmarshal(body, &imageFile))
+	status, body = request("GET", base(pa)+"/files/"+imageFile.ID+"/image", "", ta, "")
+	if status != 200 || !bytes.Equal(body, raster.Bytes()) {
+		t.Fatalf("image download: %d bytes=%d", status, len(body))
+	}
+	status, body = request("POST", base(pa)+"/files/"+imageFile.ID+"/avatar", `{}`, ta, "application/json")
+	if status != 200 {
+		t.Fatalf("avatar receipt: %d %s", status, body)
+	}
+	var avatar v1.AvatarResult
+	must(json.Unmarshal(body, &avatar))
+	avatarEnv, e := resource.ParseAvatar(avatar.Receipt)
+	must(e)
+	must(resource.VerifyAvatar(filesKey.Public().(ed25519.PublicKey), avatarEnv, time.Now()))
 	// Share a personal file; revocation immediately denies the same known ID.
 	shared := upload(pa, ta)
 	path := base(pa) + "/files/" + shared.ID
@@ -520,5 +696,5 @@ authorization {users: [
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
-	t.Log("PASS: two users/two workspaces + personal roots, signed approvals/routes, TLS/NKey NATS, mTLS bytes, known-ID isolation, grant/session revoke during transfers, cross-root grant protection, scope substitution, migration replay and outbox delivery")
+	t.Log("PASS: two users/two workspaces + personal roots, signed approvals/routes, TLS/NKey NATS, mTLS bytes, known-ID isolation, grant/session revoke during transfers, cross-root grant protection, scope substitution, migration replay/outbox, Task attachment preview/revoke and raster avatar receipt")
 }

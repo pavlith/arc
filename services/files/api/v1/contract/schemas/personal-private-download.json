@@ -12,6 +12,9 @@
     "file_id": {
       "type": "string",
       "format": "uuid"
+    },
+    "image": {
+      "type": "boolean"
     }
   },
   "required": [

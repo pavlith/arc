@@ -20,7 +20,7 @@ var (
 	PersonalFileSearch      = module.Query[FileSearchRequest, FilesResult]{ID: "files.personal.files.search"}
 	PersonalFileList        = module.Query[FileListRequest, FilesResult]{ID: "files.personal.files.list"}
 	PersonalPrivateChunk    = module.Command[PrivateChunkRequest, Upload]{ID: "files.personal.uploads.chunk"}
-	PersonalPrivateDownload = module.Query[FileRef, File]{ID: "files.personal.files.download"}
+	PersonalPrivateDownload = module.Query[PrivateDownloadRequest, File]{ID: "files.personal.files.download"}
 )
 
 type GrantRequest struct {
@@ -38,3 +38,9 @@ type GrantResult struct {
 
 var RootGrants = module.Command[GrantRequest, GrantResult]{ID: "files.roots.grants"}
 var PersonalRootGrants = module.Command[GrantRequest, GrantResult]{ID: "files.personal.roots.grants"}
+
+type AvatarResult struct {
+	Receipt string `json:"receipt"`
+}
+
+var AvatarPrepare = module.Query[FileRef, AvatarResult]{ID: "files.personal.avatars.prepare"}

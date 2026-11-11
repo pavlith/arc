@@ -72,7 +72,7 @@ func New(cfg Config) (*Service, error) {
 	cfg.Runtime.SelfCheck = owner.PingContext
 	s := &Service{}
 	foldersModule := &folders.Service{GormDB: cfg.GormDB, Identity: cfg.Identity, Contract: compiled, Check: folders.OnlineCheck(cfg.Identity)}
-	objectsModule := &objects.Module{Quota: quota, DB: cfg.GormDB, Contract: compiled, Storage: cfg.Storage, Authorize: foldersModule.Authorize}
+	objectsModule := &objects.Module{Signer: cfg.Identity, Quota: quota, DB: cfg.GormDB, Contract: compiled, Storage: cfg.Storage, Authorize: foldersModule.Authorize}
 	registration := sdk.Registration{
 		Service: "files", Instance: cfg.Runtime.Instance,
 		Build: compiled.Manifest.Service.BuildVersion, Digest: compiled.Digest,

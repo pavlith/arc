@@ -13,7 +13,7 @@ func TestFilesSignedContractSurface(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(compiled.Manifest.Operations) != 38 {
+	if len(compiled.Manifest.Operations) != 39 {
 		t.Fatalf("unexpected Files operations: %d", len(compiled.Manifest.Operations))
 	}
 	seen := make(map[string]bool)

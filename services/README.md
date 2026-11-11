@@ -40,7 +40,7 @@ key is a JSON base64 string. Never pass Core/operator private keys to a domain
 service or mount another owner's database. `deploy/docker/Dockerfile.domain`
 accepts `SERVICE=task|notify|files`.
 
-Files artifact: `files/api/v1/contract/` (34 public metadata/grant + 4 hidden byte operations).
+Files artifact: `files/api/v1/contract/` (35 public metadata/grant/avatar + 4 hidden byte operations).
 The Files owner must apply migrations `000001_files` and
 `000002_upload_cleanup` and `000003_personal_roots` with `bash scripts/migrate.sh files /absolute/files.sqlite`,
 set a private absolute `storage_path`, and install its signed Fabric contract
@@ -464,3 +464,7 @@ the operational checks in [realtime protocol](../docs/REALTIME.md).
 Files' personal/workspace live backend fixture: `bash scripts/test-files-live.sh`
 (requires Go/C and pinned `nats-server` on PATH). See the scope and limits in
 [Files acceptance](../docs/FILES.md#reproducible-isolated-live-acceptance).
+
+Task Files attachments and Identity avatar asset binding:
+[resource integration](../docs/RESOURCE-REFERENCES.md). Task 0.9.0 requires
+migration `000009_attachments`; Core requires `000014_avatar_assets`.

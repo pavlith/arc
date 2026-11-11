@@ -40,12 +40,12 @@ func validatePrivateFiles(cfg *PrivateFilesConfig) error {
 	return nil
 }
 
-var personalFileBytesPath = regexp.MustCompile(`^/api/v1/files/personal/roots/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/(uploads|files)/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/(bytes|content)$`)
-var fileBytesPath = regexp.MustCompile(`^/api/v1/files/workspaces/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/roots/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/(uploads|files)/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/(bytes|content)$`)
+var personalFileBytesPath = regexp.MustCompile(`^/api/v1/files/personal/roots/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/(uploads|files)/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/(bytes|content|image)$`)
+var fileBytesPath = regexp.MustCompile(`^/api/v1/files/workspaces/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/roots/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/(uploads|files)/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/(bytes|content|image)$`)
 
 func isFilesBytePath(value string) bool {
 	return (strings.HasPrefix(value, "/api/v1/files/workspaces/") || strings.HasPrefix(value, "/api/v1/files/personal/")) &&
-		(strings.HasSuffix(value, "/bytes") || strings.HasSuffix(value, "/content"))
+		(strings.HasSuffix(value, "/bytes") || strings.HasSuffix(value, "/content") || strings.HasSuffix(value, "/image"))
 }
 
 // signedFilesOp permits private bytes only when the currently approved,
@@ -105,7 +105,7 @@ func (g *Gate) filesBytes(w http.ResponseWriter, r *http.Request, requestID stri
 		return
 	}
 	chunk := match[3] == "uploads" && match[5] == "bytes" && r.Method == http.MethodPatch
-	download := match[3] == "files" && match[5] == "content" && r.Method == http.MethodGet
+	download := match[3] == "files" && (match[5] == "content" || match[5] == "image") && r.Method == http.MethodGet
 	if !chunk && !download {
 		writeError(w, requestID, fault(rpc.CodeNotFound))
 		return
@@ -136,7 +136,7 @@ func (g *Gate) filesBytes(w http.ResponseWriter, r *http.Request, requestID stri
 			writeError(w, requestID, fault(rpc.CodeValidation))
 			return
 		}
-		q = filesv1.FileRef{Scope: filesv1.Scope{WorkspaceID: match[1], RootID: match[2]}, FileID: match[4]}
+		q = filesv1.PrivateDownloadRequest{FileRef: filesv1.FileRef{Scope: filesv1.Scope{WorkspaceID: match[1], RootID: match[2]}, FileID: match[4]}, Image: match[5] == "image"}
 	}
 	if personal {
 		opID = strings.Replace(opID, "files.", "files.personal.", 1)
@@ -226,7 +226,7 @@ func (g *Gate) filesBytes(w http.ResponseWriter, r *http.Request, requestID stri
 	var size int64
 	size, err = strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)
 	if err != nil || size < 0 || size > storage.MaxObjectSize ||
-		resp.Header.Get("Content-Type") != "application/octet-stream" {
+		(match[5] != "image" && resp.Header.Get("Content-Type") != "application/octet-stream" || match[5] == "image" && resp.Header.Get("Content-Type") != "image/png" && resp.Header.Get("Content-Type") != "image/jpeg") {
 		writeError(w, requestID, fault(rpc.CodeUnavailable))
 		return
 	}
@@ -234,6 +234,11 @@ func (g *Gate) filesBytes(w http.ResponseWriter, r *http.Request, requestID stri
 	// attachment name avoids reflecting untrusted filenames into HTTP.
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", `attachment; filename="download.bin"`)
+	if match[5] == "image" {
+		w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+		w.Header().Set("Content-Disposition", `inline; filename="avatar"`)
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	}
 	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	if etag := resp.Header.Get("ETag"); regexp.MustCompile(`^"[0-9a-f]{64}"$`).MatchString(etag) {

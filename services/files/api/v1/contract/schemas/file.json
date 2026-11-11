@@ -23,7 +23,11 @@
       "maxLength": 256
     },
     "mime": {
-      "const": "application/octet-stream"
+      "enum": [
+        "application/octet-stream",
+        "image/png",
+        "image/jpeg"
+      ]
     },
     "size": {
       "type": "integer",

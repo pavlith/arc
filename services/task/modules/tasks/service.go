@@ -12,6 +12,7 @@ import (
 	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/events"
 	"github.com/pavlith/arc/sdk/module"
+	"github.com/pavlith/arc/sdk/resource"
 	"github.com/pavlith/arc/sdk/rpc"
 	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/core/modules/access"
@@ -21,6 +22,7 @@ import (
 )
 
 type Service struct {
+	Resolve  func(context.Context, resource.Ref) (resource.Summary, error)
 	GormDB   *gorm.DB
 	Identity identity.Client
 	Contract *contract.Compiled
@@ -71,6 +73,16 @@ func (s *Service) Register(r *module.Registry) error {
 	if err := s.bindViews(r, policy, store); err != nil {
 		return err
 	}
+	if err := module.BindCommand(r, taskv1.AttachmentChangeOp, policy, store, s.changeAttachment); err != nil {
+		return err
+	}
+	if err := module.BindQuery(r, taskv1.AttachmentListOp, policy, s.listAttachments); err != nil {
+		return err
+	}
+	if err := module.BindQuery(r, taskv1.ReferencePreviewOp, policy, s.previewReference); err != nil {
+		return err
+	}
+
 	if err := module.BindCommand(r, taskv1.Create, policy, store, s.createGORM); err != nil {
 		return err
 	}
@@ -93,7 +105,10 @@ func (s *Service) Register(r *module.Registry) error {
 // Authorize verifies the actual task/root/workspace relation before Access.Check.
 // This runs before Command replay, so revocation also denies cached results.
 func (s *Service) Authorize(ctx context.Context, root, action string) error {
-	return s.authorizeGORM(ctx, root, action)
+	if err := s.authorizeGORM(ctx, root, action); err != nil {
+		return err
+	}
+	return s.attachmentPolicy(ctx)
 }
 
 func (s *Service) get(ctx context.Context, q GetRequest) (Task, error) {

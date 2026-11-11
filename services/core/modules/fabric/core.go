@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/security"
@@ -38,6 +39,8 @@ type SignedInstallation struct {
 	Signature []byte          `json:"signature"`
 }
 type Core struct {
+	compileMu   sync.Mutex
+	compiled    map[[32]byte]*contract.Compiled
 	GormDB      *gorm.DB
 	Identity    *identity.Core
 	ApprovalKey ed25519.PublicKey
@@ -69,7 +72,7 @@ func (c *Core) verify(s SignedInstallation) (Installation, *contract.Compiled, e
 	if contract.Strict(raw, &i) != nil || i.Publisher == "" || i.Account == "" || i.Deployment == "" {
 		return i, nil, contract.ErrInvalid
 	}
-	compiled, e := contract.Compile(i.Artifact)
+	compiled, e := c.compileArtifact(i.Artifact)
 	if e != nil {
 		return i, nil, e
 	}
@@ -114,7 +117,7 @@ func (c *Core) verify(s SignedInstallation) (Installation, *contract.Compiled, e
 		}
 	}
 	for _, r := range a.Rules {
-		// Own-service callers are explicit; downstream Access rules bind exact source operations.
+		// Own-service callers, downstream Access and bounded reference reads are explicit.
 		if r.Audience == audience {
 			o, e := compiled.Operation(r.Operation)
 			if e != nil || len(r.Actions) != 1 || r.Actions[0] != o.Auth.Action {
@@ -143,11 +146,11 @@ func (c *Core) verify(s SignedInstallation) (Installation, *contract.Compiled, e
 					return i, nil, security.ErrDenied
 				}
 			}
-		} else {
+		} else if !referenceReadRule(r, i.Account, audience, compiled) {
 			return i, nil, security.ErrDenied
 		}
 		for _, act := range r.Actions {
-			if !declared[act] {
+			if !declared[act] && !referenceReadRule(r, i.Account, audience, compiled) {
 				return i, nil, security.ErrDenied
 			}
 		}

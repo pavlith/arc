@@ -468,3 +468,16 @@ func (s *Local) scanOld(ctx context.Context, directory, suffix string, before ti
 		}
 	}
 }
+
+// OpenPending is a private read primitive for bounded completion validation.
+func (s *Local) OpenPending(ctx context.Context, id string) (*os.File, error) {
+	if err := s.check(ctx, id); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.regular(pendingPath(id)); err != nil {
+		return nil, err
+	}
+	return s.root.Open(pendingPath(id))
+}

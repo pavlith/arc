@@ -190,7 +190,9 @@ func TestM006(t *testing.T) {
 		i := fabric.Installation{Publisher: "m006-fixture", Account: account, Deployment: deployment, Artifact: a, Subjects: subjects, Policy: approval(operator, p), Subscriptions: subs}
 		raw, sig := signed(operator, i)
 		_, e = f.Approve(ctx, fabric.SignedInstallation{Payload: raw, Signature: sig})
-		must(e)
+		if e != nil {
+			t.Fatalf("approve %s installation: %v", m.Manifest.Service.Name, e)
+		}
 	}
 	install(taskv1.Artifact(), provider, "m006-task", nil)
 	subscription := fabric.EventSubscription{Provider: provider, Digest: tm.Digest, Subject: tasks.Created, Durable: notifyinbox.Durable}

@@ -144,6 +144,7 @@ func (c *Core) provisionUser(ctx context.Context, email, password, actor string,
 	})
 	return id, recovery, e
 }
+
 // Browser login never returns an access token.
 func (c *Core) LoginBrowser(ctx context.Context, email, password string) (LoginResult, error) {
 	return c.login(ctx, email, password, "browser")

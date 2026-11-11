@@ -381,7 +381,11 @@ func TestM0Identity(t *testing.T) {
 		results := make(chan error, 2)
 		for i := 0; i < 2; i++ {
 			wg.Add(1)
-			go func() { defer wg.Done(); _, e := c.RefreshBrowser(ctx, UserSession{fresh.Secret, fresh.CSRF}, fresh.Refresh); results <- e }()
+			go func() {
+				defer wg.Done()
+				_, e := c.RefreshBrowser(ctx, UserSession{fresh.Secret, fresh.CSRF}, fresh.Refresh)
+				results <- e
+			}()
 		}
 		wg.Wait()
 		close(results)

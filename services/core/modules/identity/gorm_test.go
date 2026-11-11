@@ -230,7 +230,11 @@ func TestSQLiteIdentityRefreshReuseAcrossConnections(t *testing.T) {
 	results := make(chan result, 2)
 	start := make(chan struct{})
 	for _, owner := range owners {
-		go func(c *Core) { <-start; v, e := c.RefreshBrowser(ctx, UserSession{login.Secret, login.CSRF}, login.Refresh); results <- result{v, e} }(owner)
+		go func(c *Core) {
+			<-start
+			v, e := c.RefreshBrowser(ctx, UserSession{login.Secret, login.CSRF}, login.Refresh)
+			results <- result{v, e}
+		}(owner)
 	}
 	close(start)
 	var successful LoginResult

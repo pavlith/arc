@@ -143,3 +143,21 @@ marking has at most one outgoing target; it does not merge data. A task has at
 most 100 incident links. Link mutation advances both work revisions and emits
 metadata-only invalidations in the same transaction. Archived endpoints retain
 links, are hidden from link lists and may be removed from an active source.
+
+### Shared work templates (Task 0.8.0)
+
+Templates live inside one Task root and one immutable business Team. They do
+not create another permission boundary and are visible to current root readers.
+Creating, replacing and archiving templates requires `access.grants.manage`;
+using a template requires `task.create` on that root. All changes use the Task
+command replay/audit/outbox transaction. Definition changes use optimistic
+`revision`, while archive retains the row.
+
+The template definition is a bounded `WorkInput` with a required title and
+Team; optional fields are priority, workflow status, Markdown/plain-text
+description, project, labels, assignees, due date and sort order. Team scope is
+immutable; status/project/labels must be live and in the same authorized
+root/Team. Assignees undergo live downstream validation. Creation from a
+template revalidates all references and rights, allocates a new task identifier
+and uses ordinary work-item creation; archived Teams/templates cannot be used.
+An optional title override changes only the new task, never the template.

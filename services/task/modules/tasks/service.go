@@ -62,6 +62,9 @@ func (s *Service) Register(r *module.Registry) error {
 	if err := s.bindProjects(r, policy, store); err != nil {
 		return err
 	}
+	if err := s.bindTemplates(r, policy, store); err != nil {
+		return err
+	}
 	if err := s.bindComments(r, policy, store); err != nil {
 		return err
 	}

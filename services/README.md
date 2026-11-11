@@ -4,7 +4,7 @@
 |---|---|---|
 | `core/` | `cmd/arc-core`, owner SQLite, private RPC and signed approval for Identity profile, workspace lifecycle and invitations, member/group management and administrator provisioning | Runtime policy and adapter #13 |
 | `gate/` | `cmd/arc-gate`, browser cookies, CLI tokens, signed domain routes, Identity routes and optional UI assets | WS/DAV adapters |
-| `task/` | `cmd/arc-task`, scoped Teams/workflow, shared work items, projects/labels, comments/history, subtasks/links, atomic bulk updates, saved-view APIs and atomic replay/outbox | Templates and UI adaptation #10 |
+| `task/` | `cmd/arc-task`, scoped Teams/workflow, shared work items, projects/labels, comments/history, subtasks/links, atomic bulk updates, saved-view APIs and atomic replay/outbox | Triage, UI adaptation and live template acceptance #10 |
 | `notify/` | `cmd/arc-notify`, personal Inbox/subscriptions and persisted fake outbound intents | Realtime and real channels #9/#12 |
 | `agent/` | `cmd/arc-agent`, private node RPC, durable journal, restricted systemd and Docker drivers | Admin/Gate/UI, live Docker acceptance, LXD and Core reconcile #13 |
 
@@ -390,3 +390,22 @@ error or deadline aborts the whole batch. Output contains task IDs, new revision
 and timestamps only. Replace the signed Task artifact/routes approval and Notify
 producer digest; no new database migration is needed for this operation. This is
 a full representation API, so clients must preserve fields they are not editing.
+
+## Task templates (0.8.0)
+
+Apply Task migration `000008_work_templates` before deploying the new Task
+binary. The following paths are relative to the Task root prefix above:
+
+| Method/path | Action |
+|---|---|
+| POST `/templates` | Manage: create a scoped template from work fields and `name` |
+| PATCH `/templates/{template_id}` | Manage: replace definition, using `revision` |
+| POST `/templates/{template_id}/archive` | Manage: archive, using `revision` |
+| GET `/templates/{template_id}` | Read: retrieve active definition |
+| GET `/templates?limit=100&cursor=<uuid>` | Read: paginate active templates |
+| POST `/templates/{template_id}/use` | Create: new task, optional title override |
+
+All commands require a stable Idempotency-Key. Gate requires CSRF/Origin for
+browser writes. Reapprove the exact Task 0.8.0 contract/digest, the approved
+broker subjects and Notify producer pin before deployment. The event subject
+remains `evt.task.catalog.changed.v1`; no new broker subjects were added.

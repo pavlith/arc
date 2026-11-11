@@ -1,7 +1,6 @@
-# Files service — initial implementation contract
+# Files service
 
-Tracking: [#29](https://github.com/pavlith/arc/issues/29). Stage 3 of
-[shortplan](shortplan.md). **Implementation in dev:** signed Files 0.7.0 has 35 public folder/upload/file/grant/avatar operations and 4 hidden private byte operations, scoped root lifecycle, owner SQLite migrations, audit/replay/outbox, SQL/disk-synchronized chunk append, cleanup and repeated ACL checks during streaming. **Private streaming is opt-in** and routed through Gate using Core-verified Ed25519 proof and mTLS. Isolated live acceptance is described below; production deployment remains open.
+Tracking: [#29](https://github.com/pavlith/arc/issues/29). The `main` tree contains a signed Files service with 35 public and four hidden private operations, owner SQLite, scoped personal/workspace roots, resumable uploads, private mTLS byte transport, cleanup, quotas and safe image routing. Code delivery is not production acceptance. See [resource references](RESOURCE-REFERENCES.md) for Task attachments and avatars.
 
 ## Ownership and authorization
 
@@ -92,114 +91,15 @@ mismatch, cancellation, orphan cleanup, migration replay and bounded memory
 for a 1 GiB transfer. Preserve errors without leaking target existence.
 A successful code build or migration is not live acceptance.
 
-## Delivered first slice (Files 0.1.0)
+## Catalog, reconciliation and search
 
-The signed artifact `services/files/api/v1/contract/` exposes six folder operations under
-`/api/v1/files/workspaces/{workspace_id}/roots/{acl_root_id}/folders`:
-POST create, GET list (`limit=1..100` + ID cursor), GET item, PATCH rename,
-POST `/{folder_id}/move`, DELETE archive. Commands require a stable
-`Idempotency-Key`; rename, move and archive require the current revision.
-An empty `parent_id` means the root; archival of a nonempty folder is rejected.
-Folder IDs cannot be moved across roots or used to bypass a live Access check.
-Mutations write owner-local audit plus metadata-only catalog outbox atomically.
+Folder/file create, get, list, rename, same-root move and archive use current scoped permissions, revision CAS, idempotency and atomic audit/outbox. A pending upload is actor/session-bound; only complete ready files are readable. Literal, case-sensitive filename search has a 256-character query, no wildcard expansion, 1–100 result page and an exclusive ID cursor; it never searches content or other roots.
 
-The owner must run `bash scripts/migrate.sh files /absolute/files.sqlite` before
-launching `go run ./cmd/arc-files -config /path/to/files.json`. Example config:
-`deploy/files/config.example.json`. No migration runs on service startup.
-The only declared event is `evt.files.catalog.changed.v1`; JetStream stream,
-NKey publisher ACL and signed Fabric service installation must be provisioned
-explicitly. The resource type is `files.workspace`, with actions
-`files.read`, `files.create`, `files.write`, `files.delete`,
-`files.share`, and `access.grants.manage`. The domain root must be reserved,
-prepared with a signed Files provider receipt, activated in Access, and then
-activated in Files before browser requests can succeed.
+Abort persists state before removing temporary bytes. Bounded cleanup retries interrupted expiry/abort operations, checks orphan temporary files and removes promoted objects only after a successful owner SQLite reference lookup and a 26-hour safety window. DB errors stop deletion. Archived objects are not garbage-collected without a separate retention rule. All blob keys are private UUID-scoped storage keys, never user-controlled filesystem paths.
 
-**Still open:** production NATS grants, private CA/cert provisioning and operator-approved production installations. The opt-in private streaming code does not imply successful production deployment.
+## Private Gate ↔ Files streaming
 
-## Local byte adapter (internal, not an upload API)
-
-`services/files/storage` implements an opt-in private `os.Root` local disk
-backend. It rejects caller-controlled paths and non-UUID keys, requires
-private storage directories, enforces 8 MiB maximum append chunks and
-1 GiB maximum objects, checks exact offsets, rolls back partial writes,
-and promotes verified SHA-256 bytes without replacing existing blobs.
-Preparation, append, promote, read and abort are **internal primitives**.
-They cannot be called by browsers or untrusted RPC clients. Root-scoped
-Identity/Access checks, SQL upload sessions, authorization on chunk and
-download streaming, and expiry/orphan reconciliation must be wired before
-these bytes can be exposed through Gate.
-
-## Upload metadata contract (Files 0.2.0, implementation in progress)
-
-Files' signed contract now includes upload initiate, status, abort and complete,
-plus ready-file GET/list. The upload initiator is the only actor/session that
-may inspect or complete its upload. Size is at most 1 GiB, the upload expires
-after 24 hours, and the initial declared MIME is restricted to
-`application/octet-stream`. The complete operation promotes only when
-physical and SQL offsets match the requested length, verifies SHA-256,
-writes ready metadata and emits an outbox invalidation. If the SQL transaction
-fails after local promotion, reconciliation must remove the unreferenced blob.
-This is not a complete HTTP upload service: private chunk write and download
-routes through Gate, session revalidation, cleanup and stream cancellation are
-still required before public use. No production installation is implied.
-
-### Pending upload reservation guardrail
-
-Files caps each actor to 10 unexpired pending upload sessions and 2 GiB of
-reserved bytes, independently of workspace quotas. Both caps are checked in
-the upload command transaction. Completion replaces the reservation with a
-catalog row; abort or expiry releases it. See workspace capacity below.
-
-## Private chunk transaction (internal Files adapter)
-
-`objects.Module.AppendChunk` now requires a verified invocation context and an
-online `files.create` authorization for the exact active root on every call.
-The upload is also bound to the verified actor and session. It accepts only
-1–8 MiB chunks (up to the remaining length), serializes owner-local appends,
-checks the provided offset against SQLite, reconciles uncommitted disk tails
-from interrupted requests, and advances the SQL offset with a scoped CAS.
-If that transaction fails, the disk is rewound to the last committed offset.
-Gate now signs the exact upload scope/offset/length and relays bytes over
-mutually authenticated TLS. Files verifies the Core proof and checks live
-`files.create` permissions before the append and repeatedly during slow
-body reads (at least every 256 KiB or one second). No browser identity
-headers are trusted by the private listener.
-
-## Durable abandoned-upload cleanup
-
-Files uses owner-local GORM migration `000002_upload_cleanup` to record
-`uploads.cleaned_at`. Abort now commits the metadata state **before** deleting
-any bytes. The bounded `files-upload-cleanup` worker marks expired pending
-sessions, deletes their temporary bytes (and those of aborted sessions), and
-records completion. It retries interrupted cleanup safely, rather than
-removing the file inside a potentially rolled-back SQL command. This handles
-known SQL upload rows. Orphan files lacking an upload row and abandoned
-promoted objects are handled by the reconciliation pass below.
-
-### Abandoned temporary inodes
-
-The cleanup worker now scans its private pending directory in bounded batches
-and removes UUID-named temp files older than **26 hours** only when SQLite
-has no active/pending-cleanup upload referencing them. This covers a process
-crash between creating an inode and committing an upload row. A disk failure
-while deleting is surfaced, not treated as successful cleanup. Committed blobs
-are protected by the promoted-object reconciliation pass below.
-
-## Bounded private read primitive
-
-`objects.Module.StreamDownload` requires a verified scoped identity and an
-online `files.read` check before touching disk. It reads only `ready`
-metadata in the same ACL root, validates the committed object size, copies
-at most 256 KiB per write, and repeats online authorization before each
-block and on completion. A cancellation or rejected Access check stops
-further delivery. This remains an **internal** primitive called by the opt-in Files private
-mTLS listener. Gate only exposes an approved public byte URL when the same
-signed Fabric snapshot includes the matching public metadata operation and
-the exact hidden private operation. Live multiuser acceptance remains open.
-
-## Opt-in private Gate ↔ Files streaming (0.3.0)
-
-Files adds the hidden, signed RPC operations `files.uploads.chunk` (command)
+Files uses the hidden, signed RPC operations `files.uploads.chunk` (command)
 and `files.files.download` (query), without exposing these as generated public
 RPC endpoints or carrying any bytes over NATS. The NATS-bound placeholders
 deny calls. The private `services/files/stream` HTTPS receiver decodes a
@@ -244,69 +144,7 @@ long download and upload, operator install/uninstall, and cleanup of promoted
 blobs that fail metadata commit. The domain unit tests use a local fixture
 identity authority and do **not** replace live Core cryptographic acceptance.
 
-## Abandoned promoted objects
-
-The cleanup worker also scans UUID-named `.blob` objects in bounded directory
-batches. It removes objects older than 26 hours only after a successful Files
-SQLite lookup confirms that **no file row in any state** references the blob key.
-Recent objects and all referenced objects are retained; this is crash recovery,
-not deletion of archived files or a file retention policy. Database failures
-stop the pass without deleting the candidate, and disk failures are surfaced.
-
-This relies on the initial deployment model: exactly one Files process owns
-its SQLite database and local byte directory. The single database connection
-serializes reference lookups behind completion transactions, including SQL
-rollback after promotion. Sharing the byte directory between independent
-processes or changing the database connection limit requires a new coordination
-contract before enabling this worker. No public endpoint or signed operation
-changes; existing cleanup also reclaims leftover pending links.
-
-## File catalog mutations (Files 0.4.0)
-
-The approved metadata contract adds PATCH `.../files/{file_id}` (rename),
-POST `.../files/{file_id}/move` and DELETE `.../files/{file_id}` (archive).
-Commands require an idempotency key and current positive `revision`.
-Rename/move require `files.write`; archive requires `files.delete`.
-Every operation binds the current workspace/root and requires live Access.
-Rename reuses upload filename validation; duplicate file display names remain
-allowed. Move accepts an active folder in the same root; omitted `folder_id`
-means the root. Cross-root moves and archived target folders are rejected.
-
-Successful mutations increment the metadata revision and atomically commit
-owner-local audit and a metadata-only catalog invalidation. A stale revision
-is a conflict. Content hashes and byte ETags stay unchanged across metadata
-updates; callers use `revision` for metadata CAS. Archive returns `archived:
-true`, hides the file from GET/list/download, and retains its blob and catalog
-row for a future retention policy. Subsequent mutations cannot revive it.
-Downloads recheck ready state before each 256 KiB block and at completion;
-archiving terminates the transfer at its next state check. An in-flight block
-may already have been written. Rename/move do not interrupt a download or
-change headers already sent. No schema migration is needed: the initial file
-table already includes archive state and timestamp.
-
-New operations require operator-approved installation of the new complete
-artifact and refreshed Gate routes. This source change does not authorize
-production signing or deployment.
-
-## File name search (Files 0.5.0)
-
-GET `.../workspaces/{workspace_id}/roots/{acl_root_id}/search` maps to
-`files.files.search` and requires live `files.read` on the bound root.
-Required `query` is a trimmed, nonempty UTF-8 string of at most 256 characters.
-Matching is a case-sensitive literal substring of the filename; `%`, `_` and
-backslashes have no wildcard meaning. This initial search does not read file
-contents, perform Unicode case folding, or expose other roots.
-
-Without `folder_id`, search covers all ready files within the current root.
-An explicit folder selects only its direct files and must be active in that
-same root. Archived files are excluded. `limit` is 1–100; the exclusive UUID
-`cursor` and `next_cursor` use ascending file IDs as in list. Results are live,
-not a snapshot: callers retain the same query/folder while paging and refetch
-after invalidations. The response is the existing bounded `FilesResult` shape.
-No full-text index, schema migration or browser UI is introduced. Deploying
-0.5.0 requires approving its new complete artifact and refreshing Gate routes.
-
-## Workspace capacity (Files 0.5.1)
+## Workspace capacity
 
 Operator-only `quota.workspace_bytes` and `quota.workspace_files` settings
 apply to each workspace across **all roots and users**. Defaults are 10 GiB
@@ -332,7 +170,7 @@ of filesystem free space; orphan recovery and operator disk monitoring remain
 necessary. Workspace quotas do not provide per-workspace self-service quota management;
 personal owner quotas are defined below. No migration or new public route is required.
 
-## Personal sections (Files 0.6.0)
+## Personal and workspace roots
 
 Personal operations have distinct `files.personal.*` IDs and subjects under
 `rpc.files.v1.personal.*`, the same action names, and resource type
@@ -429,10 +267,11 @@ The current full-network instrumented run hit a metadata deadline; it is not
 reported as a passing live guardrail. Focused Files/Gate package race checks
 and the ordinary live network scenario are recorded independently.
 
-## Attachments and avatar assets (Files 0.7.0)
+## Attachments and avatar assets
 
 Validated PNG/JPEG uploads and owner/session-bound avatar receipts are specified
 in [resource integration](RESOURCE-REFERENCES.md). Image routes use the same
 private signed Files download operation with an explicit signed `image` flag;
 ordinary content remains an attachment. Target metadata reads used by Task or
 Pages require exact signed read edges, preserving workspace scope and live ACL.
+

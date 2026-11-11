@@ -62,6 +62,12 @@ func (s *Service) Register(r *module.Registry) error {
 	if err := s.bindProjects(r, policy, store); err != nil {
 		return err
 	}
+	if err := s.bindComments(r, policy, store); err != nil {
+		return err
+	}
+	if err := s.bindViews(r, policy, store); err != nil {
+		return err
+	}
 	if err := module.BindCommand(r, taskv1.Create, policy, store, s.createGORM); err != nil {
 		return err
 	}

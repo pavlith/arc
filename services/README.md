@@ -4,7 +4,7 @@
 |---|---|---|
 | `core/` | `cmd/arc-core`, owner SQLite, private RPC and signed approval for Identity profile, workspace lifecycle and invitations, member/group management and administrator provisioning | Runtime policy and adapter #13 |
 | `gate/` | `cmd/arc-gate`, browser cookies, CLI tokens, signed domain routes, Identity routes and optional UI assets | WS/DAV adapters |
-| `task/` | `cmd/arc-task`, workspace create/get/list and title edits for own tasks, roots and atomic replay/outbox | Projects and views #10 |
+| `task/` | `cmd/arc-task`, scoped Teams/workflow, shared work items, projects/labels, comments/history, saved-view APIs and atomic replay/outbox | Subtasks/links/templates/bulk and UI adaptation #10 |
 | `notify/` | `cmd/arc-notify`, internal inbox/notification and persisted fake outbound intents | User inbox/subscriptions, realtime and real channels #9/#12 |
 | `agent/` | `cmd/arc-agent`, private node RPC, durable journal, restricted systemd and Docker drivers | Admin/Gate/UI, live Docker acceptance, LXD and Core reconcile #13 |
 
@@ -237,6 +237,51 @@ operation approvals, downstream Access checks and broker subjects for the new
 operations; replace the Task artifact/routes and update Notify's producer digest.
 The catalog change hint now additionally supports project/label identifiers;
 existing task-created notification semantics remain unchanged.
+
+## Comments, history and saved views
+
+Task 0.4.0 requires explicit migration `000005_collaboration`. Paths below use
+the same workspace/root prefix:
+
+| Method/path | Behavior |
+|---|---|
+| POST `/work/{task_id}/comments` | `task.create`; create plain-text/Markdown `body`, optional `parent_id` |
+| GET `/work/{task_id}/comments?limit=100` | `task.read`; page active comments by UUID; follow cursor |
+| PATCH `/work/{task_id}/comments/{comment_id}` | `task.create`, author only; replace body with current `revision` |
+| POST `/work/{task_id}/comments/{comment_id}/resolve` | `task.create`; set `resolved` true/false with current revision; metadata-only response |
+| POST `/work/{task_id}/comments/{comment_id}/archive` | `task.delete`; archive by revision; metadata-only response |
+| GET `/work/{task_id}/history?limit=100` | `task.read`; product task/comment audit metadata in increasing audit-ID order |
+| POST `/views`, PATCH `/views/{view_id}` | `task.create`; create or replace a personal/shared query definition; owner-only updates by revision |
+| GET `/views/{view_id}`, GET `/views?limit=100` | `task.read`; own personal views and root-shared views only |
+| POST `/views/{view_id}/archive` | `task.create`, owner only; archive by revision |
+
+Comments are capped at 15,000 bytes. Reply parents must be active comments of the
+same task/root/workspace; parent links are immutable and thread depth is capped
+at 32. Lists are size-bounded and may return a short page with `next_cursor`.
+Archived tasks and archived Team scopes deny these operations. Resolution can be
+changed by another root writer; only the author can edit a comment's text.
+
+History returns actor, operation, entity ID, revision, changed field names and
+timestamp. Its cursor is an integer audit ID, unlike the UUID cursors elsewhere.
+It does not reconstruct old values, content snapshots or historical changes
+never captured by this model. Legacy proof audit remains retained separately.
+
+View inputs are `name`, `description`, `is_shared` and typed `filters`. Filters
+support Team/status/assignee/project/label, priority, search, `layout` (list/board),
+`group_by` (status/priority/assignee/project/none) and presentation `sort`
+(position/priority/updated_at/title). Defaults are list/status/position. Query
+references must match the active root/workspace; assignee validation uses the
+existing Access operation with additional exact view create/update downstream
+sources. Layout/group/sort are presentation configuration; Work API pagination
+remains UUID-ordered. Clients apply configuration to the paginated work results.
+
+Personal view definitions are never returned to other root readers. Editing or
+archiving a shared view also remains owner-only. Definitions do not grant access
+to any task; reads always require current root authority. Personal-only changes
+write audit/replay without a root-wide outbox hint. Shared changes and unsharing
+emit identifier/revision hints without names, descriptions, filters or owner IDs.
+All emitted changes use the existing catalog event subject; update its Task
+artifact approval/routes and Notify producer digest through signed replacement.
 
 ## Runtime
 

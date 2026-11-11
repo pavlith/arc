@@ -1,0 +1,90 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 4000
+    },
+    "filters": {
+      "type": "object",
+      "properties": {
+        "team_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "status_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "assignee_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "project_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "label_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4
+        },
+        "search": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "layout": {
+          "enum": [
+            "list",
+            "board"
+          ]
+        },
+        "group_by": {
+          "enum": [
+            "status",
+            "priority",
+            "assignee",
+            "project",
+            "none"
+          ]
+        },
+        "sort": {
+          "enum": [
+            "position",
+            "priority",
+            "updated_at",
+            "title"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "is_shared": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "acl_root_id",
+    "name",
+    "filters"
+  ],
+  "additionalProperties": false
+}

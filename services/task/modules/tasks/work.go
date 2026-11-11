@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
+	"sort"
 	"strings"
 	"time"
 
@@ -161,7 +163,7 @@ func (s *Service) createWork(ctx context.Context, tx *gorm.DB, q taskv1.WorkCrea
 	if err := setWorkReferences(ctx, tx, taskv1.GetRequest{Scope: q.Scope, TaskID: base.ID}, q.WorkInput, taskv1.WorkItem{}); err != nil {
 		return taskv1.WorkItem{}, err
 	}
-	if err := s.catalogChanged(ctx, tx, q.Scope, "work", base.ID, detail.Revision); err != nil {
+	if err := s.catalogChanged(ctx, tx, q.Scope, "work", base.ID, detail.Revision, "created"); err != nil {
 		return taskv1.WorkItem{}, err
 	}
 	return workItem(ctx, tx, taskv1.GetRequest{Scope: q.Scope, TaskID: base.ID})
@@ -222,10 +224,11 @@ func (s *Service) updateWork(ctx context.Context, tx *gorm.DB, q taskv1.WorkUpda
 	if err := setWorkReferences(ctx, tx, q.GetRequest, q.WorkInput, current); err != nil {
 		return taskv1.WorkItem{}, err
 	}
-	if err := s.catalogChanged(ctx, tx, q.Scope, "work", q.TaskID, detail.Revision); err != nil {
+	updated, err := workItem(ctx, tx, q.GetRequest)
+	if err != nil {
 		return taskv1.WorkItem{}, err
 	}
-	return workItem(ctx, tx, q.GetRequest)
+	return updated, s.catalogChanged(ctx, tx, q.Scope, "work", q.TaskID, detail.Revision, workChangedFields(current, updated)...)
 }
 func (s *Service) archiveWork(ctx context.Context, tx *gorm.DB, q taskv1.WorkArchiveRequest) (taskv1.ArchivedItem, error) {
 	current, err := workItem(ctx, tx, q.GetRequest)
@@ -251,7 +254,18 @@ func (s *Service) archiveWork(ctx context.Context, tx *gorm.DB, q taskv1.WorkArc
 	current.Revision++
 	current.UpdatedAt = now
 	current.Archived = true
-	return taskv1.ArchivedItem{Scope: q.Scope, ID: q.TaskID, Revision: current.Revision, Archived: true, UpdatedAt: now}, s.catalogChanged(ctx, tx, q.Scope, "work", q.TaskID, current.Revision)
+	return taskv1.ArchivedItem{Scope: q.Scope, ID: q.TaskID, Revision: current.Revision, Archived: true, UpdatedAt: now}, s.catalogChanged(ctx, tx, q.Scope, "work", q.TaskID, current.Revision, "archived")
+}
+func workChangedFields(a, b taskv1.WorkItem) []string {
+	fields := map[string][2]any{"title": {a.Title, b.Title}, "description": {a.Description, b.Description}, "team_id": {a.TeamID, b.TeamID}, "status_id": {a.StatusID, b.StatusID}, "priority": {a.Priority, b.Priority}, "due_date": {a.DueDate, b.DueDate}, "sort_order": {a.SortOrder, b.SortOrder}, "project_id": {a.ProjectID, b.ProjectID}, "label_ids": {a.LabelIDs, b.LabelIDs}, "assignee_ids": {a.AssigneeIDs, b.AssigneeIDs}}
+	out := []string{}
+	for name, pair := range fields {
+		if !reflect.DeepEqual(pair[0], pair[1]) {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 func (s *Service) getWork(ctx context.Context, q taskv1.GetRequest) (taskv1.WorkItem, error) {
 	var out taskv1.WorkItem

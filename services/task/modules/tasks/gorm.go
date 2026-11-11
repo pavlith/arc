@@ -150,7 +150,7 @@ func (s *Service) authorizeGORM(ctx context.Context, root, action string) error 
 	}
 	query := "SELECT EXISTS(SELECT 1 FROM roots WHERE acl_root_id=? AND workspace_id=? AND state='active')"
 	args := []any{root, q.WorkspaceID}
-	if cl.Operation == Get || cl.Operation == taskv1.EditID || cl.Operation == taskv1.WorkGet.ID || cl.Operation == taskv1.WorkUpdate.ID || cl.Operation == taskv1.WorkArchive.ID {
+	if cl.Operation == Get || cl.Operation == taskv1.EditID || cl.Operation == taskv1.WorkGet.ID || cl.Operation == taskv1.WorkUpdate.ID || cl.Operation == taskv1.WorkArchive.ID || cl.Operation == taskv1.WorkHistory.ID || strings.HasPrefix(cl.Operation, "task.comments.") {
 		query = `SELECT EXISTS(SELECT 1 FROM tasks t JOIN roots r USING(acl_root_id,workspace_id)
 			WHERE t.acl_root_id=? AND t.workspace_id=? AND t.id=? AND r.state='active'`
 		args = append(args, q.TaskID)

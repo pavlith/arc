@@ -101,6 +101,22 @@ Team change hint. Historical associations can remain after access revocation;
 they never authorize a read. Member lists contain user IDs/timestamps only;
 profile data comes from the separately authorized Identity APIs.
 
+## Discussion, history and saved-query privacy
+
+Comment parents are immutable references within the same task/root/workspace;
+thread depth is bounded. Text editing is author-only; resolution is a root-writer
+operation and moderation archive uses `task.delete`. Text is returned as JSON
+data, never executable HTML. History exposes product audit metadata and changed
+field names, not reconstructed old values or snapshots of private content.
+
+Saved views are owned query definitions inside the corporate root. A personal
+definition is visible only to its owner; a shared definition is visible to current
+root readers, and only its owner may edit or archive it. Filters never create
+access authority. Private-only changes have no root-wide event; publishing,
+shared changes and unsharing have minimal identifier/revision hints. Presentation
+configuration belongs to the client, with typed server validation and bounded
+pagination. Lists and subsequent target reads always reacquire current access.
+
 ## Delivery boundary
 
 Each artifact/schema change requires signed Task replacement approval, exact

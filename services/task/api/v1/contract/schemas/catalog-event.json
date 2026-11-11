@@ -15,7 +15,9 @@
         "status",
         "work",
         "project",
-        "label"
+        "label",
+        "comment",
+        "view"
       ]
     },
     "entity_id": {

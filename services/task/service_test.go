@@ -23,6 +23,8 @@ func TestTaskApprovedArtifactAndTypedBindings(t *testing.T) {
 	operations = append(operations, taskv1.ProjectCreate.ID, taskv1.ProjectUpdate.ID, taskv1.ProjectArchive.ID, taskv1.ProjectGet.ID, taskv1.ProjectList.ID,
 		taskv1.LabelCreate.ID, taskv1.LabelUpdate.ID, taskv1.LabelArchive.ID, taskv1.LabelGet.ID, taskv1.LabelList.ID,
 		taskv1.TeamMemberAdd.ID, taskv1.TeamMemberRemove.ID, taskv1.TeamMemberList.ID)
+	operations = append(operations, taskv1.CommentCreate.ID, taskv1.CommentUpdate.ID, taskv1.CommentResolve.ID, taskv1.CommentArchive.ID, taskv1.CommentList.ID, taskv1.WorkHistory.ID,
+		taskv1.ViewCreate.ID, taskv1.ViewUpdate.ID, taskv1.ViewArchive.ID, taskv1.ViewGet.ID, taskv1.ViewList.ID)
 	if len(c.Manifest.Operations) != len(operations) || len(c.Manifest.Events) != 2 {
 		t.Fatal("unexpected Task operation or event")
 	}

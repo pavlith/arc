@@ -69,12 +69,25 @@ func catalogStatus(ctx context.Context, db *gorm.DB, q taskv1.TeamScope, id stri
 	err := db.WithContext(ctx).Where("id=? AND team_id=? AND workspace_id=? AND acl_root_id=? AND archived_at IS NULL", id, q.TeamID, q.WorkspaceID, q.RootID).Take(&row).Error
 	return row, catalogError(err)
 }
-func (s *Service) catalogChanged(ctx context.Context, tx *gorm.DB, scope taskv1.Scope, kind, id string, revision int64) error {
+func (s *Service) catalogChanged(ctx context.Context, tx *gorm.DB, scope taskv1.Scope, kind, id string, revision int64, fields ...string) error {
+	return s.catalogChange(ctx, tx, scope, kind, id, revision, true, fields...)
+}
+func (s *Service) catalogChange(ctx context.Context, tx *gorm.DB, scope taskv1.Scope, kind, id string, revision int64, emit bool, fields ...string) error {
 	cl, _ := rpc.VerifiedClaims(ctx)
 	meta, _ := rpc.Metadata(ctx)
 	now := time.Now().UTC()
-	if err := tx.WithContext(ctx).Exec(`INSERT INTO product_audit(workspace_id,acl_root_id,entity_kind,entity_id,actor,operation,revision,request_id,traceparent,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, scope.WorkspaceID, scope.RootID, kind, id, cl.Subject, cl.Operation, revision, meta.RequestID, meta.Traceparent, now).Error; err != nil {
+	if fields == nil {
+		fields = []string{}
+	}
+	changed, err := json.Marshal(fields)
+	if err != nil {
+		return unavailable(err)
+	}
+	if err := tx.WithContext(ctx).Exec(`INSERT INTO product_audit(workspace_id,acl_root_id,entity_kind,entity_id,actor,operation,revision,request_id,traceparent,created_at,fields_changed) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, scope.WorkspaceID, scope.RootID, kind, id, cl.Subject, cl.Operation, revision, meta.RequestID, meta.Traceparent, now, string(changed)).Error; err != nil {
 		return catalogError(err)
+	}
+	if !emit {
+		return nil
 	}
 	payload, err := json.Marshal(taskv1.CatalogChanged{Scope: scope, EntityKind: kind, EntityID: id, Revision: revision})
 	if err != nil {

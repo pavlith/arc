@@ -1,0 +1,39 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "task_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "comment_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "body": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 15000
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "required": [
+    "workspace_id",
+    "acl_root_id",
+    "task_id",
+    "comment_id",
+    "body",
+    "revision"
+  ],
+  "additionalProperties": false
+}

@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-		"testing"
+	"testing"
 
 	"github.com/pavlith/arc/sdk/agent"
 	"github.com/pavlith/arc/sdk/security"
@@ -15,8 +15,8 @@ func managedNodeProfile() agent.NodeProfile {
 	return agent.NodeProfile{
 		ID: "standard", Revision: 1, Ubuntu: []string{"24.04", "26.04"},
 		Packages: []agent.PackagePin{{Name: "curl", Version: "8.5.0-2ubuntu10.6"}},
-		Docker: true,
-		Updates: agent.UpdatePolicy{Security: "unattended", Packages: "manual", Reboot: "manual"},
+		Docker:   true,
+		Updates:  agent.UpdatePolicy{Security: "unattended", Packages: "manual", Reboot: "manual"},
 	}
 }
 
@@ -97,6 +97,7 @@ func TestNodeProfilePolicyAndNodeBinding(t *testing.T) {
 	}
 	f.policy.denied = false
 	bad := p
+	bad.Packages = append([]agent.PackagePin(nil), p.Packages...)
 	bad.Packages[0].Name = "--force"
 	if err := f.control.ApproveNodeProfile(ctx, "node-one", bad); !errors.Is(err, runtime.ErrInvalid) {
 		t.Fatalf("invalid package name accepted: %v", err)

@@ -33,7 +33,7 @@ type Module struct {
 	Contract  *contract.Compiled
 	Storage   *storage.Local
 	Authorize func(context.Context, string, string) error
-	chunkMu sync.Mutex
+	chunkMu   sync.Mutex
 }
 
 func (*Module) ID() string { return "objects" }

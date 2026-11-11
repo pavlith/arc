@@ -49,8 +49,13 @@ func ValidateHTTP(h HTTP) error {
 			return ErrInvalid
 		}
 	}
-	// Legacy manifests may have unbound path parameters; Gate rejects them until
-	// explicitly bound. This keeps M0-04 internal contracts readable.
+	// Public bindings must be complete at approval time, not only at Gate.
+	// An unbound URL parameter must never reach a signed operation.
+	for name := range params {
+		if !names["path:"+name] {
+			return ErrInvalid
+		}
+	}
 	return nil
 }
 func ReservedIdentityField(s string) bool {

@@ -300,13 +300,13 @@ func TestM0Identity(t *testing.T) {
 		defer nc.Close()
 		client, e := rpc.NewClient(nc)
 		must(e)
-		tc := TestClient{RPC: client, ServiceID: gate, Kid: "gate-1", PrivateKey: gateKey, Now: c.Now}
-		got, e := TestCall[IntrospectRequest, Session](deadline, tc, "identity.v1.sessions.introspect", IntrospectRequest{login.Secret})
+		tc := Client{RPC: client, ServiceID: gate, Kid: "gate-1", PrivateKey: gateKey, Now: c.Now}
+		got, e := Call[IntrospectRequest, Session](deadline, tc, "identity.v1.sessions.introspect", IntrospectRequest{login.Secret})
 		must(e)
 		if got.UserID != owner {
 			t.Fatal("wrong RPC session")
 		}
-		exchanged, e := TestCall[UserExchange, TokenResult](deadline, tc, "identity.v1.invocations.exchange_user", UserExchange{Session: auth, Target: target})
+		exchanged, e := Call[UserExchange, TokenResult](deadline, tc, "identity.v1.invocations.exchange_user", UserExchange{Session: auth, Target: target})
 		must(e)
 		_, e = c.Verifier().Invocation(ctx, exchanged.Token, "task/v1", "task.read", gate)
 		must(e)
@@ -316,9 +316,9 @@ func TestM0Identity(t *testing.T) {
 
 		tc.IdempotencyKey = "delegation-command-1"
 		request := DelegationRequest{Session: auth, Delegation: Delegation{GranteeKind: "service", GranteeID: worker, Resources: []string{policy.resource}, Actions: []string{"read"}}}
-		first, e := TestCall[DelegationRequest, Delegation](deadline, tc, "identity.v1.delegations.create", request)
+		first, e := Call[DelegationRequest, Delegation](deadline, tc, "identity.v1.delegations.create", request)
 		must(e)
-		repeated, e := TestCall[DelegationRequest, Delegation](deadline, tc, "identity.v1.delegations.create", request)
+		repeated, e := Call[DelegationRequest, Delegation](deadline, tc, "identity.v1.delegations.create", request)
 		must(e)
 		if first.ID != repeated.ID {
 			t.Fatal("idempotent command created duplicate delegation")
@@ -329,14 +329,14 @@ func TestM0Identity(t *testing.T) {
 			t.Fatal("domain mutation/audit were repeated")
 		}
 		request.Delegation.Actions = []string{"admin"}
-		if _, e = TestCall[DelegationRequest, Delegation](deadline, tc, "identity.v1.delegations.create", request); rpc.ErrorCode(e) != rpc.CodeConflict {
+		if _, e = Call[DelegationRequest, Delegation](deadline, tc, "identity.v1.delegations.create", request); rpc.ErrorCode(e) != rpc.CodeConflict {
 			t.Fatalf("idempotency conflict: %v", e)
 		}
 		tc.IdempotencyKey = ""
 		tc.ServiceID = worker
 		tc.Kid = "worker-1"
 		tc.PrivateKey = workerKey
-		if _, e = TestCall[DelegationRequest, Delegation](deadline, tc, "identity.v1.delegations.create", DelegationRequest{Delegation: Delegation{Grantor: owner, GranteeKind: "service", GranteeID: worker, Resources: []string{policy.resource}, Actions: []string{"read"}}}); rpc.ErrorCode(e) != rpc.CodeUnauthenticated {
+		if _, e = Call[DelegationRequest, Delegation](deadline, tc, "identity.v1.delegations.create", DelegationRequest{Delegation: Delegation{Grantor: owner, GranteeKind: "service", GranteeID: worker, Resources: []string{policy.resource}, Actions: []string{"read"}}}); rpc.ErrorCode(e) != rpc.CodeUnauthenticated {
 			t.Fatalf("RPC self-delegation: %v", e)
 		}
 		must(service.Stop())

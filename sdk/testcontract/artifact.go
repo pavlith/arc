@@ -18,7 +18,7 @@ func Artifact(major int) contract.Artifact {
 			o.Idempotency = "required"
 			o.TimeoutMS = 10000
 		}
-		o.HTTP = contract.HTTP{Expose: true, Method: "GET", Path: fmt.Sprintf("/api/v%d/books/%s/{id}", major, kind), SuccessStatus: 200}
+		o.HTTP = contract.HTTP{Expose: true, Method: "GET", Path: fmt.Sprintf("/api/v%d/books/%s/{id}", major, kind), SuccessStatus: 200, Bindings: []contract.Binding{{Source: "path", Name: "id", Field: "root_id", Type: "string"}}}
 		m.Operations = append(m.Operations, o)
 	}
 	m.Events = []contract.Event{{Name: "books.item.created", Subject: fmt.Sprintf("evt.books.item.created.v%d", major), Schema: "schemas/event.json"}}

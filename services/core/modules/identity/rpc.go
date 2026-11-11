@@ -207,8 +207,7 @@ func (c *Core) BindInternal(s *sdk.Service) error {
 	return c.bindProduct(s)
 }
 
-// TestClient holds only a service instance key, never Core's signing key.
-// It is suitable for the internal CLI/harness before Gate is implemented.
+// Client signs scoped service assertions and proofs, never Core's signing key.
 type Client struct {
 	RPC            *rpc.Client
 	ServiceID, Kid string
@@ -217,11 +216,6 @@ type Client struct {
 	Now            func() time.Time
 }
 
-type TestClient = Client
-
-func TestCall[Req, Res any](ctx context.Context, client Client, operation string, request Req) (Res, error) {
-	return Call[Req, Res](ctx, client, operation, request)
-}
 func Call[Req, Res any](ctx context.Context, client Client, operation string, request Req) (Res, error) {
 	var zero Res
 	credentials, e := client.Credentials("identity.exchange_service")

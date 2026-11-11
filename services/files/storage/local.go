@@ -222,7 +222,7 @@ func (s *Local) Append(ctx context.Context, uploadID string, offset, length int6
 	}
 	// A supplied body must end at the declared length, not conceal extra data.
 	var one [1]byte
-	n, err := body.Read(one[:])
+	n, err := io.ReadFull(body, one[:])
 	if n > 0 || err != nil && !errors.Is(err, io.EOF) {
 		return rollback(ErrInvalid)
 	}
@@ -335,6 +335,46 @@ func (s *Local) Abort(ctx context.Context, uploadID string) error {
 	path := pendingPath(uploadID)
 	if err := s.root.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("%w: abort: %v", ErrMissing, err)
+	}
+	return nil
+}
+
+// RewindPending restores the last SQL-committed offset after an interrupted
+// append. The caller must serialize it with its SQLite write transaction.
+// Never grow a short file or make a truncated pending upload appear complete.
+func (s *Local) RewindPending(ctx context.Context, uploadID string, committed int64) error {
+	if err := s.check(ctx, uploadID); err != nil {
+		return err
+	}
+	if committed < 0 || committed > MaxObjectSize {
+		return ErrInvalid
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	name := pendingPath(uploadID)
+	if err := s.regular(name); err != nil {
+		return err
+	}
+	f, err := s.root.OpenFile(name, os.O_RDWR, 0)
+	if err != nil {
+		return ErrMissing
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return ErrMissing
+	}
+	if info.Size() < committed {
+		return ErrConflict
+	}
+	if info.Size() == committed {
+		return nil
+	}
+	if err := f.Truncate(committed); err != nil {
+		return fmt.Errorf("%w: truncate: %v", ErrMissing, err)
+	}
+	if err := f.Sync(); err != nil {
+		return fmt.Errorf("%w: sync: %v", ErrMissing, err)
 	}
 	return nil
 }

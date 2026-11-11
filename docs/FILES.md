@@ -154,3 +154,15 @@ actor to 10 unexpired pending upload sessions and 2 GiB reserved bytes. This
 is a strict temporary protection, not a complete tenant quota or cleanup
 subsystem. The service must not be exposed for arbitrary byte transfer until
 expiry, cross-owner quotas, and the private Gate stream authorization are live.
+
+## Private chunk transaction (internal Files adapter)
+
+`objects.Module.AppendChunk` now requires a verified invocation context and an
+online `files.create` authorization for the exact active root on every call.
+The upload is also bound to the verified actor and session. It accepts only
+1–8 MiB chunks (up to the remaining length), serializes owner-local appends,
+checks the provided offset against SQLite, reconciles uncommitted disk tails
+from interrupted requests, and advances the SQL offset with a scoped CAS.
+If that transaction fails, the disk is rewound to the last committed offset.
+The private Gate-to-Files streaming route still needs a signed transport
+identity and cannot call this method from unverified browser headers.

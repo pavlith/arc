@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"regexp"
+	"sync"
 	"strings"
 	"time"
 	"unicode"
@@ -32,6 +33,7 @@ type Module struct {
 	Contract  *contract.Compiled
 	Storage   *storage.Local
 	Authorize func(context.Context, string, string) error
+	chunkMu sync.Mutex
 }
 
 func (*Module) ID() string { return "objects" }

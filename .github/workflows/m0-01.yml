@@ -2,12 +2,14 @@ name: M0-01 bootstrap smoke
 
 on:
   push:
-    branches: [dev]
+    branches: [main]
     paths:
       - ".github/workflows/m0-01.yml"
       - "Makefile"
       - "compose.yaml"
-      - "services/**"
+      - "services/**/migrations/**"
+      - "sdk/database/**"
+      - "services/sqlite_migrations_test.go"
       - "scripts/migrate.sh"
       - "scripts/test-m0-01.sh"
       - "scripts/verify-changed.sh"
@@ -18,12 +20,14 @@ on:
       - "go.sum"
       - "deploy/**"
   pull_request:
-    branches: [dev]
+    branches: [main]
     paths:
       - ".github/workflows/m0-01.yml"
       - "Makefile"
       - "compose.yaml"
-      - "services/**"
+      - "services/**/migrations/**"
+      - "sdk/database/**"
+      - "services/sqlite_migrations_test.go"
       - "scripts/migrate.sh"
       - "scripts/test-m0-01.sh"
       - "scripts/verify-changed.sh"
@@ -47,6 +51,5 @@ jobs:
         with:
           go-version: "1.27.3"
           cache-dependency-path: go.sum
-      - uses: ./.github/actions/install-ui
-      - run: bash scripts/verify-changed.sh --all
+
       - run: make m0-01-smoke

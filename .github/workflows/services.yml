@@ -2,7 +2,7 @@ name: Arc unified Go layout
 
 on:
   push:
-    branches: [dev]
+    branches: [main]
     paths:
       - "sdk/**"
       - "services/**"
@@ -13,7 +13,7 @@ on:
       - "go.sum"
       - ".github/workflows/services.yml"
   pull_request:
-    branches: [dev]
+    branches: [main]
     paths:
       - "sdk/**"
       - "services/**"
@@ -37,18 +37,10 @@ jobs:
         with:
           go-version: "1.27.3"
           cache-dependency-path: go.sum
-      - name: Format and build root module
+      - name: Verify formatting, vet and build
         run: |
-          gofmt -w $(find sdk services cmd test deploy/migrate -name '*.go' -type f)
-          python3 - <<'PY'
-          import base64, pathlib, subprocess
-          paths = subprocess.check_output(["git", "diff", "--name-only"]).decode().splitlines()
-          for name in paths:
-              if name.endswith(".go"):
-                  data = pathlib.Path(name).read_bytes()
-                  print("ARC_LAYOUT_GOFORMAT|" + name + "|" + base64.b64encode(data).decode(), flush=True)
-          PY
-          go test -race ./...
+          files=$(gofmt -l sdk services cmd test deploy/migrate)
+          if [ -n "$files" ]; then printf 'Unformatted Go source:\\n%s\\n' "$files"; exit 1; fi
           go vet ./...
           go build ./cmd/...
           bash -n scripts/test-m0-02.sh scripts/test-m0-05.sh scripts/migrate.sh

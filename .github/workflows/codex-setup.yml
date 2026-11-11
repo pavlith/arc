@@ -7,7 +7,6 @@ on:
       - "AGENTS.md"
       - ".agents/**"
       - "skills-lock.json"
-      - "skills-lock.json"
       - ".codex/**"
       - "scripts/**"
       - "docs/**"

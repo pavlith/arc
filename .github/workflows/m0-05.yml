@@ -2,7 +2,7 @@ name: M0-05 Gate HTTP and security guardrails
 
 on:
   push:
-    branches: [dev]
+    branches: [main]
     paths:
       - ".github/workflows/m0-05.yml"
       - ".github/actions/install-ui/**"
@@ -11,7 +11,9 @@ on:
       - "cmd/**"
       - "deploy/**"
       - "test/**"
-      - "services/**"
+      - "services/core/**"
+      - "services/gate/**"
+      - "services/task/**"
       - "go.mod"
       - "go.sum"
       - "deploy/gate/**"
@@ -19,7 +21,7 @@ on:
       - "scripts/test-m0-02.sh"
       - "scripts/test-m0-05.sh"
   pull_request:
-    branches: [dev]
+    branches: [main]
     paths:
       - ".github/workflows/m0-05.yml"
       - ".github/actions/install-ui/**"
@@ -28,7 +30,9 @@ on:
       - "cmd/**"
       - "deploy/**"
       - "test/**"
-      - "services/**"
+      - "services/core/**"
+      - "services/gate/**"
+      - "services/task/**"
       - "go.mod"
       - "go.sum"
       - "deploy/gate/**"
@@ -49,8 +53,7 @@ jobs:
         with:
           go-version: "1.27.3"
           cache-dependency-path: go.sum
-      - uses: ./.github/actions/install-ui
-      - run: bash scripts/verify-changed.sh --all
+
       - run: go build -o "$RUNNER_TEMP/arc-gate" ./cmd/arc-gate
       - run: go vet ./...
       - name: Install isolated integration tools

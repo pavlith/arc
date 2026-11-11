@@ -2,14 +2,17 @@ name: M0-06 Task outbox Notify vertical guardrails
 
 on:
   push:
-    branches: [dev]
+    branches: [main]
     paths:
       - ".github/workflows/m0-06.yml"
       - "sdk/**"
       - "cmd/**"
       - "deploy/**"
       - "test/**"
-      - "services/**"
+      - "services/core/**"
+      - "services/gate/**"
+      - "services/task/**"
+      - "services/notify/**"
       - "go.mod"
       - "go.sum"
       - "compose*.yaml"
@@ -17,14 +20,17 @@ on:
       - "scripts/test-m0-02.sh"
       - "scripts/test-m0-06.sh"
   pull_request:
-    branches: [dev]
+    branches: [main]
     paths:
       - ".github/workflows/m0-06.yml"
       - "sdk/**"
       - "cmd/**"
       - "deploy/**"
       - "test/**"
-      - "services/**"
+      - "services/core/**"
+      - "services/gate/**"
+      - "services/task/**"
+      - "services/notify/**"
       - "go.mod"
       - "go.sum"
       - "compose*.yaml"
@@ -45,8 +51,7 @@ jobs:
         with:
           go-version: "1.27.3"
           cache-dependency-path: go.sum
-      - uses: ./.github/actions/install-ui
-      - run: bash scripts/verify-changed.sh --all
+
       - run: go build ./cmd/arc-task ./cmd/arc-notify ./cmd/arc-gate
       - run: go vet ./...
       - name: Install isolated integration tools

@@ -62,6 +62,14 @@ func (s *Module) Register(r *module.Registry) error {
 	if err := module.BindQuery(r, filesv1.FileList, policy, s.listFiles); err != nil {
 		return err
 	}
+	// These subjects carry only signed metadata, never file bytes.
+	// Private HTTP handlers use the same Core-verified operations.
+	if err := module.BindCommand(r, filesv1.PrivateChunk, policy, store, s.noPrivateChunk); err != nil {
+		return err
+	}
+	if err := module.BindQuery(r, filesv1.PrivateDownload, policy, s.noPrivateDownload); err != nil {
+		return err
+	}
 	return r.AddWorker(module.Worker{ID: "files-upload-cleanup", Run: s.RunCleanup})
 }
 
@@ -367,4 +375,13 @@ func (s *Module) listFiles(ctx context.Context, q filesv1.FileListRequest) (file
 		out.Files = append(out.Files, fileDTO(row))
 	}
 	return out, nil
+}
+
+// NATS deliberately does not carry upload/download bytes. These handlers
+// bind the signed contract for Fabric/Core approval but deny RPC-only calls.
+func (s *Module) noPrivateChunk(context.Context, *gorm.DB, filesv1.PrivateChunkRequest) (filesv1.PrivateUnavailable, error) {
+	return filesv1.PrivateUnavailable{}, security.ErrDenied
+}
+func (s *Module) noPrivateDownload(context.Context, filesv1.FileRef) (filesv1.PrivateUnavailable, error) {
+	return filesv1.PrivateUnavailable{}, security.ErrDenied
 }

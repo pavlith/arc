@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "service": {
     "name": "files",
-    "build_version": "0.2.0",
+    "build_version": "0.3.0",
     "api_major": 1
   },
   "resources": [
@@ -537,6 +537,44 @@
             "type": "string"
           }
         ]
+      }
+    },
+    {
+      "id": "files.uploads.chunk",
+      "subject": "rpc.files.v1.uploads.chunk",
+      "kind": "command",
+      "request_schema": "schemas/private-chunk.json",
+      "response_schema": "schemas/private-unavailable.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "files.workspace",
+        "action": "files.create",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": false
+      }
+    },
+    {
+      "id": "files.files.download",
+      "subject": "rpc.files.v1.files.download",
+      "kind": "query",
+      "request_schema": "schemas/private-download.json",
+      "response_schema": "schemas/private-unavailable.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "files.workspace",
+        "action": "files.read",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": false
       }
     }
   ],

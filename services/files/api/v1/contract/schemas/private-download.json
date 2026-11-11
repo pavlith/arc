@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "workspace_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "file_id": {
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "acl_root_id",
+    "file_id"
+  ]
+}

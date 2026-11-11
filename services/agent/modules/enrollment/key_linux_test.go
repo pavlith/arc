@@ -10,6 +10,9 @@ import (
 
 func TestCreatePrivateKeyFileAndPreventReplacement(t *testing.T) {
 	dir := t.TempDir()
+	if err := os.Chmod(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
 	path := filepath.Join(dir, "agent.seed")
 	pub, err := CreateKeyFile(path)
 	if err != nil {

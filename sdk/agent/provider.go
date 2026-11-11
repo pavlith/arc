@@ -13,8 +13,9 @@ type RuntimeProvider interface {
 // Inventory discovers resource IDs after reconnect. Its entries are hints only;
 // each effect still requires a separately verified, fresh signed pull.
 type InventoryRequest struct {
-	NodeID  string `json:"node_id"`
-	AfterID string `json:"after_id,omitempty"`
+	NodeID  string     `json:"node_id"`
+	AfterID string     `json:"after_id,omitempty"`
+	Host    *HostFacts `json:"host,omitempty"`
 }
 type InventoryPage struct {
 	ResourceIDs []string `json:"resource_ids"`

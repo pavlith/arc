@@ -30,6 +30,7 @@ type Config struct {
 	Journal      contract.Journal
 	Drivers      map[contract.Kind]contract.Driver
 	PollInterval time.Duration
+	HostFacts    func(context.Context) (contract.HostFacts, error)
 	// Observe receives bounded codes only, never remote/driver error text or tokens.
 	Observe func(resource, code string)
 }
@@ -38,6 +39,7 @@ type Service struct {
 	provider contract.RuntimeProvider
 	runtime  *runtime.Module
 	interval time.Duration
+	facts    func(context.Context) (contract.HostFacts, error)
 	observe  func(string, string)
 	reports  contract.ReportJournal
 	lastSent map[string]string
@@ -66,7 +68,7 @@ func New(cfg Config) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{node: cfg.NodeID, provider: cfg.Provider, runtime: execution, interval: interval, observe: cfg.Observe, reports: reports, lastSent: map[string]string{}}, nil
+	return &Service{node: cfg.NodeID, provider: cfg.Provider, runtime: execution, interval: interval, facts: cfg.HostFacts, observe: cfg.Observe, reports: reports, lastSent: map[string]string{}}, nil
 }
 func nonce(prefix string) (string, error) {
 	var b [16]byte
@@ -104,7 +106,16 @@ func (s *Service) Step(ctx context.Context) (result error) {
 	after := ""
 	failed := false
 	for page := 0; page < 1024; page++ {
-		inventory, err := s.provider.Inventory(ctx, contract.InventoryRequest{NodeID: s.node, AfterID: after})
+		request := contract.InventoryRequest{NodeID: s.node, AfterID: after}
+		if after == "" && s.facts != nil {
+			facts, err := s.facts(ctx)
+			if err == nil && facts.Validate() == nil {
+				request.Host = &facts
+			} else {
+				s.note("", "HOST_FACTS_UNAVAILABLE")
+			}
+		}
+		inventory, err := s.provider.Inventory(ctx, request)
 		if err != nil {
 			s.note("", "INVENTORY_UNAVAILABLE")
 			return ErrUnavailable

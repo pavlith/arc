@@ -30,7 +30,8 @@ func (c *Control) nodeCaller(ctx context.Context) (string, error) {
 }
 func (c *Control) Inventory(ctx context.Context, request agent.InventoryRequest) (agent.InventoryPage, error) {
 	out := agent.InventoryPage{ResourceIDs: []string{}}
-	if !agent.ValidID(request.NodeID) || (request.AfterID != "" && !agent.ValidID(request.AfterID)) {
+	if !agent.ValidID(request.NodeID) || (request.AfterID != "" && !agent.ValidID(request.AfterID)) ||
+		(request.Host != nil && (request.AfterID != "" || request.Host.Validate() != nil)) {
 		return out, ErrInvalid
 	}
 	caller, err := c.nodeCaller(ctx)
@@ -51,6 +52,19 @@ func (c *Control) Inventory(ctx context.Context, request agent.InventoryRequest)
 				out.NextID = ids[99]
 			}
 			out.ResourceIDs = append(out.ResourceIDs, ids...)
+			// The node is already bound to its service identity above. Facts are
+			// untrusted metadata and are never used to issue execution permits.
+			if request.Host != nil {
+				raw, err := canonical(request.Host)
+				if err != nil {
+					return err
+				}
+				if err := tx.Model(&models.RuntimeNode{}).
+					Where("id=? AND (host_inventory IS NULL OR host_inventory<>?)", request.NodeID, raw).
+					Update("host_inventory", raw).Error; err != nil {
+					return err
+				}
+			}
 			// Inventory authenticates the node on every round. Refresh node liveness
 			// at most once per minute, without one audit/receipt per resource.
 			now := c.now().UTC()

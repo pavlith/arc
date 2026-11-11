@@ -8,6 +8,7 @@ type RuntimeNode struct {
 	Capabilities     string
 	Active           bool
 	LastSeenAt       *time.Time
+	HostInventory    *string
 	CreatedAt        time.Time
 }
 

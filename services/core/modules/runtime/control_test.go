@@ -556,3 +556,45 @@ func TestInventoryCoalescesNodeLiveness(t *testing.T) {
 		t.Fatal("online node liveness did not refresh")
 	}
 }
+
+func TestHostFactsVisibleOnlyToAuthorizedCoreNodeReader(t *testing.T) {
+	f := newControlFixture(t)
+	ctx := context.Background()
+	host := &agent.HostFacts{
+		OS: "ubuntu", Version: "26.04", Architecture: "amd64",
+		Kernel: "6.12.0-generic", CPUThreads: 4,
+		MemoryBytes: 4 << 30, RootTotal: 10 << 30,
+		RootAvailable: 7 << 30, APT: true, Systemd: true,
+	}
+	if _, err := f.control.Inventory(ctx, agent.InventoryRequest{NodeID: "node-one", Host: host}); err != nil {
+		t.Fatal(err)
+	}
+	nodes, err := f.control.Nodes(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, n := range nodes {
+		if n.ID == "node-one" {
+			found = true
+			if n.Host == nil || *n.Host != *host {
+				t.Fatalf("facts not preserved: %+v", n.Host)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("registered node not returned")
+	}
+	if _, err := f.control.Inventory(ctx, agent.InventoryRequest{NodeID: "node-one", AfterID: "other", Host: host}); !errors.Is(err, runtime.ErrInvalid) {
+		t.Fatalf("host facts unexpectedly accepted in page continuation: %v", err)
+	}
+	bad := *host
+	bad.Kernel = "invalid kernel with spaces"
+	if _, err := f.control.Inventory(ctx, agent.InventoryRequest{NodeID: "node-one", Host: &bad}); !errors.Is(err, runtime.ErrInvalid) {
+		t.Fatalf("invalid facts accepted: %v", err)
+	}
+	f.policy.caller = "other-sa"
+	if _, err := f.control.Inventory(ctx, agent.InventoryRequest{NodeID: "node-one", Host: host}); err == nil {
+		t.Fatal("cross-node facts injection accepted")
+	}
+}

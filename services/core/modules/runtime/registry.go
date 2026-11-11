@@ -20,11 +20,12 @@ type NodeRegistration struct {
 }
 
 type Node struct {
-	ID               string       `json:"id"`
-	ServiceAccountID string       `json:"service_account_id"`
-	Capabilities     []agent.Kind `json:"capabilities"`
-	Active           bool         `json:"active"`
-	LastSeenAt       *time.Time   `json:"last_seen_at,omitempty"`
+	ID               string           `json:"id"`
+	ServiceAccountID string           `json:"service_account_id"`
+	Capabilities     []agent.Kind     `json:"capabilities"`
+	Active           bool             `json:"active"`
+	LastSeenAt       *time.Time       `json:"last_seen_at,omitempty"`
+	Host             *agent.HostFacts `json:"host,omitempty"`
 }
 
 // RegisterNode binds one service account to one node permanently. Identical
@@ -167,7 +168,15 @@ func (c *Control) Nodes(ctx context.Context, after string) ([]Node, error) {
 		if json.Unmarshal([]byte(row.Capabilities), &caps) != nil {
 			return nil, security.ErrUnavailable
 		}
-		out = append(out, Node{ID: row.ID, ServiceAccountID: row.ServiceAccountID, Capabilities: caps, Active: row.Active, LastSeenAt: row.LastSeenAt})
+		node := Node{ID: row.ID, ServiceAccountID: row.ServiceAccountID, Capabilities: caps, Active: row.Active, LastSeenAt: row.LastSeenAt}
+		if row.HostInventory != nil {
+			var facts agent.HostFacts
+			if json.Unmarshal([]byte(*row.HostInventory), &facts) != nil || facts.Validate() != nil {
+				return nil, security.ErrUnavailable
+			}
+			node.Host = &facts
+		}
+		out = append(out, node)
 	}
 	return out, nil
 }

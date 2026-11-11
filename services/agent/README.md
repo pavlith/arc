@@ -27,14 +27,17 @@ the keys and trust roots referenced by it. Run these commands on the target host
 bash install.sh list
 bash install.sh plan
 sudo bash install.sh apply /absolute/path/to/arc-agent
+# Only for nodes explicitly intended to run Docker:
+sudo bash install.sh apply /absolute/path/to/arc-agent --with-docker
 ```
 
-The installer uses the existing local Docker Engine when reachable, starts an
-installed `docker.service` when needed, or installs Ubuntu's `docker.io` from
-the configured APT repositories. It installs the Agent binary and systemd unit,
-then checks the local Docker API and Agent process status. Check correlated Agent
-logs for the first successful Runtime round with Core. When updating only the
-config or credentials, restart `arc-agent.service` after the update.
+The installer deploys Agent and systemd independently of Docker. Docker setup
+is opt-in through `--with-docker`; the default path also works on a clean Ubuntu
+host intended for LXD or package management. Pre-provision the node credentials,
+trusted Core key and config through a secure operator channel first. This is
+not unattended enrollment; see [host-management roadmap](../../docs/AGENT-HOST-ROADMAP.md).
+Check correlated Agent logs for the first successful Runtime round with Core.
+When updating only config or credentials, restart `arc-agent.service`.
 
 ### Node configuration
 
@@ -48,6 +51,17 @@ config or credentials, restart `arc-agent.service` after the update.
   unsupported drivers.
 - Broker publish: Identity service exchange and the node's three concrete subjects.
   Subscribe only `_INBOX.runtime.<node-id>.>`; Agent sets that InboxPrefix.
+
+## Host inventory and APT planning
+
+`arc-agent -host-info` prints bounded read-only JSON host facts without requiring
+a connected Core. `arc-agent -apt-plan=curl,docker.io` simulates installation
+locally and reports additions/removals without executing changes. Each online inventory round sends a validated host snapshot in
+its first node-scoped RPC page. Core stores these facts separately from permissions;
+they do not authorize any host actions. APT supports read-only installed-package
+listing and a fixed-argv `apt-get -s` installation plan, including removal
+warnings. Neither API installs, removes nor updates packages; Core-approved,
+signed host operations are a subsequent milestone.
 
 ## Reconciliation
 

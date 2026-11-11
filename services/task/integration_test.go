@@ -178,7 +178,19 @@ func TestM006(t *testing.T) {
 			down[source] = []string{o.Auth.Action}
 		}
 		if account == provider {
-			p.Rules = append(p.Rules, access.Rule{Caller: account, Audience: "access/v1", Operation: "access.v1.check", ActorKinds: []string{"user"}, Actions: []string{"task.read", "task.create", "access.grants.manage"}, DownstreamFrom: from, DownstreamActions: down})
+			// The Access downstream grant must include every action referenced by
+			// its exact source bindings, including archive/delete operations.
+			// This union does not widen authority: each source still permits only
+			// the action declared in the signed Task operation.
+			actions := make([]string, 0, len(r.Actions))
+			seenActions := map[string]bool{}
+			for _, o := range m.Manifest.Operations {
+				if !seenActions[o.Auth.Action] {
+					actions = append(actions, o.Auth.Action)
+					seenActions[o.Auth.Action] = true
+				}
+			}
+			p.Rules = append(p.Rules, access.Rule{Caller: account, Audience: "access/v1", Operation: "access.v1.check", ActorKinds: []string{"user"}, Actions: actions, DownstreamFrom: from, DownstreamActions: down})
 			for _, op := range []string{"resources.reserve", "resources.activate"} {
 				p.Rules = append(p.Rules, access.Rule{Caller: account, Audience: "access/v1", Operation: "access.v1." + op, ActorKinds: []string{"user"}, Actions: []string{"task.create"}, DownstreamFrom: []string{"task/v1:" + tasks.Create}, DownstreamActions: map[string][]string{"task/v1:" + tasks.Create: {"task.create"}}})
 			}

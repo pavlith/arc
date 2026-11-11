@@ -100,6 +100,7 @@ func (g *Gate) filesBytes(w http.ResponseWriter, r *http.Request, requestID stri
 	if chunk {
 		offset, err := strconv.ParseInt(r.Header.Get("Upload-Offset"), 10, 64)
 		if err != nil || offset < 0 || offset > storage.MaxObjectSize ||
+			r.Header.Get("Content-Type") != "application/octet-stream" ||
 			r.ContentLength < 1 || r.ContentLength > storage.MaxChunkSize ||
 			r.ContentLength > storage.MaxObjectSize-offset || len(r.TransferEncoding) > 0 {
 			writeError(w, requestID, fault(rpc.CodeValidation))

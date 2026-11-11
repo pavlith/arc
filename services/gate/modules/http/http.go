@@ -526,13 +526,13 @@ func (g *Gate) cors(w http.ResponseWriter, r *http.Request) bool {
 		}
 		for _, h := range strings.Split(r.Header.Get("Access-Control-Request-Headers"), ",") {
 			switch strings.ToLower(strings.TrimSpace(h)) {
-			case "", "content-type", "authorization", "x-csrf-token", "idempotency-key", "x-request-id", "traceparent", "x-request-deadline":
+			case "", "content-type", "authorization", "x-csrf-token", "idempotency-key", "x-request-id", "traceparent", "x-request-deadline", "upload-offset":
 			default:
 				return false
 			}
 		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token, Idempotency-Key, X-Request-ID, Traceparent, X-Request-Deadline")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token, Idempotency-Key, X-Request-ID, Traceparent, X-Request-Deadline, Upload-Offset")
 	}
 	return true
 }

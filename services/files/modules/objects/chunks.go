@@ -103,17 +103,19 @@ type authorizedReader struct {
 	ctx       context.Context
 	authorize func() error
 	since     int
+	checkedAt time.Time
 }
 
 func (a *authorizedReader) Read(p []byte) (int, error) {
 	if err := a.ctx.Err(); err != nil {
 		return 0, err
 	}
-	if a.since == 0 || a.since >= 256<<10 {
+	if a.since == 0 || a.since >= 256<<10 || time.Since(a.checkedAt) >= time.Second {
 		if err := a.authorize(); err != nil {
 			return 0, err
 		}
 		a.since = 0
+		a.checkedAt = time.Now()
 	}
 	if len(p) > 256<<10-a.since {
 		p = p[:256<<10-a.since]

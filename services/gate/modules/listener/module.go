@@ -18,6 +18,7 @@ type Config struct {
 	TLSCertFile        string
 	TLSKeyFile         string
 	BehindTrustedProxy bool
+	EnableFilesStream  bool
 }
 
 type Module struct {
@@ -55,11 +56,18 @@ func (m *Module) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Normal Gate JSON calls retain short timeouts. A separately enabled
+	// Files byte path has its own 55-second request deadline and needs enough
+	// listener time to finish bounded upload and download streams.
+	readTimeout, writeTimeout := 15*time.Second, 20*time.Second
+	if m.Config.EnableFilesStream {
+		readTimeout, writeTimeout = 70*time.Second, 70*time.Second
+	}
 	s := &http.Server{
 		Handler:           m.Handler,
 		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      20 * time.Second,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
 		IdleTimeout:       60 * time.Second,
 		MaxHeaderBytes:    16 << 10,
 		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS13},

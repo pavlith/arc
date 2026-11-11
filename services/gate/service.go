@@ -50,6 +50,7 @@ func New(cfg Config) (*Service, error) {
 	listenerModule, err := listener.New(listener.Config{
 		Listen: cfg.Listen, TLSCertFile: cfg.TLSCertFile, TLSKeyFile: cfg.TLSKeyFile,
 		BehindTrustedProxy: len(cfg.HTTP.TrustedProxies) > 0,
+		EnableFilesStream: cfg.HTTP.PrivateFiles != nil,
 	}, g)
 	if err != nil {
 		return nil, err

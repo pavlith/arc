@@ -1,7 +1,7 @@
 # Files service — initial implementation contract
 
 Tracking: [#29](https://github.com/pavlith/arc/issues/29). Stage 3 of
-[shortplan](shortplan.md). **Implementation in dev:** signed Files 0.1.0 folder metadata CRUD, scoped move/archive, root lifecycle methods, owner SQLite migration, audit, replay and outbox are committed. No file-upload or download streaming has been implemented or deployed.
+[shortplan](shortplan.md). **Implementation in dev:** signed Files 0.2.0 has 12 folder/upload/file metadata operations, scoped root lifecycle, owner SQLite migrations, audit/replay/outbox, an internal SQL/disk-synchronized chunk append, post-commit expiry cleanup, abandoned-temp reconciliation and revocation-aware private read primitive. **None of these byte APIs is publicly exposed**: Gate-to-Files authenticated streaming and live deployment acceptance remain open.
 
 ## Ownership and authorization
 
@@ -114,11 +114,7 @@ explicitly. The resource type is `files.workspace`, with actions
 prepared with a signed Files provider receipt, activated in Access, and then
 activated in Files before browser requests can succeed.
 
-**Still open:** personal sections, file metadata operations, byte storage,
-initiate/complete/abort, private streaming Gate routes, quotas, orphan cleanup,
-production NATS grants and two-user acceptance. The existing Files SQL tables
-for ready bytes/uploads are reserved for this next implementation step; they
-do not imply that those endpoints are exposed.
+**Still open:** personal file sections, file rename/move/archive/search, signed private Gate byte routes, periodic authorization while accepting a single slow chunk, complete tenant-level quotas, orphaned promoted-object garbage collection, production NATS grants, service installations, and live two-user/two-workspace upload/download acceptance. Existing internal byte primitives do not imply public byte endpoints.
 
 ## Local byte adapter (internal, not an upload API)
 

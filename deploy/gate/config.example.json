@@ -14,5 +14,10 @@
   "key_file": "/run/secrets/gate_ed25519_seed",
   "core_trust_key_file": "/run/secrets/core_route_trust_public.json",
   "tls_cert_file": "/run/secrets/gate_tls_cert",
-  "tls_key_file": "/run/secrets/gate_tls_key"
+  "tls_key_file": "/run/secrets/gate_tls_key",
+  "files_stream_url": "https://files.internal:9482",
+  "files_stream_ca_file": "/run/arc/files-stream-ca.pem",
+  "files_stream_server_name": "files.internal",
+  "files_stream_client_cert_file": "/run/arc/gate-client.crt",
+  "files_stream_client_key_file": "/run/arc/gate-client.key"
 }

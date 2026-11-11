@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -11,6 +13,7 @@ import (
 	"log"
 	"log/slog"
 	"net/netip"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -38,6 +41,11 @@ type config struct {
 	TLSKeyFile       string     `json:"tls_key_file"`
 	UIDirectory      string     `json:"ui_directory,omitempty"`
 	EnableRealtime   bool       `json:"enable_realtime,omitempty"`
+	FilesStreamURL string `json:"files_stream_url,omitempty"`
+	FilesStreamCAFile string `json:"files_stream_ca_file,omitempty"`
+	FilesStreamServerName string `json:"files_stream_server_name,omitempty"`
+	FilesStreamClientCertFile string `json:"files_stream_client_cert_file,omitempty"`
+	FilesStreamClientKeyFile string `json:"files_stream_client_key_file,omitempty"`
 }
 
 func main() {
@@ -126,6 +134,38 @@ func run(file string) error {
 	remote := &edge.Remote{Client: identity.Client{
 		RPC: client, ServiceID: cfg.ServiceID, Kid: cfg.Kid, PrivateKey: key,
 	}, TrustRoot: root}
+	var filesBytes *edge.PrivateFilesConfig
+	streamConfigured:=cfg.FilesStreamURL!="" || cfg.FilesStreamCAFile!="" ||
+		cfg.FilesStreamServerName!="" || cfg.FilesStreamClientCertFile!="" ||
+		cfg.FilesStreamClientKeyFile!=""
+	if streamConfigured {
+		if cfg.FilesStreamURL=="" || cfg.FilesStreamCAFile=="" ||
+			cfg.FilesStreamServerName=="" || cfg.FilesStreamClientCertFile=="" ||
+			cfg.FilesStreamClientKeyFile=="" {
+			return errors.New("gate: incomplete private Files mTLS configuration")
+		}
+		cert,e:=tls.LoadX509KeyPair(cfg.FilesStreamClientCertFile,cfg.FilesStreamClientKeyFile)
+		if e!=nil{return errors.New("gate: private Files client certificate unavailable")}
+		ca,e:=os.ReadFile(cfg.FilesStreamCAFile)
+		if e!=nil{return errors.New("gate: private Files CA unavailable")}
+		pool:=x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(ca){return errors.New("gate: invalid private Files CA")}
+		privateTransport:=&http.Transport{
+			Proxy:nil,DisableCompression:true,ForceAttemptHTTP2:false,
+			TLSHandshakeTimeout:5*time.Second,ResponseHeaderTimeout:20*time.Second,
+			TLSClientConfig:&tls.Config{
+				MinVersion:tls.VersionTLS13,ServerName:cfg.FilesStreamServerName,
+				RootCAs:pool,Certificates:[]tls.Certificate{cert},
+			},
+		}
+		defer privateTransport.CloseIdleConnections()
+		filesBytes=&edge.PrivateFilesConfig{
+			URL:cfg.FilesStreamURL,
+			Client:&http.Client{Transport:privateTransport,
+				CheckRedirect:func(*http.Request,[]*http.Request)error{return http.ErrUseLastResponse}},
+			Sign:remote.SignPrivate,
+		}
+	}
 	g, err := gate.New(gate.Config{
 		HTTP: edge.Config{
 			Backend:        remote,
@@ -134,6 +174,7 @@ func run(file string) error {
 			AllowedOrigins: cfg.AllowedOrigins,
 			TrustedProxies: proxies,
 			EnableRealtime: cfg.EnableRealtime,
+			PrivateFiles: filesBytes,
 		},
 		Listen:      cfg.Listen,
 		TLSCertFile: cfg.TLSCertFile,

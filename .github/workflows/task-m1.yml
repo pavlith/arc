@@ -1,0 +1,60 @@
+name: M1 Task Notify domain smoke (independent of UI)
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - ".github/workflows/task-m1.yml"
+      - "sdk/**"
+      - "services/task/**"
+      - "services/notify/**"
+      - "services/core/**"
+      - "services/gate/**"
+      - "test/**"
+      - "scripts/test-m0-02.sh"
+      - "scripts/test-m0-06.sh"
+      - "go.mod"
+      - "go.sum"
+  pull_request:
+    branches: [dev]
+    paths:
+      - ".github/workflows/task-m1.yml"
+      - "sdk/**"
+      - "services/task/**"
+      - "services/notify/**"
+      - "services/core/**"
+      - "services/gate/**"
+      - "test/**"
+      - "scripts/test-m0-02.sh"
+      - "scripts/test-m0-06.sh"
+      - "go.mod"
+      - "go.sum"
+
+permissions:
+  contents: read
+
+jobs:
+  task-notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.3"
+          cache-dependency-path: go.sum
+      - name: Validate Go source formatting
+        run: |
+          files=$(gofmt -l sdk services cmd test deploy/migrate)
+          if [ -n "$files" ]; then
+            printf 'Unformatted Go files:\n%s\n' "$files"
+            exit 1
+          fi
+      - name: Validate Task and Notify contracts and build
+        run: |
+          go test -count=1 ./services/task/... ./services/notify/...
+          go build ./cmd/arc-task ./cmd/arc-notify
+      - name: Install isolated NATS test server
+        run: go install github.com/nats-io/nats-server/v2@v2.15.1
+      - name: Run M0-06 NATS/TLS integration smoke
+        run: bash scripts/test-m0-06.sh

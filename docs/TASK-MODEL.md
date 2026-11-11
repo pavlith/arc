@@ -161,3 +161,26 @@ root/Team. Assignees undergo live downstream validation. Creation from a
 template revalidates all references and rights, allocates a new task identifier
 and uses ordinary work-item creation; archived Teams/templates cannot be used.
 An optional title override changes only the new task, never the template.
+
+### Triage semantics (Task 0.8.1)
+
+Each newly created Team has a default `backlog` workflow status.
+`task.work.triage` is an explicit decision operation for a Team-owned item
+currently in the backlog. With the live `task.create` permission, current
+work `revision` and `expected_updated_at`, it transitions that item only to
+an active status in the **same Team** with category `todo` (accepted) or
+`cancelled` (declined). It preserves title, description, project, labels,
+assignees and due date; an active reference is revalidated on execution.
+Repeated decisions conflict; replay under the same idempotency key still
+requires live authorization. The normal `task.work.update` operation remains
+available for other workflow transitions and cannot be used to bypass Access.
+
+**Editor content contract.** Task descriptions and comments are UTF-8 JSON
+strings containing plain text or Markdown source only, never trusted HTML.
+Work descriptions are limited to 60,000 bytes and work inputs to 160,000
+encoded bytes; comments have a 15,000-character SQLite constraint and
+their own API length validation. Clients must escape text by default;
+Markdown renderers must disable raw HTML, unsafe URLs, inline scripts and
+embedded iframes. Only http(s) URLs may become clickable links in an editor.
+Stored strings are neither sanitized HTML nor permission-bearing embeds.
+A future Tiptap document format requires its own schema/version/validator.

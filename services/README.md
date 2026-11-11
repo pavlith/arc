@@ -409,3 +409,13 @@ All commands require a stable Idempotency-Key. Gate requires CSRF/Origin for
 browser writes. Reapprove the exact Task 0.8.0 contract/digest, the approved
 broker subjects and Notify producer pin before deployment. The event subject
 remains `evt.task.catalog.changed.v1`; no new broker subjects were added.
+
+## Task triage (0.8.1)
+
+POST `/work/{task_id}/triage` with `status_id`, `revision` and
+`expected_updated_at`. The source must currently be `backlog`;
+the destination is an active status of category `todo` or `cancelled`
+in the same Team. Requires live `task.create`, CSRF/Origin for browser
+requests and Idempotency-Key. The ordinary `work.update` workflow remains
+available for other transitions. Reapprove the new Task contract and replace
+the Notify Task producer digest before deployment.

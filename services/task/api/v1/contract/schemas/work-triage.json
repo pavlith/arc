@@ -1,0 +1,38 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "task_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "expected_updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "status_id": {
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "acl_root_id",
+    "task_id",
+    "revision",
+    "expected_updated_at",
+    "status_id"
+  ],
+  "additionalProperties": false
+}

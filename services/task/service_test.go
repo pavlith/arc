@@ -19,7 +19,7 @@ func TestTaskApprovedArtifactAndTypedBindings(t *testing.T) {
 	operations := []string{taskv1.Create.ID, taskv1.Get.ID, taskv1.List.ID, taskv1.Edit.ID, taskv1.Admin.ID, taskv1.ListGrants.ID,
 		taskv1.TeamCreate.ID, taskv1.TeamUpdate.ID, taskv1.TeamArchive.ID, taskv1.TeamGet.ID, taskv1.TeamList.ID,
 		taskv1.StatusCreate.ID, taskv1.StatusUpdate.ID, taskv1.StatusDelete.ID, taskv1.StatusList.ID}
-	operations = append(operations, taskv1.WorkLinkChange.ID, taskv1.WorkLinks.ID, taskv1.WorkSetParent.ID, taskv1.WorkCreate.ID, taskv1.WorkUpdate.ID, taskv1.WorkArchive.ID, taskv1.WorkGet.ID, taskv1.WorkList.ID)
+	operations = append(operations, taskv1.WorkBulkUpdate.ID, taskv1.WorkLinkChange.ID, taskv1.WorkLinks.ID, taskv1.WorkSetParent.ID, taskv1.WorkCreate.ID, taskv1.WorkUpdate.ID, taskv1.WorkArchive.ID, taskv1.WorkGet.ID, taskv1.WorkList.ID)
 	operations = append(operations, taskv1.ProjectCreate.ID, taskv1.ProjectUpdate.ID, taskv1.ProjectArchive.ID, taskv1.ProjectGet.ID, taskv1.ProjectList.ID,
 		taskv1.LabelCreate.ID, taskv1.LabelUpdate.ID, taskv1.LabelArchive.ID, taskv1.LabelGet.ID, taskv1.LabelList.ID,
 		taskv1.TeamMemberAdd.ID, taskv1.TeamMemberRemove.ID, taskv1.TeamMemberList.ID)

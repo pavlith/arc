@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "service": {
     "name": "task",
-    "build_version": "0.6.0",
+    "build_version": "0.7.0",
     "api_major": 1
   },
   "resources": [
@@ -2117,6 +2117,42 @@
             "source": "path",
             "name": "task_id",
             "field": "task_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "task.work.bulk_update",
+      "subject": "rpc.task.v1.work.bulk_update",
+      "kind": "command",
+      "request_schema": "schemas/bulk-update.json",
+      "response_schema": "schemas/bulk-result.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "task.workspace",
+        "action": "task.create",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/work/bulk-update",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
             "type": "string"
           }
         ]

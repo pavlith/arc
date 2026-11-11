@@ -4,7 +4,7 @@
 |---|---|---|
 | `core/` | `cmd/arc-core`, owner SQLite, private RPC and signed approval for Identity profile, workspace lifecycle and invitations, member/group management and administrator provisioning | Runtime policy and adapter #13 |
 | `gate/` | `cmd/arc-gate`, browser cookies, CLI tokens, signed domain routes, Identity routes and optional UI assets | WS/DAV adapters |
-| `task/` | `cmd/arc-task`, scoped Teams/workflow, shared work items, projects/labels, comments/history, subtasks/links, saved-view APIs and atomic replay/outbox | Templates/bulk and UI adaptation #10 |
+| `task/` | `cmd/arc-task`, scoped Teams/workflow, shared work items, projects/labels, comments/history, subtasks/links, atomic bulk updates, saved-view APIs and atomic replay/outbox | Templates and UI adaptation #10 |
 | `notify/` | `cmd/arc-notify`, personal Inbox/subscriptions and persisted fake outbound intents | Realtime and real channels #9/#12 |
 | `agent/` | `cmd/arc-agent`, private node RPC, durable journal, restricted systemd and Docker drivers | Admin/Gate/UI, live Docker acceptance, LXD and Core reconcile #13 |
 
@@ -374,3 +374,19 @@ and timestamps, records both history changes and emits both root-scoped catalog
 hints. Output contains IDs and versions only. Reads require `task.read`. Apply
 `000007_links`, replace signed Task routes/artifact approval and update Notify's
 producer digest. This API does not merge duplicate tasks or propagate statuses.
+
+## Atomic bulk work updates
+
+Task 0.7.0 adds `POST .../work/bulk-update` with the existing workspace/root path
+and a single Idempotency-Key. The body contains `items` (1–20 full work update
+representations, each with `task_id`, `revision`, `expected_updated_at`); per-item
+scope overrides are forbidden. Duplicate task IDs and encoded payloads above
+180000 bytes are rejected. Parent and link relations are preserved.
+
+The command requires current `task.create` and uses the same validation,
+reference/assignee checks and revision guards as individual work updates. Every
+update, audit, event and replay result shares one owner-local transaction: any
+error or deadline aborts the whole batch. Output contains task IDs, new revisions
+and timestamps only. Replace the signed Task artifact/routes approval and Notify
+producer digest; no new database migration is needed for this operation. This is
+a full representation API, so clients must preserve fields they are not editing.

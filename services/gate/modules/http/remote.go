@@ -130,7 +130,8 @@ func SubscribeChanges(nc *nats.Conn) (<-chan struct{}, func(), error) {
 // Ed25519 invocation proof. Only Gate owns the instance signing key.
 func (r *Remote) SignPrivate(ctx context.Context, opID, token string, payload json.RawMessage, idem string) ([]byte, error) {
 	if r == nil || len(r.Client.PrivateKey) != ed25519.PrivateKeySize || r.Client.Kid == "" ||
-		ctx == nil || ctx.Err() != nil || len(payload) == 0 {
+		ctx == nil || ctx.Err() != nil || len(payload) == 0 ||
+		opID != "files.uploads.chunk" && opID != "files.files.download" {
 		return nil, security.ErrUnavailable
 	}
 	jti, err := tokenJTI(token)

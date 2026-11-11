@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -300,6 +301,20 @@ func TestM006(t *testing.T) {
 	must(e)
 	// Start actual standalone domain binaries, mounted credentials and domain roles.
 	confDir := t.TempDir()
+	// The standalone Notify process defaults to no outbound channel. Exercise
+	// actual delivery with a fixture-local TLS receiver, never an external URL.
+	webhookReceiver := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.Header.Get("Idempotency-Key") == "" || r.Header.Get("X-Arc-Signature") == "" {
+			http.Error(w, "invalid webhook", http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer webhookReceiver.Close()
+	webhookKey := filepath.Join(confDir, "webhook.key")
+	must(os.WriteFile(webhookKey, bytes.Repeat([]byte{77}, 32), 0600))
+	webhookCA := filepath.Join(confDir, "webhook-ca.pem")
+	must(os.WriteFile(webhookCA, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: webhookReceiver.Certificate().Raw}), 0600))
 	write := func(name string, v any) string {
 		b, e := json.Marshal(v)
 		must(e)
@@ -318,7 +333,7 @@ func TestM006(t *testing.T) {
 		base := bootstrap.Config{NATS: cfg("m006-"+kind, "nats-"+kind+".seed"), SQLitePath: path, ServiceID: account, Kid: kid, KeyFile: keyFile, CoreKeyFile: coreFile, Instance: "m006-" + kind}
 		var config any = taskservice.BootstrapConfig{Config: base}
 		if kind == "notify" {
-			config = notifyservice.BootstrapConfig{Config: base, Subscription: sub}
+			config = notifyservice.BootstrapConfig{Config: base, Subscription: sub, Webhook: delivery.WebhookConfig{Enabled: true, URL: webhookReceiver.URL, KeyFile: webhookKey, CAFile: webhookCA}}
 		}
 		file := write(kind+".json", config)
 		cmd := exec.Command(filepath.Join(os.Getenv("ARC_DOMAIN_BIN_DIR"), "arc-"+kind), "-config", file)
@@ -677,10 +692,10 @@ func TestM006(t *testing.T) {
 		return count(ndb, `SELECT count(*) FROM delivery_intents WHERE delivered_at IS NOT NULL`) == notificationCount
 	}, nil)
 	countsMu.Lock()
-	t.Logf("warm create → notification + fake intent delivery latency=%s; observed Core RPC including background approval polls=%v; request path=5 actor RPC + 1 Fabric lease RPC", time.Since(warmStart), counts)
+	t.Logf("warm create → notification + HTTPS webhook delivery latency=%s; observed Core RPC including background approval polls=%v; request path=5 actor RPC + 1 Fabric lease RPC", time.Since(warmStart), counts)
 	countsMu.Unlock()
 	// Report a sample distribution, not a one-off value that also included consumer startup.
-	// Measure each request until its own durable fake-delivery intent completes.
+	// Measure each request until its own durable webhook intent completes.
 	latencies := []time.Duration{time.Since(warmStart)}
 	for i := 0; i < 9; i++ {
 		started := time.Now()
@@ -703,7 +718,7 @@ func TestM006(t *testing.T) {
 	}
 	sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
 	percentile := func(n int) time.Duration { return latencies[(len(latencies)*n+99)/100-1] }
-	t.Logf("running-consumer create -> notification -> fake delivery: samples=%d p50=%s p95=%s max=%s (25ms observation polling, 100ms worker ticks; not a load benchmark)", len(latencies), percentile(50), percentile(95), latencies[len(latencies)-1])
+	t.Logf("running-consumer create -> notification -> HTTPS webhook: samples=%d p50=%s p95=%s max=%s (25ms observation polling, 100ms worker ticks; not a load benchmark)", len(latencies), percentile(50), percentile(95), latencies[len(latencies)-1])
 	if count(tdb, `SELECT count(*) FROM tasks`) != taskCount || count(ndb, `SELECT count(*) FROM delivery_intents WHERE delivered_at IS NOT NULL`) != notificationCount {
 		t.Fatal("running-consumer samples lost an effect")
 	}

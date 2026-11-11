@@ -38,18 +38,18 @@ type liveSubscription struct {
 }
 
 type realtimeClient struct {
-	gate    *Gate
-	hub     *realtimeHub
-	socket  *websocket.Conn
-	ctx     context.Context
-	cancel  context.CancelFunc
-	auth    identity.Authentication
-	userID  string
+	gate      *Gate
+	hub       *realtimeHub
+	socket    *websocket.Conn
+	ctx       context.Context
+	cancel    context.CancelFunc
+	auth      identity.Authentication
+	userID    string
 	sessionID string
-	mu      sync.Mutex
-	subs    map[string]liveSubscription
-	queue   chan queuedInvalidation
-	commands chan realtimeCommand
+	mu        sync.Mutex
+	subs      map[string]liveSubscription
+	queue     chan queuedInvalidation
+	commands  chan realtimeCommand
 }
 
 func (c *realtimeClient) stop() { c.cancel() }
@@ -140,9 +140,9 @@ func (g *Gate) realtimeWS(w http.ResponseWriter, r *http.Request, requestID, cli
 	}
 	upgrader := websocket.Upgrader{
 		ReadBufferSize: 1024, WriteBufferSize: 1024,
-		Subprotocols: []string{"arc.realtime.v1"},
+		Subprotocols:      []string{"arc.realtime.v1"},
 		EnableCompression: false,
-		CheckOrigin: func(req *http.Request) bool { return g.origins[req.Header.Get("Origin")] },
+		CheckOrigin:       func(req *http.Request) bool { return g.origins[req.Header.Get("Origin")] },
 	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -222,7 +222,7 @@ func (c *realtimeClient) verifyTask(ctx context.Context, scope liveSubscription)
 		}
 		token, err := c.gate.cfg.Backend.Exchange(ctx, identity.UserExchange{
 			Session: c.auth.Session,
-			Target: identity.Target{Audience: "task/v1", Operation: en.op.ID, WorkspaceID: scope.workspace},
+			Target:  identity.Target{Audience: "task/v1", Operation: en.op.ID, WorkspaceID: scope.workspace},
 		})
 		if err != nil {
 			return err
@@ -361,4 +361,3 @@ func (c *realtimeClient) write() {
 		}
 	}
 }
-

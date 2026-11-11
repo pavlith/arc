@@ -6,6 +6,7 @@ import (
 	"errors"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/pavlith/arc/sdk/contract"
@@ -30,12 +31,12 @@ type queuedInvalidation struct {
 }
 
 type realtimeHub struct {
-	nc     *nats.Conn
-	task   *contract.Compiled
-	notify *contract.Compiled
-	ready  atomic.Bool
-	mu     sync.Mutex
-	clients map[*realtimeClient]struct{}
+	nc            *nats.Conn
+	task          *contract.Compiled
+	notify        *contract.Compiled
+	ready         atomic.Bool
+	mu            sync.Mutex
+	clients       map[*realtimeClient]struct{}
 	subscriptions []*nats.Subscription
 }
 
@@ -183,4 +184,3 @@ func (h *realtimeHub) broadcast(event invalidation) {
 func (h *realtimeHub) connected(ctx context.Context) bool {
 	return ctx.Err() == nil && h.ready.Load() && h.nc.IsConnected() && h.nc.LastError() == nil
 }
-

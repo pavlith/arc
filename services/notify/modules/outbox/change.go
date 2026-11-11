@@ -56,7 +56,7 @@ func Change(ctx context.Context, tx *gorm.DB, recipientID, notificationID string
 	id[8] = (id[8] & 63) | 128
 	meta, _ := rpc.Metadata(ctx)
 	ev := events.Envelope{
-		ID: fmt.Sprintf("%x-%x-%x-%x-%x", id[:4], id[4:6], id[6:8], id[8:10], id[10:]),
+		ID:   fmt.Sprintf("%x-%x-%x-%x-%x", id[:4], id[4:6], id[6:8], id[8:10], id[10:]),
 		Type: notifyv1.InboxChangedName, Version: 1, AggregateID: aggregateID,
 		OccurredAt: time.Now().UTC(), Traceparent: meta.Traceparent, Payload: payload,
 	}

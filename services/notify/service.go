@@ -44,9 +44,9 @@ type Config struct {
 }
 
 type Service struct {
-	App      *service.App
-	Inbox    *inbox.Module
-	Delivery *delivery.Module
+	App       *service.App
+	Inbox     *inbox.Module
+	Delivery  *delivery.Module
 	Publisher *inboxoutbox.Module
 }
 

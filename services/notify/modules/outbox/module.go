@@ -44,9 +44,9 @@ func (m *Module) Run(ctx context.Context) error {
 		return err
 	}
 	d := events.Delivery{
-		Store: events.Store{DB: m.GormDB},
+		Store:    events.Store{DB: m.GormDB},
 		Contract: m.Contract,
-		Permit: func(ctx context.Context) error { return m.Registry.Check(ctx, m.Registration) },
+		Permit:   func(ctx context.Context) error { return m.Registry.Check(ctx, m.Registration) },
 	}
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()

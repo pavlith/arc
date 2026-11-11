@@ -303,6 +303,26 @@ means the issuer is disabled or no longer an owner/admin. Accepted/revoked state
 take precedence over expiry and issuer state. Tokens and token hashes are never
 returned; archived workspace access is denied.
 
+Installation user administration uses GET
+`/api/v1/arc/identity/users/list?email=<email>&status=<active|disabled>&after=<uuid>`
+and POST `/api/v1/arc/identity/users/status` with `user_id` and `status`.
+All list filters are optional. Email lookup is exact after trimming and
+lowercasing; pages contain at most 100 entries ordered by ID, exposing only ID,
+email, status and creation time. Gate accepts email query values up to 254 bytes.
+Both operations require a live browser session and an installation administrator
+from signed `AdminUsers`; workspace owner/admin roles do not grant this authority.
+Gate also needs the exact `identity.v1.product.users.list` or
+`identity.v1.product.users.status` bootstrap approval. Status commands require
+Origin, CSRF and `Idempotency-Key`; live administrator authority is checked inside
+the transaction before command replay. The browser API rejects self-disable.
+
+Disabling an account atomically updates its status, revokes all sessions and
+refresh families, revokes its outstanding issued workspace invitations and writes
+the audit. Unknown users return not found. Re-enabling changes account status
+only: previous sessions, refresh families and revoked invitations stay revoked;
+workspace memberships, groups and resources are preserved. A status response is
+an empty object. Registration policy configuration remains separate work.
+
 Account APIs use the same Gate-only product namespace and live browser
 session/CSRF checks:
 

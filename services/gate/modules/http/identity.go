@@ -31,6 +31,8 @@ var identityRoutes = map[string]identityRoute{
 	"workspaces/update":       {},
 	"workspaces/leave":        {},
 	"users/provision":         {},
+	"users/list":              {read: true, query: []string{"after", "email", "status"}},
+	"users/status":            {},
 	"invitations/create":      {},
 	"invitations/revoke":      {},
 	"invitations/accept":      {},
@@ -86,7 +88,11 @@ func (g *Gate) productIdentity(w http.ResponseWriter, r *http.Request, id string
 	}
 	input := map[string]any{}
 	for field, values := range query {
-		if !slices.Contains(route.query, field) || len(values) != 1 || len(values[0]) > 128 {
+		limit := 128
+		if field == "email" {
+			limit = 254
+		}
+		if !slices.Contains(route.query, field) || len(values) != 1 || len(values[0]) > limit {
 			writeError(w, id, fault(rpc.CodeValidation))
 			return
 		}

@@ -282,7 +282,7 @@ func (c *Core) Authorize(ctx context.Context, a identity.Authorization) error {
 				return nil
 			}
 			switch a.Operation {
-			case "identity.v1.service_accounts.register", "identity.v1.service_accounts.disable", "identity.v1.service_keys.rotate", "identity.v1.keys.revoke", "identity.v1.users.status", "identity.v1.product.users.provision":
+			case "identity.v1.service_accounts.register", "identity.v1.service_accounts.disable", "identity.v1.service_keys.rotate", "identity.v1.keys.revoke", "identity.v1.users.status", "identity.v1.product.users.provision", "identity.v1.product.users.list", "identity.v1.product.users.status":
 				return nil
 			}
 		}

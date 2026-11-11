@@ -85,6 +85,16 @@ or one-time recovery code as appropriate. Password change and recovery revoke
 all account sessions. Recovery returns the replacement code once and does not
 create a session. See [Gate account APIs](../../docs/ARCHITECTURE.md#6-gate-and-protocol-adapters).
 
+User lookup/list and account status management require exact Gate bootstrap
+operations `identity.v1.product.users.list` and
+`identity.v1.product.users.status`, audience `identity/v1`, actor kind `bootstrap`,
+and their broker RPC permissions. The browser user must also appear in signed
+`AdminUsers`; workspace administrators cannot enumerate global accounts or
+change account status. Status changes recheck that authority before replay.
+Disabling revokes sessions, refresh families and outstanding issued invitations
+in the same transaction; re-enabling does not restore them. Browser self-disable
+is rejected. No new migration is required.
+
 Readiness is reported after all module subscriptions and broker permissions have
 been checked. SIGINT/SIGTERM unsubscribe Fabric control and module handlers,
 stop the SDK transport and close the database. A failed start also closes owned

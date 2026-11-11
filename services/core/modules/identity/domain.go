@@ -300,11 +300,24 @@ func (c *Core) SetUserDisabled(ctx context.Context, auth UserSession, id string,
 		if e := c.lockSession(ctx, t, s); e != nil {
 			return e
 		}
-		if e := t.WithContext(ctx).Exec(`UPDATE identity_users SET status=? WHERE id=?`, status, id).Error; e != nil {
-			return e
+		updated := t.WithContext(ctx).Exec(`UPDATE identity_users SET status=? WHERE id=?`, status, id)
+		if updated.Error != nil {
+			return updated.Error
+		}
+		if updated.RowsAffected != 1 {
+			return productNotFound()
 		}
 		if disabled {
-			if e := t.WithContext(ctx).Exec(`UPDATE identity_sessions SET revoked_at=? WHERE user_id=?`, c.now(), id).Error; e != nil {
+			now := c.now()
+			if e := t.WithContext(ctx).Exec(`UPDATE identity_sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL`, now, id).Error; e != nil {
+				return e
+			}
+			if e := t.WithContext(ctx).Exec(`UPDATE identity_refresh_families SET revoked_at=?
+				WHERE session_id IN (SELECT id FROM identity_sessions WHERE user_id=?) AND revoked_at IS NULL`, now, id).Error; e != nil {
+				return e
+			}
+			if e := t.WithContext(ctx).Exec(`UPDATE identity_workspace_invitations SET revoked_at=?
+				WHERE issuer_id=? AND consumed_at IS NULL AND revoked_at IS NULL`, now, id).Error; e != nil {
 				return e
 			}
 		}

@@ -84,6 +84,7 @@ func New(cfg Config) (*Service, error) {
 	ac.ContractSource = fb
 	id.Policy = ac
 	id.TaskRoots = ac.TaskRoots
+	id.ManagedTaskRoots = ac.ManagedTaskRoots
 	id.CreateWorkspaceRoot = ac.CreateWorkspaceRoot
 	id.ArchiveWorkspaceRoot = ac.ArchiveWorkspaceRoot
 	rt := &runtime.Module{GormDB: cfg.GormDB, Authorize: cfg.RuntimeAuthorize}

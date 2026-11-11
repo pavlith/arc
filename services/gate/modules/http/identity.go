@@ -42,6 +42,7 @@ var identityRoutes = map[string]identityRoute{
 	"members/remove":          {},
 	"groups/list":             {read: true, query: []string{"workspace_id", "after"}},
 	"task_roots/list":         {read: true, query: []string{"workspace_id", "after"}},
+	"task_roots/managed/list": {read: true, query: []string{"workspace_id", "after"}},
 	"groups/create":           {},
 	"groups/update":           {},
 	"groups/delete":           {},

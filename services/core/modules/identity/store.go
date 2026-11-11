@@ -43,6 +43,7 @@ type Core struct {
 	SigningKid           string
 	Now                  func() time.Time
 	TaskRoots            func(context.Context, string, string, string) ([]TaskRoot, error)
+	ManagedTaskRoots     func(context.Context, string, string, string) ([]TaskRoot, error)
 	CreateWorkspaceRoot  func(context.Context, string, string) error
 	ArchiveWorkspaceRoot func(context.Context, string, string) error
 }

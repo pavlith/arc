@@ -44,8 +44,10 @@ type Group struct {
 }
 
 type TaskRoot struct {
-	ID       string `json:"id"`
-	CanWrite bool   `json:"can_write"`
+	ID        string `json:"id"`
+	CanWrite  bool   `json:"can_write"`
+	CanRead   bool   `json:"can_read"`
+	CanManage bool   `json:"can_manage"`
 }
 
 type Page struct {
@@ -211,6 +213,16 @@ func (c *Core) taskRoots(ctx context.Context, user string, q WorkspacePage) ([]T
 	return c.TaskRoots(ctx, user, q.WorkspaceID, q.After)
 }
 
+func (c *Core) managedTaskRoots(ctx context.Context, user string, q WorkspacePage) ([]TaskRoot, error) {
+	if _, err := c.productRole(ctx, q.WorkspaceID, user, false); err != nil {
+		return nil, err
+	}
+	if c.ManagedTaskRoots == nil {
+		return nil, ErrUnavailable
+	}
+	return c.ManagedTaskRoots(ctx, user, q.WorkspaceID, q.After)
+}
+
 func (c *Core) groupMembers(ctx context.Context, user string, q GroupPage) ([]Profile, error) {
 	if _, err := c.productRole(ctx, q.WorkspaceID, user, false); err != nil {
 		return nil, err
@@ -323,6 +335,7 @@ func (c *Core) bindProduct(s *sdk.Service) error {
 		func() error { return bindProductRead(s, c, "members.list", c.members) },
 		func() error { return bindProductRead(s, c, "groups.list", c.groups) },
 		func() error { return bindProductRead(s, c, "task_roots.list", c.taskRoots) },
+		func() error { return bindProductRead(s, c, "task_roots.managed.list", c.managedTaskRoots) },
 		func() error { return bindProductRead(s, c, "groups.members.list", c.groupMembers) },
 		func() error {
 			return bindProductWrite(s, c, "workspaces.update", true, func(ctx context.Context, user Session, req ProductRequest[WorkspaceUpdate]) (Workspace, error) {

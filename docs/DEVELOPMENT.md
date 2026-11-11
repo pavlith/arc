@@ -168,6 +168,17 @@ administrator role and an `Idempotency-Key`. User provisioning additionally
 requires the user's ID in the signed `admin_users` list. Core remains the
 authority for every write and returns only readable Task roots to the UI.
 
+To discover Task roots for ACL administration without content read permission,
+allow the exact bootstrap operation
+`identity.v1.product.task_roots.managed.list` for Gate with audience `identity/v1`
+and actor kind `bootstrap`, plus broker publish permission for
+`rpc.identity.v1.product.task_roots.managed.list`. GET
+`/api/v1/arc/identity/task_roots/managed/list?workspace_id=<uuid>` with browser
+cookies returns roots the live user can manage, including content access flags.
+Use `after=<last root UUID>` for pagination. This adds no content permission and
+does not alter the existing readable-root list. Subsequent Task grants APIs still
+require their signed operation approvals and current management authority.
+
 Allow `workspaces.create` and `invitations.create`, `invitations.revoke` and
 `invitations.accept` under the same exact Identity operation prefix to enable
 workspace creation and invitations in the UI. Owners and administrators may

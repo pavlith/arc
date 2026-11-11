@@ -95,6 +95,15 @@ Disabling revokes sessions, refresh families and outstanding issued invitations
 in the same transaction; re-enabling does not restore them. Browser self-disable
 is rejected. No new migration is required.
 
+Task ACL root discovery additionally uses the exact Gate bootstrap operation
+`identity.v1.product.task_roots.managed.list` (audience `identity/v1`, actor kind
+`bootstrap`) and matching RPC broker permission. Core returns only roots with live
+ACL management authority, without requiring or granting content read permission.
+Readable root discovery keeps its existing operation and filter. Both responses
+include `can_read`, `can_write` and `can_manage` flags; these are UI hints and
+subsequent domain operations remain independently authorized. This Core/Gate
+addition needs no migration or Task artifact replacement.
+
 Readiness is reported after all module subscriptions and broker permissions have
 been checked. SIGINT/SIGTERM unsubscribe Fabric control and module handlers,
 stop the SDK transport and close the database. A failed start also closes owned

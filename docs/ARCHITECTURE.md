@@ -295,6 +295,24 @@ UI removes the fragment and keeps the token and recovery code only in memory.
 
 The reserved `/api/v1/arc/identity/` routes map to exact operator-approved `identity.v1.product.*` RPCs. Core verifies the Gate assertion and request proof, then resolves the live browser session and checks current workspace membership or administrator authority. Workspace commands check permission inside their owner transaction before replay. Domain Task routes still require a verified Fabric snapshot and operation-bound invocation.
 
+Task root discovery has two workspace-scoped browser queries. GET
+`/api/v1/arc/identity/task_roots/list?workspace_id=<uuid>` returns roots with live
+`task.read`; GET
+`/api/v1/arc/identity/task_roots/managed/list?workspace_id=<uuid>` returns roots
+with live `access.grants.manage`. This lets an owner/admin discover an ACL
+administration scope without granting content access. An active workspace member
+with an explicit ACL management grant can also discover that scope; workspace
+membership alone does not reveal roots.
+
+Both lists return at most 100 active registry roots ordered by ID, with optional
+`after` cursor and per-root `can_read`, `can_write` and `can_manage` flags from one
+policy/time snapshot. Flags describe domain ACL permissions, not service approval
+or domain availability, and are not bearer authority. Readable-root filtering is
+unchanged. The managed list exposes root IDs and flags only, and needs the exact
+Gate bootstrap operation `identity.v1.product.task_roots.managed.list`. Task still
+checks its own root/workspace binding and live ACL before every subsequent read
+or grant operation. Archived workspaces and revoked browser sessions are denied.
+
 GET `/api/v1/arc/identity/invitations/list?workspace_id=<uuid>&after=<uuid>`
 uses `identity.v1.product.invitations.list`. Only live workspace owners/admins can
 read its email-bound invitation history. Results contain at most 100 entries,

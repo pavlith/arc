@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/nats-io/nats.go"
 	"github.com/pavlith/arc/sdk"
 	"github.com/pavlith/arc/sdk/bootstrap"
@@ -291,7 +292,7 @@ func TestM006(t *testing.T) {
 			must(e)
 		}
 	}
-	_, e = js.AddStream(&nats.StreamConfig{Name: "TASK", Subjects: []string{tasks.Created}, Storage: nats.FileStorage})
+	_, e = js.AddStream(&nats.StreamConfig{Name: "TASK", Subjects: []string{tasks.Created, taskv1.CatalogChangedSubject}, Storage: nats.FileStorage})
 	must(e)
 	_, e = js.AddStream(&nats.StreamConfig{Name: "TASK_DLQ", Subjects: []string{"dlq." + tasks.Created + "." + notifyinbox.Durable}, Storage: nats.FileStorage})
 	must(e)
@@ -352,9 +353,17 @@ func TestM006(t *testing.T) {
 	if _, e = fabric.VerifySnapshotJWKS(jwks, routeBundle, 0); e != nil {
 		t.Fatalf("verify signed Gate route snapshot (%d bytes): %v", len(routeBundle.Payload), e)
 	}
-	g, e := gate.New(gate.Config{Backend: remote, PublicOrigin: "https://arc.example", RequestsPerMinute: 1000})
+	realtimeNC, e := sdk.Connect(ctx, cfg("m006-realtime", "nats-realtime.seed"))
+	must(e)
+	defer realtimeNC.Close()
+	g, e := gate.New(gate.Config{
+		Backend: remote, PublicOrigin: "https://arc.example", RequestsPerMinute: 1000,
+		EnableRealtime: true, RealtimeNATS: realtimeNC,
+	})
 	must(e)
 	must(g.Reconcile(ctx))
+	must(g.StartRealtime())
+	defer g.StopRealtime()
 	server := httptest.NewTLSServer(g)
 	defer server.Close()
 	client := server.Client()
@@ -490,6 +499,127 @@ func TestM006(t *testing.T) {
 		t.Fatal("inbox missing")
 	}
 	t.Logf("login → Gate → Tasks → outbox → JetStream → notification: %s (includes delayed consumer start)", verticalLatency)
+	t.Run("realtime", func(t *testing.T) {
+		// The HTTPS test server is fully local; reuse its test CA for WSS.
+		transport, ok := server.Client().Transport.(*http.Transport)
+		if !ok || transport.TLSClientConfig == nil {
+			t.Fatal("missing test TLS client configuration")
+		}
+		dialer := websocket.Dialer{
+			TLSClientConfig: transport.TLSClientConfig.Clone(),
+			Subprotocols: []string{
+				"arc.realtime.v1",
+				"csrf." + base64.RawURLEncoding.EncodeToString([]byte(session.CSRF)),
+			},
+		}
+		var cookie http.Header = http.Header{}
+		cookie.Set("Origin", "https://arc.example")
+		cookie.Set("Cookie", (&http.Cookie{Name: "__Host-arc_session", Value: session.Secret}).String()+"; "+(&http.Cookie{Name: "__Host-arc_csrf", Value: session.CSRF}).String())
+		url := "wss" + strings.TrimPrefix(server.URL, "https") + "/api/v1/arc/realtime"
+		socket, response, err := dialer.Dial(url, cookie)
+		if err != nil {
+			if response != nil {
+				t.Fatalf("WSS handshake (%d): %v", response.StatusCode, err)
+			}
+			t.Fatal(err)
+		}
+		defer socket.Close()
+		if socket.Subprotocol() != "arc.realtime.v1" {
+			t.Fatal("unexpected websocket protocol; CSRF must not be echoed", socket.Subprotocol())
+		}
+		exchange := func(command any) map[string]any {
+			t.Helper()
+			if err := socket.WriteJSON(command); err != nil {
+				t.Fatal(err)
+			}
+			if err := socket.SetReadDeadline(time.Now().Add(10*time.Second)); err != nil {
+				t.Fatal(err)
+			}
+			var reply map[string]any
+			if err := socket.ReadJSON(&reply); err != nil {
+				t.Fatal(err)
+			}
+			return reply
+		}
+		deny := exchange(map[string]string{
+			"op": "subscribe", "request_id": "deny-root", "channel": "task",
+			"workspace_id": otherWorkspace, "acl_root_id": otherScope.RootID,
+		})
+		if deny["type"] != "error" {
+			t.Fatal("unknown Task root accepted", deny)
+		}
+		ack := exchange(map[string]string{
+			"op": "subscribe", "request_id": "task-root", "channel": "task",
+			"workspace_id": workspace, "acl_root_id": scope.RootID,
+		})
+		taskSubscription, ok := ack["subscription_id"].(string)
+		if ack["type"] != "subscribed" || !ok || taskSubscription == "" {
+			t.Fatal("Task root subscription denied", ack)
+		}
+		ack = exchange(map[string]string{"op":"subscribe","request_id":"my-inbox","channel":"inbox"})
+		inboxSubscription, ok := ack["subscription_id"].(string)
+		if ack["type"] != "subscribed" || !ok || inboxSubscription == "" {
+			t.Fatal("personal Inbox subscription denied", ack)
+		}
+		// Events are delivered as refetch hints. The Task catalog event does
+		// not mutate the Task database or create an extra Inbox notification.
+		publish := func(subject, kind, id string, payload any) {
+			t.Helper()
+			body, err := json.Marshal(payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wire, err := json.Marshal(events.Envelope{
+				ID: tasks.NewID(), Type: kind, Version: 1, AggregateID: id,
+				OccurredAt: time.Now().UTC(), Payload: body,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := js.Publish(subject, wire, nats.MsgId(tasks.NewID())); err != nil {
+				t.Fatal(err)
+			}
+		}
+		publish(taskv1.CatalogChangedSubject, taskv1.CatalogChangedName, task.ID, taskv1.CatalogChanged{
+			Scope: scope, EntityKind: "work", EntityID: task.ID, Revision: 2,
+		})
+		if err := socket.SetReadDeadline(time.Now().Add(10*time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		var event map[string]any
+		if err := socket.ReadJSON(&event); err != nil {
+			t.Fatal("Task WSS invalidation:", err)
+		}
+		if event["type"] != "invalidate" || event["subscription_id"] != taskSubscription ||
+			event["entity_id"] != task.ID || event["entity_kind"] != "work" {
+			t.Fatal("incorrect Task invalidation", event)
+		}
+		notificationID := tasks.NewID()
+		publish(notifyv1.InboxChangedSubject, notifyv1.InboxChangedName, notificationID, notifyv1.InboxChanged{
+			RecipientID: owner, NotificationID: notificationID, Revision: 1,
+		})
+		if err := socket.SetReadDeadline(time.Now().Add(10*time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		event = nil
+		if err := socket.ReadJSON(&event); err != nil {
+			t.Fatal("Inbox WSS invalidation:", err)
+		}
+		if event["type"] != "invalidate" || event["subscription_id"] != inboxSubscription ||
+			event["entity_id"] != notificationID || event["entity_kind"] != "inbox" {
+			t.Fatal("incorrect personal Inbox invalidation", event)
+		}
+		// A missing/mismatching CSRF protocol must fail before HTTP upgrade.
+		bad := dialer
+		bad.Subprotocols = []string{"arc.realtime.v1", "csrf.bad"}
+		unauthorized, resp, err := bad.Dial(url, cookie)
+		if unauthorized != nil {
+			unauthorized.Close()
+		}
+		if err == nil || resp == nil || resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("invalid CSRF accepted: err=%v status=%v", err, resp)
+		}
+	})
 	t.Run("correlated_diagnostics", func(t *testing.T) {
 		const trace = "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
 		var eventID string

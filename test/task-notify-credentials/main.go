@@ -91,6 +91,11 @@ func run(dir string) error {
 	roles := []permission{
 		{name: "task", pub: taskPub, sub: taskSub},
 		{name: "notify", pub: notifyPub, sub: notifySub},
+		// Isolated Gate realtime credential has exact read-only event subjects.
+		{name: "realtime", pub: []string{"_INBOX.>"}, sub: []string{
+			"_INBOX.>", taskv1.CreatedSubject, taskv1.CatalogChangedSubject,
+			notifyv1.InboxChangedSubject,
+		}},
 	}
 	blocks := []string{}
 	for _, role := range roles {

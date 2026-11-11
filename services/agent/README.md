@@ -49,7 +49,7 @@ When updating only config or credentials, restart `arc-agent.service`.
 - State directory belongs to Agent, mode 0700. Journal holds exclusive flock for
   the process lifetime. Reject unknown/duplicate fields, unsafe templates and
   unsupported drivers.
-- Broker publish: Identity service exchange and the node's three concrete subjects.
+- Broker publish: Identity service exchange and the node's four concrete subjects.
   Subscribe only `_INBOX.runtime.<node-id>.>`; Agent sets that InboxPrefix.
 
 ### Core-approved read-only package preview
@@ -62,7 +62,8 @@ arc-agent -config /etc/arc-agent/config.json -preview-profile standard -profile-
 ```
 
 The Agent authenticates through its existing Identity/NATS credentials, retrieves
-a node-specific short-lived profile, verifies Core's signature and only runs
+a node-specific, 30-second read-only plan snapshot, verifies Core's signature,
+node binding and one-time request ID, then only runs
 `apt-get -s` to preview pinned package changes. Core must have the
 `runtime.v1.node.profile.plan` permission and
 `ctl.runtime.v1.node.<node-id>.profile.plan` NATS subject enabled for the node.

@@ -11,6 +11,9 @@ import (
 // private credentials, then runs a read-only local APT simulation. It does not
 // start reconciliation, install software or open a privileged shell.
 func PreviewProfileFile(ctx context.Context, configPath, profileID string, revision int64) (apt.ProfilePackagePlan, error) {
+	if ctx == nil {
+		return apt.ProfilePackagePlan{}, ErrInvalid
+	}
 	cfg, err := ReadConfig(configPath)
 	if err != nil || revision < 1 {
 		return apt.ProfilePackagePlan{}, ErrInvalid

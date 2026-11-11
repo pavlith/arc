@@ -56,6 +56,14 @@ func TestRealtimeEventValidationAndRecipientIsolation(t *testing.T) {
 	if _, ok := h.parse(notifyv1.InboxChangedSubject, raw); ok {
 		t.Fatal("Task event accepted on Notify subject")
 	}
+	if _, ok := h.parse(taskv1.CatalogChangedSubject, encode(taskv1.CatalogChangedName, entity,
+		taskv1.CatalogChanged{Scope: taskv1.Scope{WorkspaceID: workspace}, EntityKind: "work", EntityID: entity, Revision: 2})); ok {
+		t.Fatal("unbound Task root accepted")
+	}
+	if _, ok := h.parse(taskv1.CatalogChangedSubject, encode(taskv1.CatalogChangedName, entity,
+		taskv1.CatalogChanged{Scope: taskv1.Scope{WorkspaceID: workspace, RootID: root}, EntityKind: "work", EntityID: entity, Revision: 0})); ok {
+		t.Fatal("zero-revision Task invalidation accepted")
+	}
 	raw = encode(notifyv1.InboxChangedName, entity, notifyv1.InboxChanged{
 		RecipientID: user, NotificationID: entity, Revision: 1,
 	})
@@ -66,6 +74,14 @@ func TestRealtimeEventValidationAndRecipientIsolation(t *testing.T) {
 	if _, ok := h.parse(notifyv1.InboxChangedSubject, encode(notifyv1.InboxChangedName, other,
 		notifyv1.InboxChanged{RecipientID: user, NotificationID: entity, Revision: 1})); ok {
 		t.Fatal("mismatched aggregate accepted")
+	}
+	if _, ok := h.parse(notifyv1.InboxChangedSubject, encode(notifyv1.InboxChangedName, entity,
+		notifyv1.InboxChanged{RecipientID: "", NotificationID: entity, Revision: 1})); ok {
+		t.Fatal("unbound Inbox recipient accepted")
+	}
+	if _, ok := h.parse(notifyv1.InboxChangedSubject, encode(notifyv1.InboxChangedName, entity,
+		notifyv1.InboxChanged{RecipientID: user, NotificationID: entity, Revision: -1})); ok {
+		t.Fatal("negative Inbox revision accepted")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

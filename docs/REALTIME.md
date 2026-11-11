@@ -142,3 +142,7 @@ against the pinned domain artifact, then filtered to matching subscriptions.
 No browser connects to NATS, and no notification content crosses the WSS
 channel. If NATS permissions/streams or the signed Task/Notify/Gate deployment
 are not configured, leave the switch off; code push does not imply rollout.
+
+### Strict event binding
+
+The Gate hub rejects Task invalidations without valid workspace, root, entity UUID and positive revision; Inbox events require a valid recipient UUID, optional valid notification UUID and nonnegative revision. A schema-valid but unbound broker event is never routed to a browser. This is defense in depth beyond the signed artifact schema and does not authorize a producer by itself.

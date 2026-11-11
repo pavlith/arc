@@ -118,14 +118,22 @@ func (h *realtimeHub) parse(subject string, raw []byte) (invalidation, bool) {
 	switch subject {
 	case taskv1.CatalogChangedSubject:
 		var change taskv1.CatalogChanged
-		if json.Unmarshal(envelope.Payload, &change) != nil || change.EntityID != envelope.AggregateID {
+		if json.Unmarshal(envelope.Payload, &change) != nil ||
+			!realtimeUUID.MatchString(change.WorkspaceID) ||
+			!realtimeUUID.MatchString(change.RootID) ||
+			!realtimeUUID.MatchString(change.EntityID) ||
+			change.Revision < 1 || change.EntityID != envelope.AggregateID {
 			return invalidation{}, false
 		}
 		return invalidation{channel: "task", workspace: change.WorkspaceID, root: change.RootID,
 			kind: change.EntityKind, id: change.EntityID, revision: change.Revision}, true
 	case taskv1.CreatedSubject:
 		var created taskv1.CreatedEvent
-		if json.Unmarshal(envelope.Payload, &created) != nil || created.TaskID != envelope.AggregateID {
+		if json.Unmarshal(envelope.Payload, &created) != nil ||
+			!realtimeUUID.MatchString(created.WorkspaceID) ||
+			!realtimeUUID.MatchString(created.RootID) ||
+			!realtimeUUID.MatchString(created.TaskID) ||
+			created.TaskID != envelope.AggregateID {
 			return invalidation{}, false
 		}
 		return invalidation{channel: "task", workspace: created.WorkspaceID, root: created.RootID,
@@ -139,7 +147,10 @@ func (h *realtimeHub) parse(subject string, raw []byte) (invalidation, bool) {
 		if target == "" {
 			target = changed.RecipientID
 		}
-		if envelope.AggregateID != target || changed.RecipientID == "" {
+		if envelope.AggregateID != target ||
+			!realtimeUUID.MatchString(changed.RecipientID) ||
+			(changed.NotificationID != "" && !realtimeUUID.MatchString(changed.NotificationID)) ||
+			changed.Revision < 0 {
 			return invalidation{}, false
 		}
 		return invalidation{channel: "inbox", recipient: changed.RecipientID,

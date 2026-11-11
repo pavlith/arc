@@ -22,7 +22,7 @@ func TestSignedProfilePlanBoundToNodeRequestAndTime(t *testing.T) {
 	profile := agent.NodeProfile{
 		ID: "standard", Revision: 1, Ubuntu: []string{"24.04"},
 		Packages: []agent.PackagePin{{Name: "curl", Version: "8.5.0-2ubuntu10.6"}},
-		Updates: agent.UpdatePolicy{Security: "manual", Packages: "manual", Reboot: "manual"},
+		Updates:  agent.UpdatePolicy{Security: "manual", Packages: "manual", Reboot: "manual"},
 	}
 	snapshot := agent.ProfilePlanSnapshot{
 		Version: 1, NodeID: "node-one", RequestID: request,

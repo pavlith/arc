@@ -9,10 +9,10 @@ import (
 )
 
 const (
-	NodeAudience       = "runtime/v1"
-	OperationInventory = "runtime.v1.node.inventory"
-	OperationPull      = "runtime.v1.desired.get"
-	OperationReport    = "runtime.v1.node.report"
+	NodeAudience         = "runtime/v1"
+	OperationInventory   = "runtime.v1.node.inventory"
+	OperationPull        = "runtime.v1.desired.get"
+	OperationReport      = "runtime.v1.node.report"
 	OperationProfilePlan = "runtime.v1.node.profile.plan"
 )
 

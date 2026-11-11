@@ -356,4 +356,3 @@ func (s *Module) listFiles(ctx context.Context, q filesv1.FileListRequest) (file
 	}
 	return out, nil
 }
-

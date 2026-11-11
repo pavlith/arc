@@ -37,6 +37,7 @@ type config struct {
 	TLSCertFile      string     `json:"tls_cert_file"`
 	TLSKeyFile       string     `json:"tls_key_file"`
 	UIDirectory      string     `json:"ui_directory,omitempty"`
+	EnableRealtime   bool       `json:"enable_realtime,omitempty"`
 }
 
 func main() {
@@ -132,6 +133,7 @@ func run(file string) error {
 			PublicOrigin:   cfg.PublicOrigin,
 			AllowedOrigins: cfg.AllowedOrigins,
 			TrustedProxies: proxies,
+			EnableRealtime: cfg.EnableRealtime,
 		},
 		Listen:      cfg.Listen,
 		TLSCertFile: cfg.TLSCertFile,

@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nats-io/nats.go"
 	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/rpc"
 	"github.com/pavlith/arc/sdk/security"
@@ -41,6 +42,8 @@ type Config struct {
 	BodyLimit         int64
 	RequestsPerMinute int
 	LoginsPerMinute   int
+	EnableRealtime    bool
+	RealtimeNATS      *nats.Conn
 }
 type bucket struct {
 	start time.Time
@@ -53,6 +56,7 @@ type Gate struct {
 	origins   map[string]bool
 	mu        sync.Mutex
 	limits    map[string]bucket
+	hub       *realtimeHub
 }
 
 func New(cfg Config) (*Gate, error) {
@@ -82,7 +86,15 @@ func New(cfg Config) (*Gate, error) {
 	if cfg.LoginsPerMinute <= 0 {
 		cfg.LoginsPerMinute = 10
 	}
-	return &Gate{cfg: cfg, origins: origins, limits: map[string]bucket{}}, nil
+	g := &Gate{cfg: cfg, origins: origins, limits: map[string]bucket{}}
+	if cfg.EnableRealtime {
+		hub, err := newRealtimeHub(cfg.RealtimeNATS)
+		if err != nil {
+			return nil, err
+		}
+		g.hub = hub
+	}
+	return g, nil
 }
 func Status(code rpc.Code) int {
 	switch code {
@@ -172,7 +184,7 @@ func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeError(w, id, fault(rpc.CodeNotFound))
 			return
 		}
-		if g.Revision() < 0 || !g.available.Load() {
+		if g.Revision() < 0 || !g.available.Load() || g.hub != nil && !g.hub.ready.Load() {
 			writeError(w, id, fault(rpc.CodeUnavailable))
 			return
 		}
@@ -198,6 +210,10 @@ func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if g.serveUI(w, r) {
+		return
+	}
+	if r.URL.Path == realtimePath {
+		g.realtimeWS(w, r, id, client)
 		return
 	}
 	trace := r.Header.Get("Traceparent")

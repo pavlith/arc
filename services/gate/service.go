@@ -36,6 +36,9 @@ type Service struct {
 }
 
 func New(cfg Config) (*Service, error) {
+	if cfg.HTTP.EnableRealtime {
+		cfg.HTTP.RealtimeNATS = cfg.NATS
+	}
 	g, err := edge.New(cfg.HTTP)
 	if err != nil {
 		return nil, err
@@ -72,7 +75,12 @@ func (s *Service) Start(ctx context.Context) error {
 	if err := s.Discovery.Start(ctx); err != nil {
 		return err
 	}
+	if err := s.HTTP.StartRealtime(); err != nil {
+		s.Discovery.Stop()
+		return err
+	}
 	if err := s.Listener.Start(ctx); err != nil {
+		s.HTTP.StopRealtime()
 		s.Discovery.Stop()
 		return err
 	}
@@ -95,6 +103,7 @@ func (s *Service) Stop(ctx context.Context) error {
 		defer cancel()
 	}
 	err := s.Listener.Stop(ctx)
+	s.HTTP.StopRealtime()
 	s.Discovery.Stop()
 	return err
 }

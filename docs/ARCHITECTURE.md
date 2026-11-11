@@ -409,6 +409,8 @@ M0–M6 need Integrated for their accepted scope; production requires Verified. 
 
 ### 10.2. Required M0–M6 checks
 
+Four distinct protections are necessary: Gate authenticates browsers/CLI and applies CSRF; the RPC verifies service caller, audience and signed operation; the domain verifies actual root ownership and current ACL; mutation/replay/outbox/inbox are atomic. Repeating the *same* check inside one trusted process is unnecessary. Batch `Access.check_many` within a single current policy snapshot instead of N+1 RPCs; never cache positive permission across requests or after a revoke. Load/chaos/compatibility suites belong in the release tier.
+
 Use formatting/static analysis and focused build/tests for affected code, empty-DB/replay for migrations, schema/manifest validation for changed contracts, and one changed-path smoke. Documentation-only work does not trigger builds/tests. Add meaningful regression coverage for an actual defect.
 
 Never defer invocation/proof vectors; ACL deny/revoke/cross-root; migrations; idempotency/outbox/inbox atomicity; digest/version/route collision; Runtime privilege/template boundaries; or one login → Gate → domain → Access → DB → event/consumer path. Prefer a short deterministic loop; do not rerun unrelated successful checks without cause.
@@ -438,29 +440,6 @@ docs/                      # requirements, architecture and development
 
 `cmd/arc-core` uses the existing Core composition with strict owner-local bootstrap. Product Identity is available through approved Gate routes. The SvelteKit web app uses Svelte 5 and shadcn-svelte in `client/web/`. Its TypeScript Gate client lives in `client/ts/`. Do not create separate Go modules or restore legacy paths for compatibility.
 
-## 12. Decision register
+## 12. Decisions
 
-These IDs identify architecture decisions, not similarly numbered delivery Issues.
-
-| ID | Decision |
-|---|---|
-| A-01–A-07 | Go/Echo direction, Svelte 5, one modular Core, NATS between processes, Gate ingress, owner data and independent privileged Agent |
-| M0-01 | Selective ACL roots, separate personal/workspace ownership, allow-only grants and bounded inheritance |
-| M0-02 | Online Access checks, default deny/fail-closed, post-commit revoke visibility |
-| M0-03 | Session/refresh revocation; separate broker identity, Ed25519 operation-bound invocation/assertion/proof |
-| M0-04 | Immutable canonical contracts; approved instance identity, exact queues and readiness |
-| M0-05 | Typed schema RPC, fixed limits/errors, atomic replay and signed routes |
-| M0-06 | Root lifecycle, transactional outbox and inbox/internal-effect atomicity |
-| M0-07 | GORM/SQLite per owner, shared Core DB, explicit Gormigrate, Gate without DB |
-| M0-08 | Expiring consent and online intersection of user/grantee/ACL rights |
-| M0-09 | Core desired state, independent Agent, M0 fake baseline, M6 limited executor |
-| M0-10 | Operation-bound invocation, audited ACL self-grant, signed snapshots and no external exactly-once claim |
-| T-01 | Build-phase Integrated; full hardening in M7; production requires Verified |
-| R-10 | Typed Docker/LXD/systemd infrastructure on trusted nodes over NATS; no arbitrary shell or second gRPC transport |
-| O-01 | M1 adaptation preserves Arc IDs/data and workspace/root ACL; automatic import and personal Task roots are separate extensions; see [Task product model](TASK-MODEL.md) |
-| O-02 | M2 cross-workspace sharing, scheduling and DAV client matrix |
-| O-03 | M3 WebDAV locking/versioning/upload links and stream reauthorization |
-| O-04 | M4–M5 Starlark limits, approval classes, connector secrets and plugin sandbox |
-| O-05 | Beyond M6: scheduling, zero-downtime, automatic rollback and hostile-code isolation |
-
-Update this document and requirements when semantics change. Record implementation work in Issues; do not add duplicate ADR/status reports.
+Sections 2–10 are normative. Superseded choices and delivery history live in Git history and GitHub Issues, not a parallel decision register.

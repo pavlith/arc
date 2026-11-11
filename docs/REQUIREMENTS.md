@@ -128,9 +128,7 @@ Calendar/Files fixtures may stand in for absent endpoints.
 - **F-07:** Domain mutation/outbox commit together; inbox/event_id deduplicates
   internal effects atomically before ACK. Retry/backoff/DLQ and versioned events;
   external effects may duplicate. Events grant no resource access.
-- **F-08:** Breaking APIs use a new major subject/prefix. Build SemVer differs
-  from API major. Test additive compatibility and version isolation;
-  client generation does not block M0.
+- **F-08:** Supported breaking upgrades use a new API major/subject prefix. During pre-stable development, breaking v1 edits require a fresh isolated installation, not in-place replacement of approved signed artifacts. Build SemVer differs from API major; verify version isolation before release.
 - **F-09:** Typed composition/register/call helpers enforce schemas, verified
   identity and ACL. HTTP/tool/workflow exposure independently defaults off.
   Direct RPC never bypasses ACL or trusts identity headers.
@@ -177,9 +175,7 @@ Core outage. Full recovery is M7.
   contact links.
 - **T-05:** Tasks work without GitHub; integration is an optional connector.
 
-Acceptance: UI/API share a model; ACL controls assignee visibility, search and
-links; task-created events drive Notify. The current M0 proof covers workspace
-create/get/list, atomic replay/outbox and Notify inbox/record/fake outbound intent.
+Acceptance: UI/API share product `task.work.*` CRUD, with signed Task approval, root ACL, mutation replay/outbox and Notify delivery. The former proof-only Task CRUD routes are retired. Search, links and assignee visibility remain ACL-scoped.
 Root/workspace/ACL are checked online before mutation and replay. Recipients come
 from verified user or operator subscriptions, not event input; typed Task/Pages/Files
 Inbox entries require current target read access. Notify provides an explicitly

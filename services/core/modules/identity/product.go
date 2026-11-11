@@ -310,6 +310,7 @@ func (c *Core) bindProduct(s *sdk.Service) error {
 		func() error { return c.bindProductWorkspaceArchive(s) },
 		func() error { return bindProductWrite(s, c, "invitations.create", true, c.createInvitation) },
 		func() error { return bindProductWrite(s, c, "invitations.revoke", true, c.revokeInvitation) },
+		func() error { return bindProductRead(s, c, "invitations.list", c.invitations) },
 		func() error { return c.bindInvitationAccept(s) },
 		func() error { return c.bindProductProvision(s) },
 		func() error {

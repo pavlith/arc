@@ -31,6 +31,7 @@ var identityRoutes = map[string]identityRoute{
 	"invitations/create":    {},
 	"invitations/revoke":    {},
 	"invitations/accept":    {},
+	"invitations/list":      {read: true, query: []string{"workspace_id", "after"}},
 	"members/list":          {read: true, query: []string{"workspace_id", "after"}},
 	"members/set":           {},
 	"members/remove":        {},

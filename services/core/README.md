@@ -69,6 +69,11 @@ approval fail closed; do not grant wildcard Identity operations. The public
 endpoint and one-time recovery behavior are described in
 [architecture](../../docs/ARCHITECTURE.md#32-credential-boundaries).
 
+Workspace invitation history additionally requires the exact bootstrap operation
+`identity.v1.product.invitations.list` for Gate, audience `identity/v1`, actor kind
+`bootstrap`, and its corresponding RPC broker permission. Core rechecks the
+browser session and live workspace owner/admin role on every read.
+
 Readiness is reported after all module subscriptions and broker permissions have
 been checked. SIGINT/SIGTERM unsubscribe Fabric control and module handlers,
 stop the SDK transport and close the database. A failed start also closes owned

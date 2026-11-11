@@ -37,6 +37,41 @@ type Invitation struct {
 	ExpiresAt   time.Time `json:"expires_at"`
 }
 
+// InvitationDetails never includes the bearer token or its stored hash.
+type InvitationDetails struct {
+	Invitation
+	IssuerID   string     `json:"issuer_id"`
+	Status     string     `json:"status"`
+	ConsumedAt *time.Time `json:"consumed_at,omitempty"`
+	RevokedAt  *time.Time `json:"revoked_at,omitempty"`
+}
+
+func (c *Core) invitations(ctx context.Context, user string, q WorkspacePage) ([]InvitationDetails, error) {
+	if _, err := c.productRole(ctx, q.WorkspaceID, user, true); err != nil {
+		return nil, err
+	}
+	if q.After != "" && !productID.MatchString(q.After) {
+		return nil, productInvalid()
+	}
+	out := []InvitationDetails{}
+	err := c.db(ctx).WithContext(ctx).Raw(`SELECT i.id,i.workspace_id,i.email,i.role,i.expires_at,
+		i.issuer_id,i.consumed_at,i.revoked_at,
+		CASE WHEN i.consumed_at IS NOT NULL THEN 'accepted'
+		WHEN i.revoked_at IS NOT NULL THEN 'revoked'
+		WHEN i.expires_at<=? THEN 'expired'
+		WHEN u.status<>'active' OR u.id IS NULL OR m.revoked_at IS NOT NULL
+		OR m.role NOT IN ('owner','admin') OR m.user_id IS NULL THEN 'invalidated'
+		ELSE 'pending' END AS status
+		FROM identity_workspace_invitations i
+		LEFT JOIN identity_users u ON u.id=i.issuer_id
+		LEFT JOIN identity_memberships m ON m.workspace_id=i.workspace_id AND m.user_id=i.issuer_id
+		WHERE i.workspace_id=? AND i.id>? ORDER BY i.id LIMIT 100`, c.now(), q.WorkspaceID, q.After).Scan(&out).Error
+	if err != nil {
+		return nil, ErrUnavailable
+	}
+	return out, nil
+}
+
 func invitationHash(token string) ([]byte, error) {
 	if len(token) != base64.RawURLEncoding.EncodedLen(32) {
 		return nil, productInvalid()

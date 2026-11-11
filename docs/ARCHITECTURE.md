@@ -294,6 +294,15 @@ UI removes the fragment and keeps the token and recovery code only in memory.
 
 The reserved `/api/v1/arc/identity/` routes map to exact operator-approved `identity.v1.product.*` RPCs. Core verifies the Gate assertion and request proof, then resolves the live browser session and checks current workspace membership or administrator authority. Workspace commands check permission inside their owner transaction before replay. Domain Task routes still require a verified Fabric snapshot and operation-bound invocation.
 
+GET `/api/v1/arc/identity/invitations/list?workspace_id=<uuid>&after=<uuid>`
+uses `identity.v1.product.invitations.list`. Only live workspace owners/admins can
+read its email-bound invitation history. Results contain at most 100 entries,
+ordered by ID, with `pending`, `accepted`, `revoked`, `expired` or `invalidated`
+status, issuer ID and optional consumption/revocation timestamps. `invalidated`
+means the issuer is disabled or no longer an owner/admin. Accepted/revoked states
+take precedence over expiry and issuer state. Tokens and token hashes are never
+returned; archived workspace access is denied.
+
 Each protected request validates session online, exchanges a target invocation, and signs a fresh Gate proof. The recipient repeats invocation, domain binding and ACL checks. Preserve request ID, traceparent, deadline and original idempotency key. Missing responder → 503, deadline → 504, authority outage → fail closed. Snapshots do not cache authorization. Public auth exposes no recovery, installation or Runtime administration.
 
 WS and DAV are planned adapters behind Gate, with the same resource checks. CalDAV requires iCalendar, recurrence/timezone, ETag/sync tokens and distinct free/busy rights; scheduling follows client compatibility work. CardDAV preserves vCard extension fields. WebDAV requires approved method/client coverage and private HTTP/object streaming. Public shares use scoped revocable tokens; DAV credentials and browser sessions are distinct. Remote DAV sources belong to Connectors, not server adapters.

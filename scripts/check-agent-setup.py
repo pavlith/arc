@@ -21,11 +21,11 @@ except (OSError, ValueError, tomllib.TOMLDecodeError) as exc:
     fail(f"invalid config.toml: {exc}")
     config = {}
 
-if not 0 < config.get("project_doc_max_bytes", 0) <= 8192:
-    fail("project_doc_max_bytes must be between 1 and 8192")
-if not 0 < config.get("tool_output_token_limit", 0) <= 6000:
+if not 0 < config.get("project_doc_max_bytes", 0) <= 4096:
+    fail("project_doc_max_bytes must be between 1 and 4096")
+if not 0 < config.get("tool_output_token_limit", 0) <= 3000:
     fail("tool_output_token_limit must be between 1 and 6000")
-if config.get("skills", {}).get("max_context_tokens", 0) > 2000:
+if config.get("skills", {}).get("max_context_tokens", 0) > 1600:
     fail("skill catalog budget too high")
 for name in ("github", "openaiDeveloperDocs"):
     server = config.get("mcp_servers", {}).get(name)
@@ -78,7 +78,7 @@ for relative in ("cli.md", "customization.md", "rules/forms.md", "rules/composit
     if not (vendor / relative).is_file():
         fail(f"shadcn-svelte reference missing: {relative}")
 
-if (ROOT / "AGENTS.md").stat().st_size > config.get("project_doc_max_bytes", 8192):
+if (ROOT / "AGENTS.md").stat().st_size > config.get("project_doc_max_bytes", 4096):
     fail("AGENTS.md exceeds project_doc_max_bytes")
 for filename, headings in {
     "ARCHITECTURE.md": ["## 3.", "## 4.", "## 5.", "## 6.", "## 7.", "## 10."],

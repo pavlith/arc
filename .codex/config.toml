@@ -3,12 +3,12 @@
 # Personal overrides and OAuth credentials belong to ~/.codex/.
 # Reasoning effort intentionally left to user profiles (fast/deep).
 model_verbosity = "low"
-project_doc_max_bytes = 8192
-tool_output_token_limit = 4000
+project_doc_max_bytes = 4096
+tool_output_token_limit = 2000
 web_search = "cached"
 
 [skills]
-max_context_tokens = 1600
+max_context_tokens = 1200
 
 # Enable only while working on Codex/OpenAI integration or documentation.
 [mcp_servers.openaiDeveloperDocs]

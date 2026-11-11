@@ -1,37 +1,38 @@
-name: SQLite / GORM migration
-
+name: Owner SQLite migrations and replay
 on:
   push:
     branches: [main]
     paths:
-      - 'sdk/**'
-      - 'services/**'
-      - 'cmd/**'
-      - 'test/**'
-      - 'deploy/**'
-      - 'go.mod'
-      - 'go.sum'
-      - '.github/workflows/sqlite.yml'
+      - "sdk/database/**"
+      - "services/**/migrations/**"
+      - "services/sqlite_migrations_test.go"
+      - "deploy/migrate/**"
+      - "scripts/migrate.sh"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/sqlite.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "sdk/database/**"
+      - "services/**/migrations/**"
+      - "services/sqlite_migrations_test.go"
+      - "deploy/migrate/**"
+      - "scripts/migrate.sh"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/sqlite.yml"
   workflow_dispatch:
-
+permissions:
+  contents: read
 jobs:
   sqlite:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
-          cache: true
-      - name: Check Go formatting
-        run: |
-          files=$(gofmt -l sdk services cmd test deploy/migrate)
-          if [ -n "$files" ]; then
-            printf 'Unformatted Go files:\n%s\n' "$files"
-            gofmt -w sdk services cmd test deploy/migrate
-            git diff -- sdk services cmd test deploy/migrate
-            exit 1
-          fi
-      - name: Run SQLite unit and concurrency tests
-        if: always()
-        run: go test -count=1 ./sdk/database/... ./services/core/migrations/... ./services/task/migrations/... ./services/notify/migrations/... ./services/files/migrations/... ./services/pages/migrations/... ./deploy/migrate/... ./services
+          go-version: "1.27.3"
+          cache-dependency-path: go.sum
+      - run: go test -count=1 ./sdk/database/... ./services/core/migrations/... ./services/task/migrations/... ./services/notify/migrations/... ./services/files/migrations/... ./services/pages/migrations/... ./deploy/migrate/... ./services

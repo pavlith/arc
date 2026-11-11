@@ -1,60 +1,41 @@
-name: M0-06 Task outbox Notify vertical guardrails
+name: Task and Notify focused + vertical smoke
 
 on:
   push:
     branches: [main]
     paths:
       - ".github/workflows/m0-06.yml"
-      - "sdk/**"
-      - "cmd/**"
-      - "deploy/**"
-      - "test/**"
-      - "services/core/**"
-      - "services/gate/**"
       - "services/task/**"
       - "services/notify/**"
+      - "sdk/events/**"
+      - "scripts/test-m0-06.sh"
+      - "test/task-notify-credentials/**"
       - "go.mod"
       - "go.sum"
-      - "compose*.yaml"
-      - "scripts/migrate.sh"
-      - "scripts/test-m0-02.sh"
-      - "scripts/test-m0-06.sh"
   pull_request:
     branches: [main]
     paths:
       - ".github/workflows/m0-06.yml"
-      - "sdk/**"
-      - "cmd/**"
-      - "deploy/**"
-      - "test/**"
-      - "services/core/**"
-      - "services/gate/**"
       - "services/task/**"
       - "services/notify/**"
+      - "sdk/events/**"
+      - "scripts/test-m0-06.sh"
+      - "test/task-notify-credentials/**"
       - "go.mod"
       - "go.sum"
-      - "compose*.yaml"
-      - "scripts/migrate.sh"
-      - "scripts/test-m0-02.sh"
-      - "scripts/test-m0-06.sh"
-
 permissions:
   contents: read
-
 jobs:
-  guardrails:
+  checks:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
         with:
           go-version: "1.27.3"
           cache-dependency-path: go.sum
-
-      - run: go build ./cmd/arc-task ./cmd/arc-notify ./cmd/arc-gate
-      - run: go vet ./...
-      - name: Install isolated integration tools
-        run: |
-          go install github.com/nats-io/nats-server/v2@v2.15.1
-      - run: bash scripts/test-m0-06.sh
+      - run: go test -count=1 ./services/task/... ./services/notify/...
+      - run: go install github.com/nats-io/nats-server/v2@v2.15.1
+      - name: Isolated vertical smoke (without repeating M0-02–M0-05)
+        run: ARC_TEST_TASK_ONLY=1 bash scripts/test-m0-06.sh

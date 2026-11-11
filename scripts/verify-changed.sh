@@ -21,7 +21,7 @@ if [[ $mode == all ]]; then
 else
   if [[ -z $base ]]; then
     if git rev-parse --verify origin/main >/dev/null 2>&1; then
-      base=origin/dev
+      base=origin/main
     elif git rev-parse --verify HEAD^ >/dev/null 2>&1; then
       base=HEAD^
     else

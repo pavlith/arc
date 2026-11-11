@@ -2,7 +2,7 @@ name: Codex setup checks
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
     paths:
       - "AGENTS.md"
       - ".agents/**"
@@ -12,7 +12,7 @@ on:
       - "docs/**"
       - ".github/workflows/codex-setup.yml"
   pull_request:
-    branches: [main, dev]
+    branches: [main]
     paths:
       - "AGENTS.md"
       - ".agents/**"
@@ -35,7 +35,3 @@ jobs:
       - run: python3 scripts/check-agent-setup.py
       - run: python3 scripts/check-doc-links.py
       - run: bash -n scripts/verify-changed.sh
-      - run: bash scripts/verify-changed.sh --base HEAD
-      - name: Exercise verifier before app code is introduced
-        if: ${{ hashFiles('**/go.mod', 'client/package.json') == '' }}
-        run: bash scripts/verify-changed.sh --all

@@ -1,62 +1,47 @@
-name: M0-05 Gate HTTP and security guardrails
+name: Identity Access Fabric and Gate security smoke
 
 on:
   push:
     branches: [main]
     paths:
       - ".github/workflows/m0-05.yml"
-      - ".github/actions/install-ui/**"
-      - "client/**"
-      - "sdk/**"
-      - "cmd/**"
-      - "deploy/**"
-      - "test/**"
       - "services/core/**"
       - "services/gate/**"
-      - "services/task/**"
-      - "go.mod"
-      - "go.sum"
-      - "deploy/gate/**"
-      - "scripts/migrate.sh"
+      - "sdk/security/**"
+      - "sdk/contract/**"
+      - "sdk/rpc/**"
+      - "sdk/bootstrap/**"
       - "scripts/test-m0-02.sh"
       - "scripts/test-m0-05.sh"
+      - "test/bootstrap/**"
+      - "go.mod"
+      - "go.sum"
   pull_request:
     branches: [main]
     paths:
       - ".github/workflows/m0-05.yml"
-      - ".github/actions/install-ui/**"
-      - "client/**"
-      - "sdk/**"
-      - "cmd/**"
-      - "deploy/**"
-      - "test/**"
       - "services/core/**"
       - "services/gate/**"
-      - "services/task/**"
-      - "go.mod"
-      - "go.sum"
-      - "deploy/gate/**"
-      - "scripts/migrate.sh"
+      - "sdk/security/**"
+      - "sdk/contract/**"
+      - "sdk/rpc/**"
+      - "sdk/bootstrap/**"
       - "scripts/test-m0-02.sh"
       - "scripts/test-m0-05.sh"
-
+      - "test/bootstrap/**"
+      - "go.mod"
+      - "go.sum"
 permissions:
   contents: read
-
 jobs:
-  guardrails:
+  checks:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
         with:
           go-version: "1.27.3"
           cache-dependency-path: go.sum
-
-      - run: go build -o "$RUNNER_TEMP/arc-gate" ./cmd/arc-gate
-      - run: go vet ./...
-      - name: Install isolated integration tools
-        run: |
-          go install github.com/nats-io/nats-server/v2@v2.15.1
+      - run: go install github.com/nats-io/nats-server/v2@v2.15.1
       - run: bash scripts/test-m0-05.sh

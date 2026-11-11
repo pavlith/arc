@@ -337,3 +337,23 @@ operation. Also approve `identity.v1.invocations.exchange_service` for Notify.
 Gate needs the corresponding user invocation exchange policies. Health policy
 remains service-only. This delivery does not enable a real outbound provider or
 realtime delivery; fake outbound intents remain unchanged.
+
+## Task hierarchy
+
+Task 0.5.0 adds `POST .../work/{task_id}/parent` under the existing workspace/root
+prefix. Input is `parent_id` (UUID, or an empty string to detach), `revision` and
+`expected_updated_at`. It requires `task.create`; output contains only scope,
+child/parent IDs and the new revision/timestamp. The operation shares Task's
+transactional audit, replay and catalog invalidation. Work responses include an
+optional `parent_id`; collection filters `parent_id` and `top_level=true` select
+immediate children or tasks without a parent. These filters are mutually exclusive.
+
+Both endpoints must be active product work items in the same workspace/root;
+legacy tasks must first be adopted into a Team using work update. Teams may differ
+inside that shared ACL root. Cycles and resulting trees deeper than 32 edges are
+rejected, including when moving a subtree. Composite foreign keys also reject
+cross-root parents. Archiving retains hierarchy records and does not cascade or
+silently reparent children; archived parents can be detached using the active
+child's revision. Ordinary work edits preserve the parent. Apply migration
+`000006_subtasks` and replace the signed Task artifact/routes and Notify producer
+digest. Rich-text rendering and UI hierarchy interactions remain client work.

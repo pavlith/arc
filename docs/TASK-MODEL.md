@@ -124,3 +124,13 @@ broker subjects and an updated Notify producer digest. New event subjects also
 need explicit JetStream stream and publisher permissions. UI reuse goes through
 Arc Gate/CSRF/idempotency adapters. No GitHub integration is required for any
 Task product operation.
+
+### Hierarchy
+
+A product work item has at most one parent in its existing workspace/ACL root.
+Business Teams may differ; this grants no additional access. A hierarchy has at
+most 32 edges from root to leaf. Reparenting checks the complete ancestor chain
+and subtree height in the command transaction, uses the child's revision and
+updated timestamp, and writes metadata-only audit/invalidation. Archive retains
+edges and never cascades; active children can detach from an archived parent.
+Legacy proof tasks require explicit Team adoption before hierarchy attachment.

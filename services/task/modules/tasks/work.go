@@ -114,6 +114,13 @@ func workItem(ctx context.Context, db *gorm.DB, q taskv1.GetRequest) (taskv1.Wor
 	if err != nil {
 		return out, err
 	}
+	var parents []struct{ ParentID string }
+	if err := db.WithContext(ctx).Table("task_parents").Select("parent_id").Where("task_id=? AND workspace_id=? AND acl_root_id=?", row.ID, q.WorkspaceID, q.RootID).Scan(&parents).Error; err != nil {
+		return out, catalogError(err)
+	}
+	if len(parents) > 0 {
+		out.ParentID = parents[0].ParentID
+	}
 	out.Status = status.Category
 	out.TeamID = detail.TeamID
 	out.StatusID = detail.StatusID
@@ -274,11 +281,20 @@ func (s *Service) getWork(ctx context.Context, q taskv1.GetRequest) (taskv1.Work
 }
 func (s *Service) listWork(ctx context.Context, q taskv1.WorkListRequest) (taskv1.WorkListResult, error) {
 	out := taskv1.WorkListResult{Tasks: []taskv1.WorkItem{}}
+	if q.TopLevel && q.ParentID != "" {
+		return out, invalidWork()
+	}
 	if q.Limit < 1 || q.Limit > 100 || len(q.Search) > 300 || q.Priority != nil && (*q.Priority < 0 || *q.Priority > 4) {
 		return out, invalidWork()
 	}
 	err := s.GormDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		db := tx.Table("tasks t").Select("t.id").Joins("LEFT JOIN task_details d ON d.task_id=t.id").Joins("LEFT JOIN teams tm ON tm.id=d.team_id").Where("t.workspace_id=? AND t.acl_root_id=? AND t.id>? AND d.archived_at IS NULL AND (d.team_id IS NULL OR tm.archived_at IS NULL)", q.WorkspaceID, q.RootID, q.Cursor)
+		if q.ParentID != "" {
+			db = db.Where("EXISTS(SELECT 1 FROM task_parents p WHERE p.task_id=t.id AND p.parent_id=?)", q.ParentID)
+		}
+		if q.TopLevel {
+			db = db.Where("NOT EXISTS(SELECT 1 FROM task_parents p WHERE p.task_id=t.id)")
+		}
 		if q.TeamID != "" {
 			db = db.Where("d.team_id=?", q.TeamID)
 		}
@@ -331,6 +347,7 @@ func (s *Service) listWork(ctx context.Context, q taskv1.WorkListRequest) (taskv
 }
 func (s *Service) bindWork(r *module.Registry, policy module.Policy, store events.Store) error {
 	for _, bind := range []func() error{
+		func() error { return module.BindCommand(r, taskv1.WorkSetParent, policy, store, s.setParent) },
 		func() error { return module.BindCommand(r, taskv1.WorkCreate, policy, store, s.createWork) },
 		func() error { return module.BindCommand(r, taskv1.WorkUpdate, policy, store, s.updateWork) },
 		func() error { return module.BindCommand(r, taskv1.WorkArchive, policy, store, s.archiveWork) },

@@ -7,6 +7,7 @@ import (
 )
 
 type WorkItem struct {
+	ParentID string `json:"parent_id,omitempty"`
 	Task
 	TeamID      string     `json:"team_id,omitempty"`
 	StatusID    string     `json:"status_id,omitempty"`
@@ -57,6 +58,8 @@ type ArchivedItem struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 type WorkListRequest struct {
+	ParentID  string `json:"parent_id,omitempty"`
+	TopLevel  bool   `json:"top_level,omitempty"`
 	ProjectID string `json:"project_id,omitempty"`
 	LabelID   string `json:"label_id,omitempty"`
 	CatalogPage

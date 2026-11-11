@@ -46,6 +46,13 @@
     "label_id": {
       "type": "string",
       "format": "uuid"
+    },
+    "parent_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "top_level": {
+      "type": "boolean"
     }
   },
   "required": [

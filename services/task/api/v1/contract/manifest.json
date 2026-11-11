@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "service": {
     "name": "task",
-    "build_version": "0.4.0",
+    "build_version": "0.5.0",
     "api_major": 1
   },
   "resources": [
@@ -906,6 +906,18 @@
             "name": "label_id",
             "field": "label_id",
             "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "parent_id",
+            "field": "parent_id",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "top_level",
+            "field": "top_level",
+            "type": "boolean"
           }
         ]
       }
@@ -1979,6 +1991,48 @@
             "source": "query",
             "name": "cursor",
             "field": "cursor",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "task.work.set_parent",
+      "subject": "rpc.task.v1.work.set_parent",
+      "kind": "command",
+      "request_schema": "schemas/parent-change.json",
+      "response_schema": "schemas/parent-result.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "task.workspace",
+        "action": "task.create",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/work/{task_id}/parent",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "task_id",
+            "field": "task_id",
             "type": "string"
           }
         ]

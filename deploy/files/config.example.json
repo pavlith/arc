@@ -11,5 +11,9 @@
   "key_file": "/run/arc/service.seed",
   "core_key_file": "/run/arc/core-public.json",
   "instance": "files-1",
-  "storage_path": "/var/lib/arc/files/blobs"
+  "storage_path": "/var/lib/arc/files/blobs",
+  "stream_listen": "127.0.0.1:9482",
+  "stream_tls_cert_file": "/run/arc/files-private-tls.crt",
+  "stream_tls_key_file": "/run/arc/files-private-tls.key",
+  "stream_client_ca_file": "/run/arc/gate-client-ca.crt"
 }

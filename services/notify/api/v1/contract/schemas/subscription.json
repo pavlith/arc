@@ -30,7 +30,8 @@
   "required": [
     "workspace_id",
     "acl_root_id",
-    "active"
+    "active",
+    "resource_kind"
   ],
   "additionalProperties": false
 }

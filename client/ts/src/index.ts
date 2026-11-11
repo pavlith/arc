@@ -5,7 +5,7 @@ export * from './task.generated.js';
 export * from './notify.generated.js';
 export * from './files.generated.js';
 export * from './pages.generated.js';
-export type { TaskTask as Task, TaskTasks as TaskList, TaskList as TaskListRequest, TaskWork as WorkItem } from './task.generated.js';
+export type { TaskWork as WorkItem } from './task.generated.js';
 
 import { createTransport, type ClientOptions } from './transport.js';
 import { createAuthAPI } from './auth.js';

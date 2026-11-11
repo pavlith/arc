@@ -23,7 +23,7 @@ Generated method names follow operation IDs (snake_case → camelCase); e.g. `ar
 ## Transport and security
 `createClient({ fetch, baseURL, csrfToken, timeoutMs })` supports injected fetch and explicit origins; browsers must use the Gate's origin. Cookie credentials use no-store, no redirects and `__Host-arc_csrf` / `X-CSRF-Token`. Mutations require `{key: idempotencyKey}`: retain the key and body when retrying the same command, use a new key for new input. Calls have cancellation, bounded deadlines and safe structured `APIError` responses. No automatic retry, session refresh, token storage or CLI Bearer handling. Never log one-time recovery codes or credentials.
 
-Compatibility imports (`api`, `APIError`, `Profile`, `Task`, etc.) remain source exports while callers migrate to typed methods. No client TypeScript type grants a permission; server schema and live ACL are authoritative.
+Core transport types (`api`, `APIError`, `Profile`) remain exported; use `WorkItem` for the current Task response instead of retired proof aliases. No client TypeScript type grants a permission; server schema and live ACL are authoritative.
 
 ## Generation and checks
 ```sh

@@ -26,7 +26,8 @@
   },
   "required": [
     "workspace_id",
-    "acl_root_id"
+    "acl_root_id",
+    "resource_kind"
   ],
   "additionalProperties": false
 }

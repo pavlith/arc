@@ -7,7 +7,7 @@ import (
 )
 
 type Scope struct {
-	ResourceKind string `json:"resource_kind,omitempty"`
+	ResourceKind string `json:"resource_kind"`
 	WorkspaceID  string `json:"workspace_id"`
 	RootID       string `json:"acl_root_id"`
 }
@@ -62,12 +62,7 @@ var (
 	SubscriptionList = module.Query[InboxPage, SubscriptionsResult]{ID: "notify.subscriptions.list"}
 )
 
-func (s Scope) Kind() string {
-	if s.ResourceKind == "" {
-		return "task"
-	}
-	return s.ResourceKind
-}
+func (s Scope) Kind() string { return s.ResourceKind }
 func (s Scope) Key() string { return s.Kind() + ":" + s.RootID }
 func (s Scope) Action() string {
 	switch s.Kind() {

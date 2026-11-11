@@ -42,11 +42,14 @@ func (m *Module) subscribe(ctx context.Context, tx *gorm.DB, q notifyv1.Scope) (
 	return notifyv1.Subscription{Scope: q, Active: true}, audit(ctx, tx, uid, "subscriptions.subscribe", q.RootID)
 }
 func (m *Module) unsubscribe(ctx context.Context, tx *gorm.DB, q notifyv1.Scope) (notifyv1.Subscription, error) {
+	if q.Action() == "" {
+		return notifyv1.Subscription{}, invalid()
+	}
 	uid, err := user(ctx)
 	if err != nil {
 		return notifyv1.Subscription{}, err
 	}
-	if err := tx.WithContext(ctx).Model(&models.Subscription{}).Where("workspace_id=? AND acl_root_id=? AND recipient_user_id=?", q.WorkspaceID, q.RootID, uid).Update("active", false).Error; err != nil {
+	if err := tx.WithContext(ctx).Model(&models.Subscription{}).Where("workspace_id=? AND acl_root_id=? AND recipient_user_id=? AND resource_kind=?", q.WorkspaceID, q.RootID, uid, q.ResourceKind).Update("active", false).Error; err != nil {
 		return notifyv1.Subscription{}, fail(err)
 	}
 	return notifyv1.Subscription{Scope: q, Active: false}, audit(ctx, tx, uid, "subscriptions.unsubscribe", q.RootID)

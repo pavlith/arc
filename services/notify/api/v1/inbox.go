@@ -63,7 +63,7 @@ var (
 )
 
 func (s Scope) Kind() string { return s.ResourceKind }
-func (s Scope) Key() string { return s.Kind() + ":" + s.RootID }
+func (s Scope) Key() string  { return s.Kind() + ":" + s.RootID }
 func (s Scope) Action() string {
 	switch s.Kind() {
 	case "task":

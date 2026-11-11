@@ -21,7 +21,7 @@ import (
 	"github.com/pavlith/arc/sdk/rpc"
 	"github.com/pavlith/arc/sdk/security"
 	nodeService "github.com/pavlith/arc/services/agent"
-	"github.com/pavlith/arc/services/agent/journal"
+	"github.com/pavlith/arc/services/agent/modules/journal"
 	"github.com/pavlith/arc/services/core"
 	"github.com/pavlith/arc/services/core/modules/access"
 	"github.com/pavlith/arc/services/core/modules/identity"

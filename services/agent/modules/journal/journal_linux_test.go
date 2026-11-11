@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/pavlith/arc/sdk/agent"
-	"github.com/pavlith/arc/services/agent/journal"
+	"github.com/pavlith/arc/services/agent/modules/journal"
 )
 
 func TestDurableRevisionsAndSingleWriter(t *testing.T) {

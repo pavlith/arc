@@ -15,10 +15,10 @@ import (
 	contract "github.com/pavlith/arc/sdk/agent"
 	"github.com/pavlith/arc/sdk/rpc"
 	"github.com/pavlith/arc/sdk/security"
-	"github.com/pavlith/arc/services/agent/drivers/docker"
-	"github.com/pavlith/arc/services/agent/drivers/systemd"
-	"github.com/pavlith/arc/services/agent/host"
-	"github.com/pavlith/arc/services/agent/journal"
+	"github.com/pavlith/arc/services/agent/modules/docker"
+	"github.com/pavlith/arc/services/agent/modules/systemd"
+	"github.com/pavlith/arc/services/agent/modules/host"
+	"github.com/pavlith/arc/services/agent/modules/journal"
 	"github.com/pavlith/arc/services/core/modules/identity"
 )
 

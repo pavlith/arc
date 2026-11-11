@@ -13,7 +13,7 @@ import (
 
 	contract "github.com/pavlith/arc/sdk/agent"
 	"github.com/pavlith/arc/sdk/rpc"
-	"github.com/pavlith/arc/services/agent/journal"
+	"github.com/pavlith/arc/services/agent/modules/journal"
 	"github.com/pavlith/arc/services/agent/modules/reconcile"
 )
 

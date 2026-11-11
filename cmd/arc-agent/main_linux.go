@@ -11,8 +11,8 @@ import (
 	"syscall"
 
 	"github.com/pavlith/arc/services/agent"
-	"github.com/pavlith/arc/services/agent/drivers/apt"
-	"github.com/pavlith/arc/services/agent/host"
+	"github.com/pavlith/arc/services/agent/modules/apt"
+	"github.com/pavlith/arc/services/agent/modules/host"
 )
 
 func main() {

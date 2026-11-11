@@ -137,7 +137,7 @@ Docker health status, log retrieval, networked services and one-shot jobs are
 outside the current driver. Docker lifecycle tests use an isolated Engine API
 fixture. On a dedicated Docker test node, set `ARC_AGENT_DOCKER_TEST_IMAGE` to an
 approved local image digest whose entry point stays running under these limits
-and run `go test -count=1 -run '^TestDockerEngineLifecycle$' ./services/agent/drivers/docker`.
+and run `go test -count=1 -run '^TestDockerEngineLifecycle$' ./services/agent/modules/docker`.
 The smoke starts, inspects, stops and removes its test container. Live Docker
 acceptance remains tracked in [#13](https://github.com/pavlith/arc/issues/13).
 
@@ -149,6 +149,6 @@ journal release. Focused race tests: `go test -race ./services/agent/... ./sdk/a
 Host effects use fake/command adapters; this does not establish live unit start/stop.
 
 Optional read-only host check:
-`ARC_AGENT_SYSTEMD_SMOKE=1 go test -count=1 -run TestSystemdMissingUnitReadOnly ./services/agent/drivers/systemd`.
+`ARC_AGENT_SYSTEMD_SMOKE=1 go test -count=1 -run TestSystemdMissingUnitReadOnly ./services/agent/modules/systemd`.
 It rejects a missing unit before start/stop. Remaining integrations are
 [#13](https://github.com/pavlith/arc/issues/13); M7/production readiness is not claimed.

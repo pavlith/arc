@@ -30,7 +30,7 @@ type Config struct {
 	Journal      contract.Journal
 	Drivers      map[contract.Kind]contract.Driver
 	PollInterval time.Duration
-	HostFacts func(context.Context) (contract.HostFacts, error)
+	HostFacts    func(context.Context) (contract.HostFacts, error)
 	// Observe receives bounded codes only, never remote/driver error text or tokens.
 	Observe func(resource, code string)
 }
@@ -39,7 +39,7 @@ type Service struct {
 	provider contract.RuntimeProvider
 	runtime  *runtime.Module
 	interval time.Duration
-	facts func(context.Context) (contract.HostFacts, error)
+	facts    func(context.Context) (contract.HostFacts, error)
 	observe  func(string, string)
 	reports  contract.ReportJournal
 	lastSent map[string]string

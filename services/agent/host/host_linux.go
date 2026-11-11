@@ -117,9 +117,9 @@ func Collect(ctx context.Context) (agent.HostFacts, error) {
 		Kernel: kernel.String(), CPUThreads: runtime.NumCPU(),
 		MemoryBytes: memory, RootTotal: root.Blocks * uint64(root.Bsize),
 		RootAvailable: root.Bavail * uint64(root.Bsize),
-		APT: present("/usr/bin/apt-get", false),
-		Systemd: present("/usr/bin/systemctl", false),
-		Docker: present("/var/run/docker.sock", true),
+		APT:           present("/usr/bin/apt-get", false),
+		Systemd:       present("/usr/bin/systemctl", false),
+		Docker:        present("/var/run/docker.sock", true),
 		LXD: present("/var/snap/lxd/common/lxd/unix.socket", true) ||
 			present("/var/lib/lxd/unix.socket", true),
 	}

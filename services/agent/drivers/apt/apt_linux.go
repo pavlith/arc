@@ -112,6 +112,13 @@ func (m *Manager) PlanInstall(ctx context.Context, requested []string) (Plan, er
 		seen[name] = true
 		plan.Requested = append(plan.Requested, name)
 	}
+	return m.simulate(ctx, plan.Requested)
+}
+
+// simulate uses only locally validated, fixed-argv requests. It never makes a
+// host change and does not execute caller-provided shell strings.
+func (m *Manager) simulate(ctx context.Context, requested []string) (Plan, error) {
+	plan := Plan{Requested: requested}
 	args := []string{"-s", "-o", "Debug::NoLocking=1", "--no-install-recommends", "install", "--"}
 	args = append(args, plan.Requested...)
 	raw, err := m.execute(ctx, "/usr/bin/apt-get", args...)

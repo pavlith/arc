@@ -63,7 +63,7 @@ func enrollmentCapabilities(caps []agent.Kind) (string, error) {
 // It does not enable an RPC bootstrap listener or provision broker NKeys.
 func (c *Control) IssueEnrollment(ctx context.Context, req EnrollmentRequest) (EnrollmentOffer, error) {
 	var out EnrollmentOffer
-	if ctx == nil || !agent.ValidID(req.Node.ID) || agent.Bootstrap(req.Node.ID) ||
+	if ctx == nil || c == nil || c.db == nil || !agent.ValidID(req.Node.ID) || agent.Bootstrap(req.Node.ID) ||
 		req.Node.ServiceAccountID == "" || len(req.Node.ServiceAccountID) > 128 ||
 		!enrollmentKid.MatchString(req.Kid) || len(req.PublicKey) != ed25519.PublicKeySize ||
 		req.TTL < time.Minute || req.TTL > 30*time.Minute {
@@ -143,9 +143,11 @@ func (c *Control) ClaimEnrollment(ctx context.Context, claim agent.EnrollmentCla
 		len(claim.Signature) != 86 || c == nil || c.db == nil {
 		return ErrInvalid
 	}
-	now := c.now().UTC()
 	return mapped(database.RetryBusy(ctx, func() error {
 		return c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// Capture time after obtaining the write transaction: a busy retry
+			// must never redeem a ticket that expired while waiting.
+			now := c.now().UTC()
 			var offer models.RuntimeEnrollmentOffer
 			if err := tx.Where("id=?", claim.OfferID).Take(&offer).Error; err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {

@@ -13,6 +13,7 @@ service composition, with implementation packages under `modules/`:
 - `modules/runtime`: validated, signed workload execution boundary
 - `modules/journal`: durable local high-water marks and pending receipts
 - `modules/host`: read-only local Ubuntu/Linux host observation
+- `modules/enrollment`: offline host-owned keypair preparation (no exposed endpoint)
 - `modules/apt`: package inventory and signed, **read-only** profile previews
 - `modules/docker` and `modules/systemd`: privileged approved workload drivers
 
@@ -68,6 +69,33 @@ When updating only config or credentials, restart `arc-agent.service`.
   unsupported drivers.
 - Broker publish: Identity service exchange and the node's four concrete subjects.
   Subscribe only `_INBOX.runtime.<node-id>.>`; Agent sets that InboxPrefix.
+
+### Offline enrollment preparation (foundation)
+
+An operator with trusted SSH/cloud-init access can prepare a service-signing
+key **on the Ubuntu host**, without creating a reusable secret in Core:
+
+```sh
+sudo install -d -m 0700 -o root -g root /etc/arc-agent/keys
+sudo arc-agent -enrollment-keygen /etc/arc-agent/keys/service.seed
+```
+
+The CLI writes exactly 32 private seed bytes with mode 0600 and prints **only**
+the Ed25519 public key as JSON/base64. It never overwrites an existing file.
+An infrastructure administrator must verify this public key out-of-band, create
+a dedicated `arc-agent` service account and call the trusted Core
+`IssueEnrollment` method to obtain a short-lived (1–30 minutes) ticket.
+`agent.SignEnrollmentClaim` produces a key-possession proof on the host,
+and Core `ClaimEnrollment` consumes the ticket transactionally, binding the
+approved key and node only once. Revocation and replay are rejected.
+
+**Not yet a self-service enrollment flow:** these Core methods are not bound to
+Gate, public HTTP or NATS; a secure bootstrap transport and operator UI are
+still pending. The host also requires separately issued NATS NKey/TLS settings
+and pinned Core snapshot trust, provisioned through a trusted channel. The
+service credential recorded in Core is a public key reference, **not** the
+private seed. Core currently binds node subscriptions at startup; enabling a
+new node requires Core restart.
 
 ### Core-approved read-only package preview
 

@@ -16,8 +16,10 @@ Enroll a new Ubuntu VPS, inspect it from Core, plan and approve host changes, an
 - APT adapter supports installed-package inspection and dry-run installation planning, with bounded output and fixed argv, without host mutation.
 - `deploy/agent/install.sh apply <binary>` installs only Agent by default; Docker setup is separately opt-in.
 
-### 2. Secure enrollment
+### 2. Secure enrollment (Core and offline host foundation implemented)
 
+- Core now has `IssueEnrollment`, `ClaimEnrollment`, and `RevokeEnrollment` as **in-process only** methods, with migration `000012_runtime_enrollment`, 1–30 minute single-use tickets, key-bound Ed25519 proofs, token hashes only in the DB, audit, and atomic identity credential / RuntimeNode binding. A private `-enrollment-keygen` helper creates a host-owned key; no privileged Core endpoint is exposed.
+- The authenticated TLS bootstrap transport, one-time credential delivery, NATS NKey provisioning and UI remain pending. Do not treat the foundation as a ready-to-use remote enrollment service.
 - Add one-time, short-lived, single-node enrollment offers issued only by a non-delegated Arc administrator.
 - Initial access to a bare host uses operator SSH or cloud-init with a pinned Core trust root; agent credentials are provisioned only after mutual verification and node binding.
 - Never embed a reusable NATS NKey/private key in public scripts, logs or an HTTP URL.
@@ -32,7 +34,7 @@ simulates version-pinned APT requests and binds output to the approved
 profile digest. A typed, node-scoped NATS `profile.plan` RPC now returns a
 30-second, domain-separated Core signature; the Agent supports a one-shot
 `-preview-profile` CLI and never executes APT changes with this response.
-Enrollment, signed **mutation** permits, actual package transactions and
+Network enrollment, signed **mutation** permits, actual package transactions and
 Docker/LXD profile application are not implemented.
 
 - Store a versioned and immutable approved `NodeProfile` in Core, with Ubuntu version constraints, exact apt package versions or approved repositories, system services, Docker/LXD enablement and update policy.
@@ -70,4 +72,4 @@ The Core/NATS/Gate/Agent bootstrap stack is independently installed and cannot b
 6. Docker/LXD separate live test nodes: privilege escalation denial, unsafe mounts/networking, foreign resource protection and retained data.
 7. Core/NATS outage, disconnected SSH recovery, agent self-update rollback and M7 crash/race/load suite.
 
-Only step 1's read-only foundation is included in the initial host-management PR. Do not interpret this document as an authorization to execute host changes.
+Stage 1's read-only foundation is merged. Stage 2's offline enrollment primitives are implemented, but no remote bootstrap transport or broker credential issuance is available. Do not interpret this document as an authorization to execute host changes.

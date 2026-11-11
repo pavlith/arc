@@ -1,7 +1,7 @@
 # Files service — initial implementation contract
 
 Tracking: [#29](https://github.com/pavlith/arc/issues/29). Stage 3 of
-[shortplan](shortplan.md). **Implementation in dev:** signed Files 0.5.1 has 16 public folder/upload/file metadata operations and 2 hidden private byte operations, scoped root lifecycle, owner SQLite migrations, audit/replay/outbox, SQL/disk-synchronized chunk append, cleanup and repeated ACL checks during streaming. **Private streaming is opt-in** and routed through Gate using Core-verified Ed25519 proof and mTLS. Deployment and two-user acceptance remain open.
+[shortplan](shortplan.md). **Implementation in dev:** signed Files 0.6.0 has 34 public folder/upload/file/grant operations and 4 hidden private byte operations, scoped root lifecycle, owner SQLite migrations, audit/replay/outbox, SQL/disk-synchronized chunk append, cleanup and repeated ACL checks during streaming. **Private streaming is opt-in** and routed through Gate using Core-verified Ed25519 proof and mTLS. Isolated live acceptance is described below; production deployment remains open.
 
 ## Ownership and authorization
 
@@ -114,7 +114,7 @@ explicitly. The resource type is `files.workspace`, with actions
 prepared with a signed Files provider receipt, activated in Access, and then
 activated in Files before browser requests can succeed.
 
-**Still open:** personal file sections, production NATS grants, private CA/cert provisioning, operator-approved service installations and two-user/two-workspace live upload/download acceptance. The opt-in private streaming code does not imply successful production deployment.
+**Still open:** production NATS grants, private CA/cert provisioning and operator-approved production installations. The opt-in private streaming code does not imply successful production deployment.
 
 ## Local byte adapter (internal, not an upload API)
 
@@ -329,5 +329,102 @@ retention policy removes them. Lowering limits below existing usage preserves
 data and denies additional uploads. Read/download, metadata operations and
 abort remain available. These are catalog/reservation quotas, not a measurement
 of filesystem free space; orphan recovery and operator disk monitoring remain
-necessary. Workspace quotas do not claim personal-root support or per-workspace
-self-service quota management. No migration or new public route is required.
+necessary. Workspace quotas do not provide per-workspace self-service quota management;
+personal owner quotas are defined below. No migration or new public route is required.
+
+## Personal sections (Files 0.6.0)
+
+Personal operations have distinct `files.personal.*` IDs and subjects under
+`rpc.files.v1.personal.*`, the same action names, and resource type
+`files.personal`. Their public paths use `/api/v1/files/personal/roots/{acl_root_id}`
+in place of `/workspaces/{workspace_id}/roots/{acl_root_id}`. They do not select
+an Identity workspace: incoming and downstream invocation claims must have no
+workspace. Personal requests omit `workspace_id` (only the empty string is
+accepted if supplied); responses and metadata events encode it as `""`.
+Workspace routes retain their required UUID and `files.workspace` type.
+
+An operator/provider provisions a personal root through Core reserve with
+`owner_kind=user`, the active user's UUID and no workspace, followed by
+`PreparePersonalRoot`, signed domain receipt, Access activation and Files
+activation. Migration `000003_personal_roots` records the immutable user owner
+alongside each personal root. Existing workspace roots retain empty owner IDs.
+The Files policy checks root kind and exact scope before live Access; it does
+not infer ownership or trust a browser-supplied user ID. Individual-user sharing
+uses Core grants. It does not add workspace membership or implicit group rights.
+Root provisioning remains an internal lifecycle, not an unapproved HTTP route.
+
+All folder/file/upload/search operations and private byte adapters support both
+scopes with separate approved operation IDs. Personal byte routes use the same
+mTLS connection and Core proof/session verification as workspace byte routes;
+Gate must find the exact matching hidden personal operation and public metadata
+operation in the same approved artifact. Moving objects between roots/scopes is
+forbidden. Uploads remain bound to the initiating user and session even when the
+root has been shared. Personal sections have owner-wide quota settings
+`quota.personal_bytes` and `quota.personal_files` (defaults 10 GiB / 10,000),
+shared across that owner's roots; uploads by grantees charge the root owner.
+Scope changes do not bypass actor reservation limits. Lowering a personal quota
+preserves stored data and stops new reservations just as for workspaces.
+
+### Root grant management
+
+POST `.../roots/{acl_root_id}/grants` in each scope maps to
+`files.roots.grants` / `files.personal.roots.grants`. It requires a current
+`access.grants.manage` decision and a stable idempotency key. Add accepts only
+`principal_id` (an active user UUID) and a declared action. Revoke accepts only
+`grant_id`; Files always binds the downstream revoke to the URL's root.
+The request cannot set resource ID, owner, workspace override or principal kind.
+Personal sharing is individual-user only. Workspace group/role grant workflows
+remain available through their owning Core APIs, not this initial Files form.
+
+Core owns grants and policy audit; Files never writes Core tables. The incoming
+actor is exchanged through the exact approved downstream grant operation.
+A digest of actor/operation/idempotency key binds the downstream command; a
+retry after a Files transaction failure cannot duplicate the Core effect.
+Only user-management invocations permit these mutations: streaming and ordinary
+read/create invocations cannot be used as grant-management authority.
+
+### Installation and provisioning for both scopes
+
+Approve both resource types at the same Files 0.6.0 artifact digest, all 38
+operation subjects (including four hidden byte subjects), and exact Gate rules
+for the declared action of each operation. Files' downstream `access.v1.check`
+rule must map each `files/v1:<operation>` source to its declared action only.
+Root provisioning may exchange the corresponding folder-create invocation for
+`access.v1.resources.reserve` / `activate`, permitting only `files.create`.
+Grant sources `files/v1:files.roots.grants` and
+`files/v1:files.personal.roots.grants` may exchange only for grant add/revoke,
+with the declared type actions. No bootstrap Access wildcard is needed.
+Apply `000003_personal_roots` explicitly before restart, approve the new signed
+artifact, then reconcile Gate. Old installations do not implicitly approve the
+new operations. No production signing key or credential is included in the repo.
+
+## Reproducible isolated live acceptance
+
+Run `bash scripts/test-files-live.sh` with Go, a C compiler and the repository's
+pinned `nats-server` version on PATH. The fixture creates temporary owner SQLite
+databases, TLS CA/leaf certificates, distinct NKey roles and an actual loopback
+NATS process with JetStream. Core, Files and Gate run their production Go
+composition/handlers in the test process; RPC travels over TLS/NKey NATS, public
+requests use HTTPS Gate, and bytes use a real mutual-TLS private listener.
+Core verifies real Ed25519 invocation proofs and live sessions/ACL decisions.
+The script runs the standalone migrator twice on a fresh/reopened database;
+the test also runs owner migration replay, provisions signed installations and
+roots, and requires durable outbox publication. Temporary credentials and data
+are removed; no production account, database or certificate is used.
+
+The scenario covers two active users and two workspaces plus user-owned roots;
+upload initiation/chunk/completion/download in both scopes; known-ID metadata
+and byte denial; personal sharing and grant/session revocation; root/workspace
+substitution and grant-root binding. Transfer-revocation cases schedule the
+real Core mutation after the first 256 KiB write and require an incomplete
+HTTP body at the declared length. No authority or ACL decision is mocked.
+This is isolated live backend evidence, not production deployment, browser UI
+acceptance, a separate-process Core/Files rollout or full M7 verification.
+The 1 GiB memory/load matrix and production certificate/operator rollout remain
+separate acceptance work.
+
+Full-network `-race` instrumentation can exceed the unchanged 5-second metadata
+budgets because each request verifies/exchanges multiple Ed25519 invocations.
+The current full-network instrumented run hit a metadata deadline; it is not
+reported as a passing live guardrail. Focused Files/Gate package race checks
+and the ordinary live network scenario are recorded independently.

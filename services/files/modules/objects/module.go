@@ -84,6 +84,42 @@ func (s *Module) Register(r *module.Registry) error {
 	if err := module.BindQuery(r, filesv1.PrivateDownload, policy, s.noPrivateDownload); err != nil {
 		return err
 	}
+	if err := module.BindCommand(r, filesv1.PersonalUploadInitiate, policy, store, s.initiate); err != nil {
+		return err
+	}
+	if err := module.BindQuery(r, filesv1.PersonalUploadGet, policy, s.getUpload); err != nil {
+		return err
+	}
+	if err := module.BindCommand(r, filesv1.PersonalUploadAbort, policy, store, s.abort); err != nil {
+		return err
+	}
+	if err := module.BindCommand(r, filesv1.PersonalUploadComplete, policy, store, s.complete); err != nil {
+		return err
+	}
+	if err := module.BindCommand(r, filesv1.PersonalFileRename, policy, store, s.renameFile); err != nil {
+		return err
+	}
+	if err := module.BindCommand(r, filesv1.PersonalFileMove, policy, store, s.moveFile); err != nil {
+		return err
+	}
+	if err := module.BindCommand(r, filesv1.PersonalFileArchive, policy, store, s.archiveFile); err != nil {
+		return err
+	}
+	if err := module.BindQuery(r, filesv1.PersonalFileGet, policy, s.getFile); err != nil {
+		return err
+	}
+	if err := module.BindQuery(r, filesv1.PersonalFileList, policy, s.listFiles); err != nil {
+		return err
+	}
+	if err := module.BindQuery(r, filesv1.PersonalFileSearch, policy, s.searchFiles); err != nil {
+		return err
+	}
+	if err := module.BindCommand(r, filesv1.PersonalPrivateChunk, policy, store, s.noPrivateChunk); err != nil {
+		return err
+	}
+	if err := module.BindQuery(r, filesv1.PersonalPrivateDownload, policy, s.noPrivateDownload); err != nil {
+		return err
+	}
 	return r.AddWorker(module.Worker{ID: "files-upload-cleanup", Run: s.RunCleanup})
 }
 
@@ -207,7 +243,7 @@ func (s *Module) initiate(ctx context.Context, tx *gorm.DB, q filesv1.UploadInit
 	if reservation.Count >= 10 || q.ExpectedSize > 2*storage.MaxObjectSize-reservation.Bytes {
 		return filesv1.Upload{}, conflict()
 	}
-	if err := s.checkWorkspaceQuota(ctx, tx, q.WorkspaceID, q.ExpectedSize, now); err != nil {
+	if err := s.checkUploadQuota(ctx, tx, q.Scope, q.ExpectedSize, now); err != nil {
 		return filesv1.Upload{}, err
 	}
 	id := folders.NewID()

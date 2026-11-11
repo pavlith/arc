@@ -4,6 +4,7 @@ package models
 import "time"
 
 type Root struct {
+	OwnerID     string `gorm:"column:owner_id;not null"`
 	RootID      string `gorm:"column:acl_root_id;primaryKey"`
 	WorkspaceID string `gorm:"column:workspace_id;not null"`
 	State       string `gorm:"column:state;not null"`

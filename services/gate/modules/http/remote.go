@@ -131,7 +131,7 @@ func SubscribeChanges(nc *nats.Conn) (<-chan struct{}, func(), error) {
 func (r *Remote) SignPrivate(ctx context.Context, opID, token string, payload json.RawMessage, idem string) ([]byte, error) {
 	if r == nil || len(r.Client.PrivateKey) != ed25519.PrivateKeySize || r.Client.Kid == "" ||
 		ctx == nil || ctx.Err() != nil || len(payload) == 0 ||
-		opID != "files.uploads.chunk" && opID != "files.files.download" {
+		opID != "files.uploads.chunk" && opID != "files.files.download" && opID != "files.personal.uploads.chunk" && opID != "files.personal.files.download" {
 		return nil, security.ErrUnavailable
 	}
 	jti, err := tokenJTI(token)

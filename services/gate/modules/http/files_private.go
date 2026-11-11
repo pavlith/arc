@@ -40,10 +40,11 @@ func validatePrivateFiles(cfg *PrivateFilesConfig) error {
 	return nil
 }
 
+var personalFileBytesPath = regexp.MustCompile(`^/api/v1/files/personal/roots/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/(uploads|files)/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/(bytes|content)$`)
 var fileBytesPath = regexp.MustCompile(`^/api/v1/files/workspaces/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/roots/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/(uploads|files)/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/(bytes|content)$`)
 
 func isFilesBytePath(value string) bool {
-	return strings.HasPrefix(value, "/api/v1/files/workspaces/") &&
+	return (strings.HasPrefix(value, "/api/v1/files/workspaces/") || strings.HasPrefix(value, "/api/v1/files/personal/")) &&
 		(strings.HasSuffix(value, "/bytes") || strings.HasSuffix(value, "/content"))
 }
 
@@ -55,11 +56,19 @@ func (g *Gate) signedFilesOp(opID string) (contract.Operation, *contract.Compile
 	if table == nil || !g.available.Load() {
 		return contract.Operation{}, nil, errors.New("routes unavailable")
 	}
+	personal := strings.HasPrefix(opID, "files.personal.")
+	resourceType, workspaceFrom := "files.workspace", "payload.workspace_id"
+	if personal {
+		resourceType, workspaceFrom = "files.personal", ""
+	}
 	approved := "files.uploads.get"
 	action := "files.create"
-	if opID == filesv1.PrivateDownload.ID {
+	if opID == filesv1.PrivateDownload.ID || opID == filesv1.PersonalPrivateDownload.ID {
 		approved = "files.files.get"
 		action = "files.read"
+	}
+	if personal {
+		approved = strings.Replace(approved, "files.", "files.personal.", 1)
 	}
 	for _, en := range table.entries {
 		if en.route.Service != "files" || en.route.Operation != approved {
@@ -67,10 +76,10 @@ func (g *Gate) signedFilesOp(opID string) (contract.Operation, *contract.Compile
 		}
 		private, err := en.compiled.Operation(opID)
 		if err == nil && !private.HTTP.Expose && private.Auth.Mode == "resource" &&
-			private.Auth.ResourceType == "files.workspace" &&
+			private.Auth.ResourceType == resourceType &&
 			private.Auth.Action == action &&
 			private.Auth.ResourceFrom == "payload.acl_root_id" &&
-			private.Auth.WorkspaceFrom == "payload.workspace_id" {
+			private.Auth.WorkspaceFrom == workspaceFrom {
 			return private, en.compiled, nil
 		}
 	}
@@ -84,6 +93,13 @@ func (g *Gate) filesBytes(w http.ResponseWriter, r *http.Request, requestID stri
 		return
 	}
 	match := fileBytesPath.FindStringSubmatch(r.URL.Path)
+	personal := false
+	if match == nil {
+		if p := personalFileBytesPath.FindStringSubmatch(r.URL.Path); p != nil {
+			match = []string{p[0], "", p[1], p[2], p[3], p[4]}
+			personal = true
+		}
+	}
 	if match == nil {
 		writeError(w, requestID, fault(rpc.CodeNotFound))
 		return
@@ -121,6 +137,9 @@ func (g *Gate) filesBytes(w http.ResponseWriter, r *http.Request, requestID stri
 			return
 		}
 		q = filesv1.FileRef{Scope: filesv1.Scope{WorkspaceID: match[1], RootID: match[2]}, FileID: match[4]}
+	}
+	if personal {
+		opID = strings.Replace(opID, "files.", "files.personal.", 1)
 	}
 	op, artifact, err := g.signedFilesOp(opID)
 	if err != nil {

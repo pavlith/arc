@@ -6,6 +6,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/pavlith/arc/sdk/database"
 	"github.com/pavlith/arc/sdk/rpc"
 	"github.com/pavlith/arc/sdk/security"
 	filesv1 "github.com/pavlith/arc/services/files/api/v1"
@@ -30,7 +31,7 @@ func (s *Module) AppendChunk(ctx context.Context, ref filesv1.UploadRef, offset,
 	claims, ok := rpc.VerifiedClaims(ctx)
 	meta, hasMeta := rpc.Metadata(ctx)
 	if !ok || !hasMeta || claims.SessionID == "" || claims.WorkspaceID != ref.WorkspaceID ||
-		ref.WorkspaceID == "" || ref.RootID == "" {
+		ref.RootID == "" {
 		return empty, security.ErrUnauthenticated
 	}
 	var scope filesv1.Scope
@@ -61,8 +62,9 @@ func (s *Module) AppendChunk(ctx context.Context, ref filesv1.UploadRef, offset,
 		if err := s.Storage.RewindPending(ctx, v.TempKey, v.Offset); err != nil {
 			return unavailable(err)
 		}
+		authCtx := database.TransactionContext(ctx, s.DB, tx)
 		next, err := s.Storage.Append(ctx, v.TempKey, offset, length,
-			&authorizedReader{source: body, ctx: ctx, authorize: func() error { return s.Authorize(ctx, ref.RootID, "files.create") }})
+			&authorizedReader{source: body, ctx: ctx, authorize: func() error { return s.Authorize(authCtx, ref.RootID, "files.create") }})
 		if err != nil {
 			return unavailable(err)
 		}

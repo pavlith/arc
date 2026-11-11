@@ -1,0 +1,40 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "const": ""
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "folder_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "filename": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "mime": {
+      "const": "application/octet-stream"
+    },
+    "expected_size": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1073741824
+    },
+    "expected_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "acl_root_id",
+    "filename",
+    "mime",
+    "expected_size"
+  ],
+  "additionalProperties": false
+}

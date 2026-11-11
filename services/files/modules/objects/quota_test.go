@@ -216,3 +216,32 @@ func TestWorkspaceQuotaConfiguration(t *testing.T) {
 		}
 	}
 }
+
+func TestPersonalQuotaFollowsRootOwnerNotGrantee(t *testing.T) {
+	s := quotaFixture(t, Quota{PersonalBytes: 4, PersonalFiles: 10})
+	const a = "00000000-0000-4000-8000-00000000e010"
+	const b = "00000000-0000-4000-8000-00000000e011"
+	const c = "00000000-0000-4000-8000-00000000e012"
+	for _, root := range []models.Root{{RootID: a, OwnerID: "owner-a", State: "active"}, {RootID: b, OwnerID: "owner-a", State: "active"}, {RootID: c, OwnerID: "owner-b", State: "active"}} {
+		if err := s.DB.Create(&root).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	upload := func(actor, root, key string, size int64) error {
+		q := filesv1.UploadInitiateRequest{Scope: filesv1.Scope{RootID: root}, Filename: "personal.bin", MIME: "application/octet-stream", ExpectedSize: size}
+		_, err := quotaCommand(t, s, actor, "", filesv1.PersonalUploadInitiate.ID, key, q, s.initiate)
+		return err
+	}
+	if err := upload("owner-a", a, "first", 3); err != nil {
+		t.Fatal(err)
+	}
+	if err := upload("grantee", b, "bypass", 2); rpc.ErrorCode(err) != rpc.CodeConflict {
+		t.Fatalf("grantee/second root bypassed owner capacity: %v", err)
+	}
+	if err := upload("grantee", b, "exact", 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := upload("owner-b", c, "independent", 4); err != nil {
+		t.Fatalf("other owner charged: %v", err)
+	}
+}

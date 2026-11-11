@@ -18,6 +18,8 @@
   "stream_client_ca_file": "/run/arc/gate-client-ca.crt",
   "quota": {
     "workspace_bytes": 10737418240,
-    "workspace_files": 10000
+    "workspace_files": 10000,
+    "personal_bytes": 10737418240,
+    "personal_files": 10000
   }
 }

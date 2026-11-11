@@ -1,0 +1,66 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "const": ""
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "principal_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "action": {
+      "enum": [
+        "files.read",
+        "files.create",
+        "files.write",
+        "files.delete",
+        "files.share",
+        "access.grants.manage"
+      ]
+    },
+    "grant_id": {
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "required": [
+    "acl_root_id"
+  ],
+  "oneOf": [
+    {
+      "required": [
+        "principal_id",
+        "action"
+      ],
+      "not": {
+        "required": [
+          "grant_id"
+        ]
+      }
+    },
+    {
+      "required": [
+        "grant_id"
+      ],
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "principal_id"
+            ]
+          },
+          {
+            "required": [
+              "action"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,68 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "const": ""
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "folder_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "filename": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "mime": {
+      "const": "application/octet-stream"
+    },
+    "expected_size": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1073741824
+    },
+    "expected_sha256": {
+      "type": "string",
+      "pattern": "^([0-9a-f]{64})?$"
+    },
+    "offset": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1073741824
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "completed",
+        "aborted",
+        "expired"
+      ]
+    }
+  },
+  "required": [
+    "workspace_id",
+    "acl_root_id",
+    "id",
+    "filename",
+    "mime",
+    "expected_size",
+    "expected_sha256",
+    "offset",
+    "expires_at",
+    "state"
+  ],
+  "additionalProperties": false
+}

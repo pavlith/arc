@@ -64,11 +64,17 @@ func New(cfg Config) (*Server, error) {
 	for _, entry := range []struct{ ID, Action string }{
 		{filesv1.PrivateChunk.ID, "files.create"},
 		{filesv1.PrivateDownload.ID, "files.read"},
+		{filesv1.PersonalPrivateChunk.ID, "files.create"},
+		{filesv1.PersonalPrivateDownload.ID, "files.read"},
 	} {
+		workspaceFrom := "payload.workspace_id"
+		if entry.ID == filesv1.PersonalPrivateChunk.ID || entry.ID == filesv1.PersonalPrivateDownload.ID {
+			workspaceFrom = ""
+		}
 		op, err := cfg.Contract.Operation(entry.ID)
 		if err != nil || op.HTTP.Expose || op.Auth.Mode != "resource" ||
 			op.Auth.Action != entry.Action || op.Auth.ResourceFrom != "payload.acl_root_id" ||
-			op.Auth.WorkspaceFrom != "payload.workspace_id" {
+			op.Auth.WorkspaceFrom != workspaceFrom {
 			return nil, security.ErrUnavailable
 		}
 	}
@@ -132,7 +138,11 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var env invocation
-	if contract.Strict(raw, &env) != nil || env.Operation != operation ||
+	personalOperation := filesv1.PersonalPrivateChunk.ID
+	if operation == filesv1.PrivateDownload.ID {
+		personalOperation = filesv1.PersonalPrivateDownload.ID
+	}
+	if contract.Strict(raw, &env) != nil || (env.Operation != operation && env.Operation != personalOperation) ||
 		env.SchemaVersion != 1 || !requestID.MatchString(env.RequestID) ||
 		env.Auth == "" || env.Proof.Signature == "" ||
 		!env.DeadlineAt.After(time.Now()) ||
@@ -140,12 +150,14 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusUnauthorized)
 		return
 	}
+	chunkOperation := operation == filesv1.PrivateChunk.ID
+	operation = env.Operation
 	op, err := s.cfg.Contract.Operation(operation)
 	if err != nil || op.HTTP.Expose || s.cfg.Contract.Validate(op.RequestSchema, env.Payload) != nil {
 		sendError(w, http.StatusForbidden)
 		return
 	}
-	if operation == filesv1.PrivateChunk.ID && (env.IdempotencyKey == "" || len(env.IdempotencyKey) > 128) {
+	if chunkOperation && (env.IdempotencyKey == "" || len(env.IdempotencyKey) > 128) {
 		sendError(w, http.StatusBadRequest)
 		return
 	}
@@ -158,7 +170,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusForbidden)
 		return
 	}
-	if operation == filesv1.PrivateChunk.ID {
+	if chunkOperation {
 		var q filesv1.PrivateChunkRequest
 		if json.Unmarshal(env.Payload, &q) != nil || r.ContentLength != q.Length ||
 			r.ContentLength < 1 || r.ContentLength > storage.MaxChunkSize ||

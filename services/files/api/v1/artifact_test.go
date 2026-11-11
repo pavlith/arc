@@ -2,6 +2,7 @@ package v1
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/pavlith/arc/sdk/contract"
@@ -12,7 +13,7 @@ func TestFilesSignedContractSurface(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(compiled.Manifest.Operations) != 18 {
+	if len(compiled.Manifest.Operations) != 38 {
 		t.Fatalf("unexpected Files operations: %d", len(compiled.Manifest.Operations))
 	}
 	seen := make(map[string]bool)
@@ -21,8 +22,13 @@ func TestFilesSignedContractSurface(t *testing.T) {
 			t.Fatalf("duplicate operation: %s", op.ID)
 		}
 		seen[op.ID] = true
-		if op.Auth.ResourceType != "files.workspace" || op.Auth.ResourceFrom != "payload.acl_root_id" ||
-			op.Auth.WorkspaceFrom != "payload.workspace_id" || (op.HTTP.Expose == (op.ID == "files.uploads.chunk" || op.ID == "files.files.download")) {
+		resource, ws, baseID := "files.workspace", "payload.workspace_id", op.ID
+		if strings.HasPrefix(op.ID, "files.personal.") {
+			resource, ws = "files.personal", ""
+			baseID = strings.Replace(op.ID, "files.personal.", "files.", 1)
+		}
+		if op.Auth.ResourceType != resource || op.Auth.ResourceFrom != "payload.acl_root_id" ||
+			op.Auth.WorkspaceFrom != ws || (op.HTTP.Expose == (baseID == "files.uploads.chunk" || baseID == "files.files.download")) {
 			t.Fatalf("missing live resource binding: %s", op.ID)
 		}
 	}

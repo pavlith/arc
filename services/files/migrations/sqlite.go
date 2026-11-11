@@ -83,5 +83,13 @@ func SQLite() []*gormigrate.Migration {
 			}
 			return tx.Exec("CREATE INDEX uploads_cleanup_queue ON uploads(expires_at,id) WHERE cleaned_at IS NULL").Error
 		},
+	}, {
+		ID: "000003_personal_roots",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.Exec("ALTER TABLE roots ADD COLUMN owner_id TEXT NOT NULL DEFAULT ''").Error; err != nil {
+				return err
+			}
+			return tx.Exec("CREATE INDEX files_personal_owners ON roots(owner_id,acl_root_id) WHERE workspace_id=''").Error
+		},
 	}}
 }

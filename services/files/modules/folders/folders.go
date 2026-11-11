@@ -276,17 +276,33 @@ func (s *Service) changed(ctx context.Context, tx *gorm.DB, scope filesv1.Scope,
 // ProvisionRoot is an internal domain lifecycle, not a browser mutation.
 func (s *Service) PrepareRoot(ctx context.Context, scope filesv1.Scope,
 	key ed25519.PrivateKey, kid, provider string) (string, error) {
+	if scope.WorkspaceID == "" {
+		return "", invalid()
+	}
+	return s.prepareRoot(ctx, scope, "", key, kid, provider)
+}
+
+// PreparePersonalRoot binds the reserved user-owned root before Access activation.
+// It is an internal lifecycle primitive; the caller must use Core's verified reservation.
+func (s *Service) PreparePersonalRoot(ctx context.Context, root, owner string, key ed25519.PrivateKey, kid, provider string) (string, error) {
+	if !bindingID.MatchString(root) || !bindingID.MatchString(owner) {
+		return "", invalid()
+	}
+	return s.prepareRoot(ctx, filesv1.Scope{RootID: root}, owner, key, kid, provider)
+}
+
+func (s *Service) prepareRoot(ctx context.Context, scope filesv1.Scope, owner string, key ed25519.PrivateKey, kid, provider string) (string, error) {
 	if err := s.GormDB.WithContext(ctx).Exec(
-		"INSERT INTO roots(acl_root_id,workspace_id,state) VALUES(?,?,'prepared') ON CONFLICT(acl_root_id) DO NOTHING",
-		scope.RootID, scope.WorkspaceID).Error; err != nil {
+		"INSERT INTO roots(acl_root_id,workspace_id,owner_id,state) VALUES(?,?,?,'prepared') ON CONFLICT(acl_root_id) DO NOTHING",
+		scope.RootID, scope.WorkspaceID, owner).Error; err != nil {
 		return "", unavailable(err)
 	}
-	var workspace string
+	var workspace, savedOwner string
 	if err := s.GormDB.WithContext(ctx).Raw(
-		"SELECT workspace_id FROM roots WHERE acl_root_id=?", scope.RootID).Row().Scan(&workspace); err != nil {
+		"SELECT workspace_id,owner_id FROM roots WHERE acl_root_id=?", scope.RootID).Row().Scan(&workspace, &savedOwner); err != nil {
 		return "", unavailable(err)
 	}
-	if workspace != scope.WorkspaceID {
+	if workspace != scope.WorkspaceID || savedOwner != owner {
 		return "", conflict()
 	}
 	return access.SignDomainReceipt(key, access.DomainReceipt{

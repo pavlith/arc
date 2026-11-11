@@ -40,7 +40,7 @@ func TestFolderScopedMutationsAndOutbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(compiled.Manifest.Operations) != 18 {
+	if len(compiled.Manifest.Operations) != 38 {
 		t.Fatal("unexpected public Files surface")
 	}
 	s := &Service{GormDB: db, Contract: compiled}

@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/pavlith/arc/sdk/contract"
+	"github.com/pavlith/arc/sdk/database"
 	"github.com/pavlith/arc/sdk/events"
 	"github.com/pavlith/arc/sdk/module"
 	"github.com/pavlith/arc/sdk/rpc"
@@ -18,6 +20,8 @@ import (
 	filesv1 "github.com/pavlith/arc/services/files/api/v1"
 	"gorm.io/gorm"
 )
+
+var bindingID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 type Service struct {
 	GormDB   *gorm.DB
@@ -59,7 +63,34 @@ func (s *Service) Register(r *module.Registry) error {
 	if err := module.BindCommand(r, filesv1.FolderMove, policy, store, s.move); err != nil {
 		return err
 	}
-	return module.BindCommand(r, filesv1.FolderArchive, policy, store, s.archive)
+	if err := module.BindCommand(r, filesv1.FolderArchive, policy, store, s.archive); err != nil {
+		return err
+	}
+	if err := module.BindCommand(r, filesv1.PersonalFolderCreate, policy, store, s.create); err != nil {
+		return err
+	}
+	if err := module.BindQuery(r, filesv1.PersonalFolderGet, policy, s.get); err != nil {
+		return err
+	}
+	if err := module.BindQuery(r, filesv1.PersonalFolderList, policy, s.list); err != nil {
+		return err
+	}
+	if err := module.BindCommand(r, filesv1.PersonalFolderRename, policy, store, s.rename); err != nil {
+		return err
+	}
+	if err := module.BindCommand(r, filesv1.PersonalFolderMove, policy, store, s.move); err != nil {
+		return err
+	}
+	if err := module.BindCommand(r, filesv1.PersonalFolderArchive, policy, store, s.archive); err != nil {
+		return err
+	}
+	if err := module.BindCommand(r, filesv1.RootGrants, policy, store, s.grants); err != nil {
+		return err
+	}
+	if err := module.BindCommand(r, filesv1.PersonalRootGrants, policy, store, s.grants); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Authorize rejects forged root/workspace bindings BEFORE the online Access
@@ -72,12 +103,16 @@ func (s *Service) Authorize(ctx context.Context, root, action string) error {
 	}
 	var scope filesv1.Scope
 	if json.Unmarshal(meta.Payload, &scope) != nil || root == "" ||
-		root != scope.RootID || cl.WorkspaceID != scope.WorkspaceID || scope.WorkspaceID == "" {
+		root != scope.RootID || cl.WorkspaceID != scope.WorkspaceID {
+		return security.ErrDenied
+	}
+	personal := strings.HasPrefix(cl.Operation, "files.personal.")
+	if personal != (scope.WorkspaceID == "") {
 		return security.ErrDenied
 	}
 	var exists bool
-	if err := s.GormDB.WithContext(ctx).Raw(
-		"SELECT EXISTS(SELECT 1 FROM roots WHERE acl_root_id=? AND workspace_id=? AND state='active')",
+	if err := database.FromContext(ctx, s.GormDB).WithContext(ctx).Raw(
+		"SELECT EXISTS(SELECT 1 FROM roots WHERE acl_root_id=? AND workspace_id=? AND state='active' AND ((workspace_id='' AND owner_id<>'') OR (workspace_id<>'' AND owner_id='')))",
 		root, scope.WorkspaceID).Row().Scan(&exists); err != nil {
 		return security.ErrUnavailable
 	}

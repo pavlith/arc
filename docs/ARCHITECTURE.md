@@ -501,6 +501,18 @@ active upload reservations are converted on completion and released on
 abort/expiry. Operator limits and conflict semantics are specified in
 [Files workspace capacity](FILES.md#workspace-capacity-files-051).
 
+Personal Files sections use distinct `files.personal.*` operations and
+`files.personal` roots with an immutable user owner and empty workspace scope.
+Workspace operations cannot authorize a personal root, or vice versa; shared
+personal access comes only from live Core user grants. The same ownership
+binding selects owner-wide quota accounting, including grantee uploads. See
+[Files personal sections](FILES.md#personal-sections-files-060).
+Files root grants use scope-bound user-only add/revoke commands, with live
+`access.grants.manage`, Core-owned persistence and stable downstream replay
+keys. Chunk authorization shares the current Files transaction only for local
+root resolution; each remote Core session/ACL check remains live. This avoids
+re-entering the single owner SQLite connection during streamed writes.
+
 `task.roots.grants` is exposed as POST
 `/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/grants`. Adding requires
 `action` (`task.read` or `task.create`), `principal_kind` (`user`, `role` or `group`)

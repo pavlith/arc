@@ -33,7 +33,7 @@ func (s *Module) StreamDownload(ctx context.Context, ref filesv1.FileRef, dst io
 	}
 	var scope filesv1.Scope
 	if json.Unmarshal(meta.Payload, &scope) != nil || scope != ref.Scope ||
-		scope.WorkspaceID == "" || scope.RootID == "" {
+		scope.RootID == "" {
 		return empty, security.ErrDenied
 	}
 	if err := s.Authorize(ctx, ref.RootID, "files.read"); err != nil {

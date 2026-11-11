@@ -91,7 +91,7 @@ func ValidateSubject(subject string) error {
 			return errors.New("rpc: invalid Runtime node subject")
 		}
 		suffix := strings.Join(tokens[5:], ".")
-		if suffix != "inventory" && suffix != "desired.get" && suffix != "report" {
+		if suffix != "inventory" && suffix != "desired.get" && suffix != "report" && suffix != "profile.plan" {
 			return errors.New("rpc: unknown Runtime node operation")
 		}
 		return nil

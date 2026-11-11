@@ -189,8 +189,9 @@ func TestEnrollmentAtomicRollbackOnAuditFailure(t *testing.T) {
 	if err := f.db.Table("runtime_nodes").Where("id=?", req.Node.ID).Count(&rows).Error; err != nil || rows != 0 {
 		t.Fatal("failed claim left a registered node")
 	}
-	var used *time.Time
-	if err := f.db.Table("runtime_enrollment_offers").Select("redeemed_at").Where("id=?", offer.ID).Scan(&used).Error; err != nil || used != nil {
+	if err := f.db.Table("runtime_enrollment_offers").
+		Where("id=? AND redeemed_at IS NOT NULL", offer.ID).
+		Count(&rows).Error; err != nil || rows != 0 {
 		t.Fatal("failed claim consumed the ticket")
 	}
 	if err := f.db.Exec("DROP TRIGGER enrollment_audit_fail").Error; err != nil {

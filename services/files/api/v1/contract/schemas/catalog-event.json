@@ -10,7 +10,11 @@
       "format": "uuid"
     },
     "entity_kind": {
-      "const": "folder"
+      "type": "string",
+      "enum": [
+        "folder",
+        "file"
+      ]
     },
     "entity_id": {
       "type": "string",
@@ -26,7 +30,8 @@
         "created",
         "renamed",
         "moved",
-        "archived"
+        "archived",
+        "uploaded"
       ]
     }
   },

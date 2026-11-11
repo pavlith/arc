@@ -7,10 +7,12 @@ import (
 	"github.com/pavlith/arc/sdk/bootstrap"
 	"github.com/pavlith/arc/services/core/modules/fabric"
 	"github.com/pavlith/arc/services/core/modules/identity"
+	"github.com/pavlith/arc/services/files/storage"
 )
 
 type BootstrapConfig struct {
 	bootstrap.Config
+	StoragePath string `json:"storage_path"`
 }
 
 func Run(ctx context.Context, path string) error {
@@ -23,6 +25,11 @@ func Run(ctx context.Context, path string) error {
 		return err
 	}
 	defer deps.Close()
+	store, err := storage.OpenLocal(cfg.StoragePath)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
 	registry := &fabric.Client{
 		Account: cfg.ServiceID, Kid: cfg.Kid, Key: deps.Key, CoreKey: deps.CoreTrust,
 	}
@@ -33,6 +40,7 @@ func Run(ctx context.Context, path string) error {
 			Kid: cfg.Kid, PrivateKey: deps.Key,
 		},
 		CoreTrust: deps.CoreTrust,
+		Storage: store,
 	})
 	if err != nil {
 		return err

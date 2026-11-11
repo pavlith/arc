@@ -132,3 +132,17 @@ They cannot be called by browsers or untrusted RPC clients. Root-scoped
 Identity/Access checks, SQL upload sessions, authorization on chunk and
 download streaming, and expiry/orphan reconciliation must be wired before
 these bytes can be exposed through Gate.
+
+## Upload metadata contract (Files 0.2.0, implementation in progress)
+
+Files' signed contract now includes upload initiate, status, abort and complete,
+plus ready-file GET/list. The upload initiator is the only actor/session that
+may inspect or complete its upload. Size is at most 1 GiB, the upload expires
+after 24 hours, and the initial declared MIME is restricted to
+`application/octet-stream`. The complete operation promotes only when
+physical and SQL offsets match the requested length, verifies SHA-256,
+writes ready metadata and emits an outbox invalidation. If the SQL transaction
+fails after local promotion, reconciliation must remove the unreferenced blob.
+This is not a complete HTTP upload service: private chunk write and download
+routes through Gate, session revalidation, cleanup and stream cancellation are
+still required before public use. No production installation is implied.

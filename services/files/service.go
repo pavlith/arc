@@ -14,6 +14,8 @@ import (
 	"github.com/pavlith/arc/services/core/modules/identity"
 	filesv1 "github.com/pavlith/arc/services/files/api/v1"
 	"github.com/pavlith/arc/services/files/modules/folders"
+	"github.com/pavlith/arc/services/files/modules/objects"
+	"github.com/pavlith/arc/services/files/storage"
 	"github.com/pavlith/arc/services/files/modules/outbox"
 	"gorm.io/gorm"
 )
@@ -25,16 +27,18 @@ type Config struct {
 	Runtime   sdk.AppConfig
 	Identity  identity.Client
 	CoreTrust ed25519.PublicKey
+	Storage *storage.Local
 }
 
 type Service struct {
 	App       *service.App
 	Folders   *folders.Service
 	Publisher *outbox.Module
+	Objects *objects.Module
 }
 
 func New(cfg Config) (*Service, error) {
-	if cfg.GormDB == nil || cfg.Identity.RPC == nil ||
+	if cfg.GormDB == nil || cfg.Storage == nil || cfg.Identity.RPC == nil ||
 		cfg.Identity.ServiceID == "" || cfg.Identity.Kid == "" ||
 		len(cfg.Identity.PrivateKey) != ed25519.PrivateKeySize ||
 		len(cfg.CoreTrust) != ed25519.PublicKeySize ||
@@ -63,6 +67,7 @@ func New(cfg Config) (*Service, error) {
 	cfg.Runtime.SelfCheck = owner.PingContext
 	s := &Service{}
 	foldersModule := &folders.Service{GormDB: cfg.GormDB, Identity: cfg.Identity, Contract: compiled, Check: folders.OnlineCheck(cfg.Identity)}
+	objectsModule := &objects.Module{DB: cfg.GormDB, Contract: compiled, Storage: cfg.Storage, Authorize: foldersModule.Authorize}
 	registration := sdk.Registration{
 		Service: "files", Instance: cfg.Runtime.Instance,
 		Build: compiled.Manifest.Service.BuildVersion, Digest: compiled.Digest,
@@ -78,13 +83,13 @@ func New(cfg Config) (*Service, error) {
 	}
 	app, err := service.Compose(service.Config{
 		Definition: service.Definition{Name: "files", APIMajor: 1,
-			Kind: service.Domain, Modules: []module.Module{foldersModule, publisher}},
+			Kind: service.Domain, Modules: []module.Module{foldersModule, objectsModule, publisher}},
 		Runtime: cfg.Runtime,
 	})
 	if err != nil {
 		return nil, err
 	}
-	s.App, s.Folders, s.Publisher = app, foldersModule, publisher
+	s.App, s.Folders, s.Publisher, s.Objects = app, foldersModule, publisher, objectsModule
 	return s, nil
 }
 func (s *Service) Start(ctx context.Context) error {

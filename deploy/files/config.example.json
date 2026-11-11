@@ -10,5 +10,6 @@
   "kid": "files-key-v1",
   "key_file": "/run/arc/service.seed",
   "core_key_file": "/run/arc/core-public.json",
-  "instance": "files-1"
+  "instance": "files-1",
+  "storage_path": "/var/lib/arc/files/blobs"
 }

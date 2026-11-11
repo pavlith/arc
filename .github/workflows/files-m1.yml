@@ -57,7 +57,7 @@ jobs:
           )
           func main() {
             c, e := contract.Compile(v1.Artifact())
-            if e != nil || len(c.Manifest.Operations) != 6 {
+            if e != nil || len(c.Manifest.Operations) != 12 {
               fmt.Fprintln(os.Stderr, "invalid Files signed contract:", e)
               os.Exit(1)
             }

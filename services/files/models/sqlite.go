@@ -78,6 +78,7 @@ type Upload struct {
 	ExpiresAt      time.Time `gorm:"column:expires_at;not null"`
 	CreatedAt      time.Time `gorm:"column:created_at;not null"`
 	UpdatedAt      time.Time `gorm:"column:updated_at;not null"`
+	CleanedAt      *time.Time `gorm:"column:cleaned_at"`
 }
 
 func (Upload) TableName() string { return "uploads" }

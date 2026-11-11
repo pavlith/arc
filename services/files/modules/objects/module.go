@@ -59,7 +59,10 @@ func (s *Module) Register(r *module.Registry) error {
 	if err := module.BindQuery(r, filesv1.FileGet, policy, s.getFile); err != nil {
 		return err
 	}
-	return module.BindQuery(r, filesv1.FileList, policy, s.listFiles)
+	if err := module.BindQuery(r, filesv1.FileList, policy, s.listFiles); err != nil {
+		return err
+	}
+	return r.AddWorker(module.Worker{ID: "files-upload-cleanup", Run: s.RunCleanup})
 }
 
 func invalid() error {
@@ -241,9 +244,9 @@ func (s *Module) abort(ctx context.Context, tx *gorm.DB, q filesv1.UploadRef) (f
 	if res.RowsAffected != 1 {
 		return filesv1.Upload{}, conflict()
 	}
-	if err := s.Storage.Abort(ctx, v.TempKey); err != nil {
-		return filesv1.Upload{}, unavailable(err)
-	}
+	// Never delete bytes inside this SQL transaction: a failed commit must
+	// leave an intact pending upload. The Files cleanup worker removes bytes
+	// only after the aborted state has been committed.
 	v.State, v.UpdatedAt = "aborted", now
 	return uploadDTO(v), nil
 }

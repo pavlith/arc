@@ -166,3 +166,14 @@ from interrupted requests, and advances the SQL offset with a scoped CAS.
 If that transaction fails, the disk is rewound to the last committed offset.
 The private Gate-to-Files streaming route still needs a signed transport
 identity and cannot call this method from unverified browser headers.
+
+## Durable abandoned-upload cleanup
+
+Files uses owner-local GORM migration `000002_upload_cleanup` to record
+`uploads.cleaned_at`. Abort now commits the metadata state **before** deleting
+any bytes. The bounded `files-upload-cleanup` worker marks expired pending
+sessions, deletes their temporary bytes (and those of aborted sessions), and
+records completion. It retries interrupted cleanup safely, rather than
+removing the file inside a potentially rolled-back SQL command. This handles
+known SQL upload rows. Orphan files lacking an upload row and abandoned
+promoted objects still require their own retention-based reconciliation.

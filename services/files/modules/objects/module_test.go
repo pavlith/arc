@@ -214,8 +214,19 @@ func TestAbortPendingUploadAndValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if offset, err := store.Offset(ctx, v.ID); err != nil || offset != 3 {
+		t.Fatalf("precommit cleanup unexpectedly removed bytes: %d %v", offset, err)
+	}
+	removed, err := s.Cleanup(ctx, 100)
+	if err != nil || removed != 1 {
+		t.Fatalf("cleanup aborted session: removed=%d err=%v", removed, err)
+	}
 	if _, err := store.Offset(ctx, v.ID); !errors.Is(err, storage.ErrMissing) {
-		t.Fatalf("abort left pending blob: %v", err)
+		t.Fatalf("cleanup left pending bytes: %v", err)
+	}
+	removed, err = s.Cleanup(ctx, 100)
+	if err != nil || removed != 0 {
+		t.Fatalf("cleanup must be idempotent: removed=%d err=%v", removed, err)
 	}
 	if _, err := s.getFile(ctx, filesv1.FileRef{Scope: scope, FileID: v.ID}); rpc.ErrorCode(err) != rpc.CodeNotFound {
 		t.Fatalf("aborted upload visible as ready file: %v", err)

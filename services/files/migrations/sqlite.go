@@ -75,5 +75,13 @@ func SQLite() []*gormigrate.Migration {
 			}
 			return nil
 		},
+	}, {
+		ID: "000002_upload_cleanup",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.Exec("ALTER TABLE uploads ADD COLUMN cleaned_at DATETIME").Error; err != nil {
+				return err
+			}
+			return tx.Exec("CREATE INDEX uploads_cleanup_queue ON uploads(expires_at,id) WHERE cleaned_at IS NULL").Error
+		},
 	}}
 }

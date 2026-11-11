@@ -347,6 +347,7 @@ func (s *Service) listWork(ctx context.Context, q taskv1.WorkListRequest) (taskv
 }
 func (s *Service) bindWork(r *module.Registry, policy module.Policy, store events.Store) error {
 	for _, bind := range []func() error{
+		func() error { return module.BindCommand(r, taskv1.WorkTriage, policy, store, s.triageWork) },
 		func() error { return module.BindCommand(r, taskv1.WorkBulkUpdate, policy, store, s.bulkUpdateWork) },
 		func() error { return module.BindCommand(r, taskv1.WorkLinkChange, policy, store, s.changeLink) },
 		func() error { return module.BindQuery(r, taskv1.WorkLinks, policy, s.listLinks) },

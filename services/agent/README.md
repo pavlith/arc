@@ -85,9 +85,24 @@ the Ed25519 public key as JSON/base64. It never overwrites an existing file.
 An infrastructure administrator must verify this public key out-of-band, create
 a dedicated `arc-agent` service account and call the trusted Core
 `IssueEnrollment` method to obtain a short-lived (1–30 minutes) ticket.
-`agent.SignEnrollmentClaim` produces a key-possession proof on the host,
-and Core `ClaimEnrollment` consumes the ticket transactionally, binding the
-approved key and node only once. Revocation and replay are rejected.
+
+The host can sign the offer ID with that key, reading the ticket from **stdin**
+instead of an argv argument (replace the example ID with the issued offer ID):
+
+```sh
+read -rs -p 'Enrollment token: ' ENROLL_TOKEN
+printf '%s' "$ENROLL_TOKEN" | sudo arc-agent \
+  -enrollment-claim enroll-example123 \
+  -enrollment-key-file /etc/arc-agent/keys/service.seed
+unset ENROLL_TOKEN
+```
+
+Only `offer_id` and `signature` are printed. The infrastructure administrator
+combines them with the original token to call Core `ClaimEnrollment`
+through a future **trusted bootstrap interface**. The token must never be put
+in shell arguments, environment exports, logs, URLs, or a publicly writable
+file. The Core transaction binds the approved key and node once; revocation,
+expiry, and replay are rejected.
 
 **Not yet a self-service enrollment flow:** these Core methods are not bound to
 Gate, public HTTP or NATS; a secure bootstrap transport and operator UI are

@@ -18,7 +18,7 @@ Enroll a new Ubuntu VPS, inspect it from Core, plan and approve host changes, an
 
 ### 2. Secure enrollment (Core and offline host foundation implemented)
 
-- Core now has `IssueEnrollment`, `ClaimEnrollment`, and `RevokeEnrollment` as **in-process only** methods, with migration `000012_runtime_enrollment`, 1–30 minute single-use tickets, key-bound Ed25519 proofs, token hashes only in the DB, audit, and atomic identity credential / RuntimeNode binding. A private `-enrollment-keygen` helper creates a host-owned key; no privileged Core endpoint is exposed.
+- Core now has `IssueEnrollment`, `ClaimEnrollment`, and `RevokeEnrollment` as **in-process only** methods, with migration `000012_runtime_enrollment`, 1–30 minute single-use tickets, key-bound Ed25519 proofs, token hashes only in the DB, audit, and atomic identity credential / RuntimeNode binding. A private `-enrollment-keygen` helper creates a host-owned key and `-enrollment-claim` signs a ticket read from stdin without printing the secret. No privileged Core endpoint is exposed.
 - The authenticated TLS bootstrap transport, one-time credential delivery, NATS NKey provisioning and UI remain pending. Do not treat the foundation as a ready-to-use remote enrollment service.
 - Add one-time, short-lived, single-node enrollment offers issued only by a non-delegated Arc administrator.
 - Initial access to a bare host uses operator SSH or cloud-init with a pinned Core trust root; agent credentials are provisioned only after mutual verification and node binding.

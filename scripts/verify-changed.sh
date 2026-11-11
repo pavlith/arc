@@ -19,7 +19,7 @@ if [[ $mode == all ]]; then
   mapfile -t changed < <(git ls-files | sort -u)
 else
   if [[ -z $base ]]; then
-    if git rev-parse --verify origin/dev >/dev/null 2>&1; then
+    if git rev-parse --verify origin/main >/dev/null 2>&1; then
       base=origin/dev
     elif git rev-parse --verify HEAD^ >/dev/null 2>&1; then
       base=HEAD^
@@ -42,11 +42,19 @@ if [[ ${#changed[@]} -eq 0 ]]; then
   exit 0
 fi
 
-declare -A modules=()
-client_changed=false
+# A single Go module does not imply go test ./... for every service change.
+declare -A scopes=()
+full_go=false
+client_ts=false
+client_web=false
+client_lock=false
 migrations_changed=false
 for file in "${changed[@]}"; do
-  if [[ $file == client/* ]]; then client_changed=true; fi
+  case "$file" in
+    client/ts/*) client_ts=true ;;
+    client/web/*) client_web=true ;;
+    client/package*.json) client_lock=true ;;
+  esac
   if [[ $file == migrations/* || $file == */migrations/* ]]; then migrations_changed=true; fi
   case "$file" in
     *.go|go.mod|go.sum)
@@ -55,32 +63,45 @@ for file in "${changed[@]}"; do
         unformatted=$(gofmt -l "$file")
         [[ -z $unformatted ]] || { echo "Unformatted: $unformatted" >&2; exit 1; }
       fi
-      dir=$(dirname "$file")
-      while [[ $dir != . && $dir != / && ! -f $dir/go.mod ]]; do dir=$(dirname "$dir"); done
-      if [[ -f $dir/go.mod ]]; then modules["$dir"]=1; fi
+      case "$file" in
+        go.mod|go.sum|sdk/*|test/*|deploy/migrate/*) full_go=true ;;
+        services/*)
+          part="${file#services/}"
+          owner="${part%%/*}"
+          if [[ $part == "$owner" ]]; then scopes["./services"]=1
+          else scopes["./services/$owner/..."]=1; fi
+          ;;
+        cmd/*)
+          part="${file#cmd/}"
+          owner="${part%%/*}"
+          scopes["./cmd/$owner/..."]=1
+          ;;
+        *) full_go=true ;;
+      esac
       ;;
   esac
 done
-
-if [[ ${#modules[@]} -gt 0 ]]; then
-  command -v go >/dev/null || { echo "Go is required for changed Go modules" >&2; exit 1; }
-  for module in "${!modules[@]}"; do
-    echo "Go check: $module"
-    (cd "$module" && go test ./...)
-  done
+if $full_go; then
+  echo "Go: shared changes; testing root module"
+  go test ./...
+elif [[ ${#scopes[@]} -gt 0 ]]; then
+  mapfile -t selected < <(printf '%s\n' "${!scopes[@]}" | sort)
+  printf 'Go: targeted tests %s\n' "${selected[*]}"
+  go test "${selected[@]}"
 else
-  echo "Go: no changed, implemented module"
+  echo "Go: no changed Go source"
 fi
-
-if $client_changed && [[ -f client/package.json ]]; then
+if $client_ts || $client_web || $client_lock; then
   [[ -d client/node_modules ]] || { echo "Client dependencies missing: npm --prefix client ci" >&2; exit 1; }
-  npm --prefix client run check --workspace @arc/web
-  npm --prefix client run build --workspace @arc/web
+  if $client_ts || $client_lock; then npm --prefix client run check --workspace @arc/client; fi
+  if $client_web || $client_lock; then
+    npm --prefix client run check --workspace ui
+    if $client_web; then npm --prefix client run build --workspace ui; fi
+  fi
 else
-  echo "Client: no changed client package"
+  echo "Client: no relevant changes"
 fi
-
 if $migrations_changed; then
   echo "NOTICE: migration changes require empty-DB/restart smoke: bash scripts/test-m0-01.sh"
 fi
-echo "Focused checks complete; M7 full regression not implied."
+echo "Changed-scope checks complete; M7 full regression not implied."

@@ -532,7 +532,7 @@ func TestM006(t *testing.T) {
 			if err := socket.WriteJSON(command); err != nil {
 				t.Fatal(err)
 			}
-			if err := socket.SetReadDeadline(time.Now().Add(10*time.Second)); err != nil {
+			if err := socket.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
 				t.Fatal(err)
 			}
 			var reply map[string]any
@@ -556,7 +556,7 @@ func TestM006(t *testing.T) {
 		if ack["type"] != "subscribed" || !ok || taskSubscription == "" {
 			t.Fatal("Task root subscription denied", ack)
 		}
-		ack = exchange(map[string]string{"op":"subscribe","request_id":"my-inbox","channel":"inbox"})
+		ack = exchange(map[string]string{"op": "subscribe", "request_id": "my-inbox", "channel": "inbox"})
 		inboxSubscription, ok := ack["subscription_id"].(string)
 		if ack["type"] != "subscribed" || !ok || inboxSubscription == "" {
 			t.Fatal("personal Inbox subscription denied", ack)
@@ -583,7 +583,7 @@ func TestM006(t *testing.T) {
 		publish(taskv1.CatalogChangedSubject, taskv1.CatalogChangedName, task.ID, taskv1.CatalogChanged{
 			Scope: scope, EntityKind: "work", EntityID: task.ID, Revision: 2,
 		})
-		if err := socket.SetReadDeadline(time.Now().Add(10*time.Second)); err != nil {
+		if err := socket.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
 			t.Fatal(err)
 		}
 		var event map[string]any
@@ -598,7 +598,7 @@ func TestM006(t *testing.T) {
 		publish(notifyv1.InboxChangedSubject, notifyv1.InboxChangedName, notificationID, notifyv1.InboxChanged{
 			RecipientID: owner, NotificationID: notificationID, Revision: 1,
 		})
-		if err := socket.SetReadDeadline(time.Now().Add(10*time.Second)); err != nil {
+		if err := socket.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
 			t.Fatal(err)
 		}
 		event = nil

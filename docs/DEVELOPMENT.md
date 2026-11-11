@@ -40,6 +40,12 @@ Use `bash scripts/verify-changed.sh --base HEAD` (or `make verify`) after local 
 
 Run the security-relevant smoke whenever changing that boundary; never replace it with compilation alone. Use `go vet`, race checks and integration tests when relevant. The scheduled/manual `Arc full Go regression` runs `go test -race ./...`. Network/process smoke requires fixtures; ordinary `go test ./...` does not prove it. Full M7 fault/recovery, browser, load and compatibility matrices remain separate acceptance criteria. Log exact passed/failed/skipped checks, not aspirational coverage; avoid rerunning known passing unrelated checks.
 
+## Pre-stable API rollout
+
+Core's explicit browser/CLI migration revokes dual-channel sessions while preserving users. Notify removes duplicate `task_id` and requires explicit `resource_kind`. Task retires proof-only CRUD routes in favor of signed `task.work.*`. Apply owner migrations and reapprove exact Gate/Task/Notify routes and consumer digests before enabling traffic.
+
+A previously approved Fabric v1 contract **cannot** be upgraded in place to incompatible schemas under the same major: conservative compatibility rejects it after revocation. Pre-stable development uses a fresh isolated installation. Supported upgrades of persisted deployments require a new API major and operator-approved rollout. Never erase Core accounts/ACL or disable signed approval to bypass this; see [#35](https://github.com/pavlith/arc/issues/35).
+
 ## Browser, CLI and operator boundaries
 The SvelteKit workspace is `ui`, TypeScript client `@arc/client`. Install at `client/` and configure Gate `ui_directory` to the built static output. Browser cookies/CSRF and CLI Bearer sessions are separate. CLI token, refresh and logout use exact `/api/v1/arc/cli/{token,refresh,logout}` endpoints without Origin or cookies; Identity's session-channel migration retains older sessions as legacy.
 

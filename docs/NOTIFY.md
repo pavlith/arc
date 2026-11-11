@@ -45,7 +45,9 @@ exactly-once guarantee. Fake delivery is an explicitly selected test fixture.
 
 ## Deployment and verification
 
-Run the Notify migrator before startup. Every subscription identifies its
+Run the Notify migrator before startup. The new migration removes duplicate `task_id` from stored notifications. Previously approved v1 manifests cannot be hot-swapped with this changed schema.
+
+Every subscription identifies its
 resource kind explicitly (`task`, `page` or `file`); there is no implicit Task
 default. Inbox responses use `resource_kind` + `resource_id`, never a second
 `task_id`. Replacement contracts/policies require operator-signed Fabric approval.

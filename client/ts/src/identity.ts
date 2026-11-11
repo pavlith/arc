@@ -23,7 +23,7 @@ export interface InvitationDetails extends Invitation {
   consumed_at?: string; revoked_at?: string;
 }
 export interface Session { id: string; user_id: string; expires_at: string }
-export interface AccountSession extends Session { created_at: string; channel: 'browser' | 'cli' | 'legacy' }
+export interface AccountSession extends Session { created_at: string; channel: 'browser' | 'cli' }
 export interface ManagedUser extends Profile { status: 'active' | 'disabled'; created_at: string }
 export type WorkflowCategory = 'backlog' | 'unstarted' | 'started' | 'completed' | 'cancelled';
 export interface WorkflowSortOverride {

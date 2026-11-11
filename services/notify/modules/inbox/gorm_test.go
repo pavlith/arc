@@ -46,7 +46,7 @@ func TestSQLiteInboxAndDeliveryStableKey(t *testing.T) {
 		ID: eventID, Type: taskv1.CreatedName, Version: 1,
 		AggregateID: taskID, OccurredAt: time.Now().UTC(), Payload: payload,
 	})
-	inbox := (&Service{GormDB: db}).Effect
+	inbox := (&Service{GormDB: db, Channel: "fake"}).Effect
 	store := events.Store{DB: db}
 	for i := 0; i < 2; i++ {
 		if err := store.Consume(ctx, Durable, taskv1.CreatedSubject, compiled, raw, inbox); err != nil {
@@ -62,6 +62,7 @@ func TestSQLiteInboxAndDeliveryStableKey(t *testing.T) {
 	if _, err := sender.Deliver(ctx, provider); err == nil {
 		t.Fatal("uncertain provider timeout not reported")
 	}
+	db.Exec("UPDATE delivery_intents SET next_attempt_at=NULL")
 	if n, err := sender.Deliver(ctx, provider); err != nil || n != 1 {
 		t.Fatalf("retry failed: count=%d error=%v", n, err)
 	}

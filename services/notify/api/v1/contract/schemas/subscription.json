@@ -2,8 +2,15 @@
   "type": "object",
   "properties": {
     "workspace_id": {
-      "type": "string",
-      "format": "uuid"
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "uuid"
+        },
+        {
+          "const": ""
+        }
+      ]
     },
     "acl_root_id": {
       "type": "string",
@@ -11,6 +18,13 @@
     },
     "active": {
       "type": "boolean"
+    },
+    "resource_kind": {
+      "enum": [
+        "task",
+        "page",
+        "file"
+      ]
     }
   },
   "required": [

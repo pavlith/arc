@@ -32,7 +32,7 @@ func (m *Module) list(ctx context.Context, q notifyv1.InboxPage) (notifyv1.Inbox
 	err = m.GormDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		after := q.Cursor
 		for len(out.Notifications) <= q.Limit {
-			db := tx.Where("recipient_user_id=? AND id>? AND workspace_id<>'' AND acl_root_id<>'' AND task_id<>''", uid, after)
+			db := tx.Where("recipient_user_id=? AND id>? AND acl_root_id<>'' AND resource_id<>''", uid, after)
 			switch q.Tab {
 			case "archived":
 				db = db.Where("archived_at IS NOT NULL")
@@ -51,19 +51,19 @@ func (m *Module) list(ctx context.Context, q notifyv1.InboxPage) (notifyv1.Inbox
 			if len(rows) == 0 {
 				break
 			}
-			roots := []string{}
+			roots := []notifyv1.Scope{}
 			for _, row := range rows {
-				roots = append(roots, row.RootID)
+				roots = append(roots, notifyv1.Scope{RootID: row.RootID, ResourceKind: row.ResourceKind})
 			}
 			if err := m.allowRoots(ctx, roots, allowed); err != nil {
 				return err
 			}
 			for _, row := range rows {
 				after = row.ID
-				if !allowed[row.RootID] {
+				if !allowed[(notifyv1.Scope{RootID: row.RootID, ResourceKind: row.ResourceKind}).Key()] {
 					continue
 				}
-				out.Notifications = append(out.Notifications, notifyv1.Notification{NotificationState: state(row), Scope: notifyv1.Scope{WorkspaceID: row.WorkspaceID, RootID: row.RootID}, TaskID: row.TaskID, Kind: row.Kind, CreatedAt: row.CreatedAt})
+				out.Notifications = append(out.Notifications, notifyv1.Notification{NotificationState: state(row), Scope: notifyv1.Scope{WorkspaceID: row.WorkspaceID, RootID: row.RootID, ResourceKind: row.ResourceKind}, TaskID: row.TaskID, ResourceID: row.ResourceID, Kind: row.Kind, CreatedAt: row.CreatedAt})
 				if len(out.Notifications) > q.Limit {
 					break
 				}
@@ -74,21 +74,22 @@ func (m *Module) list(ctx context.Context, q notifyv1.InboxPage) (notifyv1.Inbox
 			out.NextCursor = out.Notifications[len(out.Notifications)-1].ID
 		}
 		var counts []struct {
-			RootID string
-			Count  int64
+			RootID       string
+			ResourceKind string
+			Count        int64
 		}
-		if err := tx.Model(&models.Notification{}).Select("acl_root_id AS root_id,count(*) AS count").Where("recipient_user_id=? AND read_at IS NULL AND archived_at IS NULL AND (snoozed_until IS NULL OR snoozed_until<=?) AND workspace_id<>'' AND acl_root_id<>'' AND task_id<>''", uid, now).Group("acl_root_id").Scan(&counts).Error; err != nil {
+		if err := tx.Model(&models.Notification{}).Select("acl_root_id AS root_id,resource_kind,count(*) AS count").Where("recipient_user_id=? AND read_at IS NULL AND archived_at IS NULL AND (snoozed_until IS NULL OR snoozed_until<=?) AND acl_root_id<>'' AND resource_id<>''", uid, now).Group("acl_root_id,resource_kind").Scan(&counts).Error; err != nil {
 			return fail(err)
 		}
-		roots := []string{}
+		roots := []notifyv1.Scope{}
 		for _, row := range counts {
-			roots = append(roots, row.RootID)
+			roots = append(roots, notifyv1.Scope{RootID: row.RootID, ResourceKind: row.ResourceKind})
 		}
 		if err := m.allowRoots(ctx, roots, allowed); err != nil {
 			return err
 		}
 		for _, row := range counts {
-			if allowed[row.RootID] {
+			if allowed[(notifyv1.Scope{RootID: row.RootID, ResourceKind: row.ResourceKind}).Key()] {
 				out.UnreadCount += row.Count
 			}
 		}
@@ -159,10 +160,10 @@ func (m *Module) markAll(ctx context.Context, tx *gorm.DB, _ notifyv1.Empty) (no
 	}
 	now := time.Now().UTC()
 	base := func() *gorm.DB {
-		return tx.WithContext(ctx).Model(&models.Notification{}).Where("recipient_user_id=? AND read_at IS NULL AND archived_at IS NULL AND (snoozed_until IS NULL OR snoozed_until<=?) AND workspace_id<>'' AND acl_root_id<>'' AND task_id<>''", uid, now)
+		return tx.WithContext(ctx).Model(&models.Notification{}).Where("recipient_user_id=? AND read_at IS NULL AND archived_at IS NULL AND (snoozed_until IS NULL OR snoozed_until<=?) AND acl_root_id<>'' AND resource_id<>''", uid, now)
 	}
-	var roots []string
-	if err := base().Distinct("acl_root_id").Pluck("acl_root_id", &roots).Error; err != nil {
+	var roots []notifyv1.Scope
+	if err := base().Select("DISTINCT acl_root_id AS root_id,resource_kind").Scan(&roots).Error; err != nil {
 		return notifyv1.MarkAllResult{}, fail(err)
 	}
 	allowed := map[string]bool{}
@@ -171,10 +172,10 @@ func (m *Module) markAll(ctx context.Context, tx *gorm.DB, _ notifyv1.Empty) (no
 	}
 	var count int64
 	for _, root := range roots {
-		if !allowed[root] {
+		if !allowed[root.Key()] {
 			continue
 		}
-		res := base().Where("acl_root_id=?", root).Updates(map[string]any{"read_at": now, "revision": gorm.Expr("revision+1")})
+		res := base().Where("acl_root_id=? AND resource_kind=?", root.RootID, root.Kind()).Updates(map[string]any{"read_at": now, "revision": gorm.Expr("revision+1")})
 		if res.Error != nil {
 			return notifyv1.MarkAllResult{}, fail(res.Error)
 		}

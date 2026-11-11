@@ -32,7 +32,7 @@ func (m *Module) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			work, cancel := context.WithTimeout(ctx, 5*time.Second)
+			work, cancel := context.WithTimeout(ctx, 8*time.Second)
 			if err := m.Permit(work); err != nil {
 				cancel()
 				if ctx.Err() != nil {

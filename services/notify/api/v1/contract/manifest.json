@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "service": {
     "name": "notify",
-    "build_version": "0.2.0",
+    "build_version": "0.3.0",
     "api_major": 1
   },
   "resources": [

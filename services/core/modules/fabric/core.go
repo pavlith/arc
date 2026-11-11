@@ -136,7 +136,7 @@ func (c *Core) verify(s SignedInstallation) (Installation, *contract.Compiled, e
 					if src == audience+":"+o.ID {
 						found = true
 						for _, act := range r.DownstreamActions[src] {
-							if act != o.Auth.Action && !pagesReadCheck(o, r.Operation, act) && !(o.Auth.Mode == "resource" && o.Auth.Action == "access.grants.manage" && has(typesActions(compiled, o.Auth.ResourceType), act)) {
+							if act != o.Auth.Action && !pagesReadCheck(o, r.Operation, act) && !notifyReadCheck(o, r.Operation, act, r) && !(o.Auth.Mode == "resource" && o.Auth.Action == "access.grants.manage" && has(typesActions(compiled, o.Auth.ResourceType), act)) {
 								return i, nil, security.ErrDenied
 							}
 						}
@@ -150,7 +150,7 @@ func (c *Core) verify(s SignedInstallation) (Installation, *contract.Compiled, e
 			return i, nil, security.ErrDenied
 		}
 		for _, act := range r.Actions {
-			if !declared[act] && !referenceReadRule(r, i.Account, audience, compiled) {
+			if !declared[act] && !referenceReadRule(r, i.Account, audience, compiled) && !notifyReadRule(r, i.Account, audience, compiled) {
 				return i, nil, security.ErrDenied
 			}
 		}

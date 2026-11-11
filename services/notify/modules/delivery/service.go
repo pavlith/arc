@@ -7,12 +7,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"sync"
+	"time"
 
 	"gorm.io/gorm"
 )
 
 type Service struct {
 	GormDB *gorm.DB
+	Now    func() time.Time
 }
 
 func DedupKey(notification, recipient, channel string) string {
@@ -28,7 +30,7 @@ type Provider interface {
 // Deliver sends bounded persisted intents. Timeout keeps the same key on retry.
 // Provider calls cannot be atomic with SQL; a non-idempotent provider may duplicate.
 
-// FakeProvider is the only M0 external adapter. It records invocations and accepts
+// FakeProvider is an explicit fixture adapter. It records invocations and accepts
 // each key once; Fail can simulate an uncertain timeout after the effect.
 type FakeProvider struct {
 	mu       sync.Mutex

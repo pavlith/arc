@@ -11,7 +11,8 @@ import (
 const Durable = "notify-task-created-v1"
 
 type Service struct {
-	GormDB *gorm.DB
+	GormDB  *gorm.DB
+	Channel string
 }
 
 // Effect uses operator-managed active addressing, never a recipient from the event.

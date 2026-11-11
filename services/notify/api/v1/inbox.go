@@ -7,8 +7,9 @@ import (
 )
 
 type Scope struct {
-	WorkspaceID string `json:"workspace_id"`
-	RootID      string `json:"acl_root_id"`
+	ResourceKind string `json:"resource_kind,omitempty"`
+	WorkspaceID  string `json:"workspace_id"`
+	RootID       string `json:"acl_root_id"`
 }
 type InboxPage struct {
 	Limit  int    `json:"limit"`
@@ -25,9 +26,10 @@ type NotificationState struct {
 type Notification struct {
 	NotificationState
 	Scope
-	TaskID    string    `json:"task_id"`
-	Kind      string    `json:"kind"`
-	CreatedAt time.Time `json:"created_at"`
+	TaskID     string    `json:"task_id,omitempty"`
+	ResourceID string    `json:"resource_id"`
+	Kind       string    `json:"kind"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 type InboxResult struct {
 	Notifications []Notification `json:"notifications"`
@@ -60,3 +62,22 @@ var (
 	Unsubscribe      = module.Command[Scope, Subscription]{ID: "notify.subscriptions.unsubscribe"}
 	SubscriptionList = module.Query[InboxPage, SubscriptionsResult]{ID: "notify.subscriptions.list"}
 )
+
+func (s Scope) Kind() string {
+	if s.ResourceKind == "" {
+		return "task"
+	}
+	return s.ResourceKind
+}
+func (s Scope) Key() string { return s.Kind() + ":" + s.RootID }
+func (s Scope) Action() string {
+	switch s.Kind() {
+	case "task":
+		return "task.read"
+	case "page":
+		return "pages.read"
+	case "file":
+		return "files.read"
+	}
+	return ""
+}

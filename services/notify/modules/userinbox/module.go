@@ -50,7 +50,18 @@ func (m *Module) Register(r *module.Registry) error {
 			return security.ErrDenied
 		}
 		_, err := user(ctx)
-		return err
+		if err != nil {
+			return err
+		}
+		if op == notifyv1.Subscribe.ID {
+			meta, ok := rpc.Metadata(ctx)
+			var q notifyv1.Scope
+			if !ok || json.Unmarshal(meta.Payload, &q) != nil {
+				return security.ErrDenied
+			}
+			return m.readScope(ctx, q)
+		}
+		return nil
 	}}
 	store := events.Store{DB: m.GormDB}
 	for _, bind := range []func() error{
@@ -93,13 +104,13 @@ func (m *Module) downstream(ctx context.Context, operation string) (context.Cont
 }
 
 // Decisions are reused only within this in-flight request, never across requests.
-func (m *Module) allowRoots(ctx context.Context, roots []string, allowed map[string]bool) error {
+func (m *Module) allowRoots(ctx context.Context, roots []notifyv1.Scope, allowed map[string]bool) error {
 	pending := []access.CheckRequest{}
 	seen := map[string]bool{}
 	for _, root := range roots {
-		if _, ok := allowed[root]; !ok && !seen[root] {
-			pending = append(pending, access.CheckRequest{ResourceID: root, Action: "task.read"})
-			seen[root] = true
+		if _, ok := allowed[root.Key()]; !ok && !seen[root.Key()] {
+			pending = append(pending, access.CheckRequest{ResourceID: root.RootID, Action: root.Action()})
+			seen[root.Key()] = true
 		}
 	}
 	for len(pending) > 0 {
@@ -121,11 +132,41 @@ func (m *Module) allowRoots(ctx context.Context, roots []string, allowed map[str
 			return security.ErrUnavailable
 		}
 		for i, check := range checks {
-			allowed[check.ResourceID] = result.Decisions[i].Allowed
+			allowed[keyForAction(check.Action)+":"+check.ResourceID] = result.Decisions[i].Allowed
 		}
 	}
 	return nil
 }
 func audit(ctx context.Context, tx *gorm.DB, uid, op, target string) error {
 	return fail(tx.WithContext(ctx).Exec(`INSERT INTO user_audit(actor,operation,target,created_at) VALUES(?,?,?,?)`, "user:"+uid, op, target, time.Now().UTC()).Error)
+}
+
+func keyForAction(action string) string {
+	switch action {
+	case "task.read":
+		return "task"
+	case "pages.read":
+		return "page"
+	case "files.read":
+		return "file"
+	}
+	return ""
+}
+
+func (m *Module) readScope(ctx context.Context, q notifyv1.Scope) error {
+	if q.Action() == "" {
+		return security.ErrDenied
+	}
+	checkCtx, err := m.downstream(ctx, "access.v1.check")
+	if err != nil {
+		return err
+	}
+	d, err := (&access.Client{RPC: m.Identity.RPC}).Check(checkCtx, access.CheckRequest{ResourceID: q.RootID, Action: q.Action()})
+	if err != nil {
+		return err
+	}
+	if !d.Allowed {
+		return security.ErrDenied
+	}
+	return nil
 }

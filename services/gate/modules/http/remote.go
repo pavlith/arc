@@ -49,7 +49,11 @@ func (r *Remote) Fetch(ctx context.Context) (fabric.SignedSnapshot, security.JWK
 	if e = fabric.VerifyBundle(r.TrustRoot, b, id); e != nil {
 		return fabric.SignedSnapshot{}, security.JWKS{}, rpc.SecurityError(e)
 	}
-	return b.Snapshot, b.Keys, nil
+	snapshot, e := fabric.BundleSnapshot(b)
+	if e != nil {
+		return fabric.SignedSnapshot{}, security.JWKS{}, rpc.SecurityError(e)
+	}
+	return snapshot, b.Keys, nil
 }
 func (r *Remote) Login(ctx context.Context, q identity.LoginRequest) (identity.LoginResult, error) {
 	return identity.Call[identity.LoginRequest, identity.LoginResult](ctx, r.Client, "identity.v1.sessions.login", q)

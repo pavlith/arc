@@ -2,6 +2,7 @@ package fabric
 
 import (
 	"bytes"
+	"compress/gzip"
 	"crypto/ed25519"
 
 	"encoding/json"
@@ -76,5 +77,64 @@ func TestRouteBundleBindsNonceKeysAndExpiry(t *testing.T) {
 	b.Signature = ed25519.Sign(key, bundleMessage(b))
 	if e := VerifyBundle(pub, b, "fresh-request"); e == nil {
 		t.Fatal("expired bundle accepted")
+	}
+}
+
+func TestCompressedBundlePreservesSignedSnapshotAndBounds(t *testing.T) {
+	k := key(94)
+	snapshot, e := SignSnapshot(RouteSnapshot{Revision: 1, Routes: []Route{{Path: strings.Repeat("x", 180<<10)}}}, "snapshot", k)
+	if e != nil {
+		t.Fatal(e)
+	}
+	b := RouteBundle{RequestID: "request", ExpiresAt: time.Now().UTC().Add(10 * time.Second), Snapshot: snapshot}
+	if e = compressBundle(&b); e != nil || len(b.CompressedSnapshot) == 0 || len(b.Snapshot.Payload) != 0 {
+		t.Fatal("compression", e)
+	}
+	b.Signature = ed25519.Sign(k, bundleMessage(b))
+	wire, _ := json.Marshal(b)
+	if e = json.Unmarshal(wire, &b); e != nil {
+		t.Fatal(e)
+	}
+	if e = VerifyBundle(k.Public().(ed25519.PublicKey), b, "request"); e != nil {
+		t.Fatal(e)
+	}
+	got, e := BundleSnapshot(b)
+	if e != nil || !bytes.Equal(got.Payload, snapshot.Payload) || !bytes.Equal(got.Signature, snapshot.Signature) {
+		t.Fatal("snapshot changed", e)
+	}
+	if _, e = VerifySnapshot(k.Public().(ed25519.PublicKey), got, 0); e != nil {
+		t.Fatal(e)
+	}
+	bad := b
+	bad.CompressedSnapshot = append([]byte(nil), b.CompressedSnapshot...)
+	bad.CompressedSnapshot[0] ^= 1
+	if VerifyBundle(k.Public().(ed25519.PublicKey), bad, "request") == nil {
+		t.Fatal("wire signature bypassed")
+	}
+	if _, e = BundleSnapshot(bad); e == nil {
+		t.Fatal("bad gzip accepted")
+	}
+	bad = b
+	bad.Snapshot = snapshot
+	if _, e = BundleSnapshot(bad); e == nil {
+		t.Fatal("ambiguous encoding accepted")
+	}
+	var out bytes.Buffer
+	w := gzip.NewWriter(&out)
+	w.Write(bytes.Repeat([]byte("x"), maxExpandedSnapshot+1))
+	w.Close()
+	bad = b
+	bad.CompressedSnapshot = out.Bytes()
+	if _, e = BundleSnapshot(bad); e == nil {
+		t.Fatal("decompression bomb accepted")
+	}
+	bad = b
+	bad.CompressedSnapshot = make([]byte, maxCompressedSnapshot+1)
+	if _, e = BundleSnapshot(bad); e == nil {
+		t.Fatal("oversized compressed payload accepted")
+	}
+	oversized := RouteBundle{Snapshot: SignedSnapshot{Payload: json.RawMessage(`"` + strings.Repeat("x", maxExpandedSnapshot) + `"`)}}
+	if compressBundle(&oversized) == nil {
+		t.Fatal("oversized signed snapshot accepted")
 	}
 }

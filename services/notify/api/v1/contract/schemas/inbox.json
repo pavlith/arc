@@ -37,8 +37,15 @@
             "minimum": 1
           },
           "workspace_id": {
-            "type": "string",
-            "format": "uuid"
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "const": ""
+              }
+            ]
           },
           "acl_root_id": {
             "type": "string",
@@ -51,12 +58,27 @@
           "kind": {
             "type": "string",
             "enum": [
-              "task.created"
+              "task.created",
+              "page.created",
+              "page.updated",
+              "page.restored",
+              "file.uploaded"
             ]
           },
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "resource_kind": {
+            "enum": [
+              "task",
+              "page",
+              "file"
+            ]
+          },
+          "resource_id": {
+            "type": "string",
+            "format": "uuid"
           }
         },
         "required": [
@@ -67,9 +89,10 @@
           "revision",
           "workspace_id",
           "acl_root_id",
-          "task_id",
           "kind",
-          "created_at"
+          "created_at",
+          "resource_kind",
+          "resource_id"
         ],
         "additionalProperties": false
       }

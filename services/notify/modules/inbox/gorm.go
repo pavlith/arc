@@ -2,27 +2,27 @@ package inbox
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/pavlith/arc/sdk/events"
-	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/notify/models"
 	"github.com/pavlith/arc/services/notify/modules/delivery"
 	inboxevents "github.com/pavlith/arc/services/notify/modules/outbox"
-	taskv1 "github.com/pavlith/arc/services/task/api/v1"
 	"gorm.io/gorm"
 )
 
 // Effect persists only operator-selected recipient effects in the same
 // owner-local transaction as the inbox deduplication record.
 func (s *Service) Effect(ctx context.Context, tx *gorm.DB, ev events.Envelope) error {
-	var q taskv1.CreatedEvent
-	if json.Unmarshal(ev.Payload, &q) != nil || q.TaskID != ev.AggregateID {
-		return security.ErrDenied
+	kind, workspace, root, target, _, err := eventTarget(ev)
+	if err != nil {
+		return err
+	}
+	if kind == "" {
+		return nil
 	}
 	rows, err := tx.WithContext(ctx).Raw(
-		"SELECT recipient_user_id FROM subscriptions WHERE workspace_id=? AND acl_root_id=? AND active=1",
-		q.WorkspaceID, q.RootID).Rows()
+		"SELECT recipient_user_id FROM subscriptions WHERE workspace_id=? AND acl_root_id=? AND active=1 AND resource_kind=?",
+		workspace, root, kind).Rows()
 	if err != nil {
 		return err
 	}
@@ -43,16 +43,18 @@ func (s *Service) Effect(ctx context.Context, tx *gorm.DB, ev events.Envelope) e
 	for _, recipient := range recipients {
 		id := newID()
 		if err := tx.WithContext(ctx).Create(&models.Notification{
-			ID: id, RecipientID: recipient, EventID: ev.ID, Kind: "task.created",
-			WorkspaceID: q.WorkspaceID, RootID: q.RootID, TaskID: q.TaskID, Revision: 1,
+			ID: id, RecipientID: recipient, EventID: ev.ID, Kind: kind + "." + eventAction(ev),
+			WorkspaceID: workspace, RootID: root, TaskID: legacyTask(kind, target), ResourceKind: kind, ResourceID: target, Revision: 1,
 		}).Error; err != nil {
 			return err
 		}
-		if err := tx.WithContext(ctx).Create(&models.DeliveryIntent{
-			NotificationID: id, RecipientID: recipient,
-			Channel: "fake", DedupKey: delivery.DedupKey(id, recipient, "fake"),
-		}).Error; err != nil {
-			return err
+		if s.Channel != "" {
+			if err := tx.WithContext(ctx).Create(&models.DeliveryIntent{
+				NotificationID: id, RecipientID: recipient,
+				Channel: s.Channel, DedupKey: delivery.DedupKey(id, recipient, s.Channel),
+			}).Error; err != nil {
+				return err
+			}
 		}
 		if err := inboxevents.Change(ctx, tx, recipient, id, 1); err != nil {
 			return err

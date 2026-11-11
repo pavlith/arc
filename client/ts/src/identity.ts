@@ -46,7 +46,7 @@ export interface GroupPage extends GroupInput, Page {}
 export interface GroupMemberInput extends GroupInput { user_id: string }
 export interface WorkspaceCreate { name: string; slug?: string }
 export interface WorkspaceUpdate extends WorkspaceInput { name: string; revision: number; slug?: string }
-export interface ProfileUpdate { name: string; display_name: string; revision: number }
+export interface ProfileUpdate { name: string; display_name: string; revision: number; avatar_receipt?: string }
 export interface UserProvision { email: string; password: string; name?: string }
 export interface InvitationCreate extends WorkspaceInput { email: string; role: 'member' | 'guest'; token: string }
 export interface UserPage extends Page { email?: string; status?: 'active' | 'disabled' }

@@ -14,7 +14,9 @@ import (
 // addition to the common SDK bootstrap config.
 type BootstrapConfig struct {
 	bootstrap.Config
-	Subscription fabric.EventSubscription `json:"subscription"`
+	Subscription  fabric.EventSubscription   `json:"subscription"`
+	Subscriptions []fabric.EventSubscription `json:"subscriptions"`
+	Webhook       delivery.WebhookConfig     `json:"webhook"`
 }
 
 func Run(ctx context.Context, path string) error {
@@ -31,14 +33,18 @@ func Run(ctx context.Context, path string) error {
 	registry := &fabric.Client{
 		Account: cfg.ServiceID, Kid: cfg.Kid, Key: deps.Key, CoreKey: deps.CoreTrust,
 	}
+	provider, err := cfg.Webhook.Open()
+	if err != nil {
+		return err
+	}
 	app, err := New(Config{
 		GormDB: deps.GormDB, Runtime: deps.RuntimeConfig(cfg.Config, registry),
 		Identity: identity.Client{
 			RPC: deps.RPC, ServiceID: cfg.ServiceID, Kid: cfg.Kid, PrivateKey: deps.Key,
 		},
 		CoreTrust: deps.CoreTrust,
-		Registry:  registry, Subscription: cfg.Subscription,
-		Provider: &delivery.FakeProvider{}, // M0 proof adapter; replace for production
+		Registry:  registry, Subscription: cfg.Subscription, Subscriptions: cfg.Subscriptions,
+		Provider: provider,
 	})
 	if err != nil {
 		return err

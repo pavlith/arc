@@ -11,10 +11,30 @@
   "key_file": "/run/arc/service.seed",
   "core_key_file": "/run/arc/core-public.json",
   "instance": "m006-notify",
-  "subscription": {
-    "provider": "<tasks service account uuid>",
-    "digest": "<approved Tasks contract digest>",
-    "subject": "evt.task.task.created.v1",
-    "durable": "notify-task-created-v1"
-  }
+  "webhook": {
+    "enabled": false,
+    "url": "https://operator.example/arc-inbox",
+    "key_file": "/run/arc/webhook.secret",
+    "timeout_ms": 3000
+  },
+  "subscriptions": [
+    {
+      "provider": "<tasks service account uuid>",
+      "digest": "<approved Tasks contract digest>",
+      "subject": "evt.task.task.created.v1",
+      "durable": "notify-task-created-v1"
+    },
+    {
+      "provider": "<pages service account uuid>",
+      "digest": "<approved Pages contract digest>",
+      "subject": "evt.pages.catalog.changed.v1",
+      "durable": "notify-pages-changed-v1"
+    },
+    {
+      "provider": "<files service account uuid>",
+      "digest": "<approved Files contract digest>",
+      "subject": "evt.files.catalog.changed.v1",
+      "durable": "notify-files-changed-v1"
+    }
+  ]
 }

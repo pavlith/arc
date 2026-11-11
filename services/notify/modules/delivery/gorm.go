@@ -2,6 +2,7 @@ package delivery
 
 import (
 	"context"
+	"crypto/rand"
 	"time"
 
 	"github.com/pavlith/arc/sdk/database"
@@ -9,65 +10,84 @@ import (
 	"gorm.io/gorm"
 )
 
-// Deliver retries durable fake delivery intents with the persisted stable
-// provider key. An uncertain provider timeout can be replayed safely only
-// because the provider itself deduplicates the key.
-func (s *Service) Deliver(ctx context.Context, provider Provider) (int, error) {
-	if provider == nil || s.GormDB == nil {
+type claim struct {
+	NotificationID, RecipientUserID, Channel, DedupKey string
+	Attempts                                           int
+}
+
+// Deliver commits a fenced lease before any external I/O. A crash can repeat an
+// uncertain effect, always with the original persisted provider key.
+func (s *Service) Deliver(ctx context.Context, p Provider) (int, error) {
+	if s.GormDB == nil || p == nil {
 		return 0, security.ErrUnavailable
 	}
-	n := 0
-	var sendErr error
+	channel := Channel(p)
+	if channel == "" {
+		return 0, nil
+	}
+	now := s.now()
+	token := rand.Text()
+	var row claim
+	found := false
 	err := database.RetryBusy(ctx, func() error {
 		return s.GormDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			// Obtain the SQLite writer lock before reading the pending batch.
-			locked := tx.Exec(`UPDATE delivery_intents SET attempts=attempts
-				WHERE rowid=(SELECT rowid FROM delivery_intents WHERE delivered_at IS NULL
-				ORDER BY notification_id LIMIT 1)`)
-			if locked.Error != nil {
-				return locked.Error
-			}
-			rows, err := tx.Raw(`SELECT notification_id,recipient_user_id,dedup_key
-				FROM delivery_intents WHERE delivered_at IS NULL ORDER BY notification_id LIMIT 100`).Rows()
-			if err != nil {
+			found = false
+			// Acquire the owner writer lock before selecting a candidate.
+			if err := tx.Exec(`UPDATE delivery_intents SET attempts=attempts WHERE rowid=(SELECT rowid FROM delivery_intents WHERE channel=? AND delivered_at IS NULL AND failed_at IS NULL LIMIT 1)`, channel).Error; err != nil {
 				return err
 			}
-			type intent struct{ id, recipient, key string }
-			batch := []intent{}
-			for rows.Next() {
-				var v intent
-				if err := rows.Scan(&v.id, &v.recipient, &v.key); err != nil {
-					rows.Close()
-					return err
-				}
-				batch = append(batch, v)
+			res := tx.Raw(`SELECT notification_id,recipient_user_id,channel,dedup_key,attempts FROM delivery_intents WHERE channel=? AND delivered_at IS NULL AND failed_at IS NULL AND (next_attempt_at IS NULL OR next_attempt_at<=?) AND (lease_until IS NULL OR lease_until<=?) ORDER BY notification_id LIMIT 1`, channel, now, now).Scan(&row)
+			if res.Error != nil {
+				return res.Error
 			}
-			err = rows.Err()
-			rows.Close()
-			if err != nil {
-				return err
+			if res.RowsAffected == 0 {
+				return nil
 			}
-			for _, v := range batch {
-				providerErr := provider.Send(ctx, v.recipient, v.key)
-				if providerErr != nil {
-					sendErr = providerErr
-				}
-				var delivered any
-				if providerErr == nil {
-					delivered = time.Now().UTC()
-					n++
-				}
-				if err := tx.Exec(`UPDATE delivery_intents SET attempts=attempts+1,delivered_at=?
-					WHERE notification_id=? AND recipient_user_id=? AND channel='fake'`,
-					delivered, v.id, v.recipient).Error; err != nil {
-					return err
-				}
+			if row.Attempts >= 10 {
+				return tx.Exec(`UPDATE delivery_intents SET failed_at=?,claim_token=NULL,lease_until=NULL WHERE notification_id=? AND recipient_user_id=? AND channel=?`, now, row.NotificationID, row.RecipientUserID, channel).Error
 			}
-			return nil
+			found = true
+			return tx.Exec(`UPDATE delivery_intents SET attempts=attempts+1,claim_token=?,lease_until=? WHERE notification_id=? AND recipient_user_id=? AND channel=?`, token, now.Add(30*time.Second), row.NotificationID, row.RecipientUserID, channel).Error
 		})
+	})
+	if err != nil || !found {
+		return 0, err
+	}
+	work, cancel := context.WithTimeout(ctx, 5*time.Second)
+	sendErr := p.Send(work, row.RecipientUserID, row.DedupKey)
+	cancel()
+	// Use a bounded cleanup context even when the caller deadline expired.
+	finish, done := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer done()
+	fields := map[string]any{"claim_token": nil, "lease_until": nil}
+	if sendErr == nil {
+		fields["delivered_at"] = s.now()
+	} else if row.Attempts+1 >= 10 {
+		fields["failed_at"] = s.now()
+	} else {
+		delay := time.Second * time.Duration(1<<min(row.Attempts, 8))
+		fields["next_attempt_at"] = s.now().Add(delay)
+	}
+	var affected int64
+	err = database.RetryBusy(finish, func() error {
+		r := s.GormDB.WithContext(finish).Table("delivery_intents").Where("notification_id=? AND recipient_user_id=? AND channel=? AND claim_token=?", row.NotificationID, row.RecipientUserID, channel, token).Updates(fields)
+		affected = r.RowsAffected
+		return r.Error
 	})
 	if err != nil {
 		return 0, err
 	}
-	return n, sendErr
+	if sendErr != nil {
+		return 0, sendErr
+	}
+	if affected == 1 {
+		return 1, nil
+	}
+	return 0, nil
+}
+func (s *Service) now() time.Time {
+	if s.Now != nil {
+		return s.Now().UTC()
+	}
+	return time.Now().UTC()
 }

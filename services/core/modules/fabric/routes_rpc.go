@@ -1,12 +1,16 @@
 package fabric
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/ed25519"
 	"encoding/json"
+	"io"
 	"time"
 
 	"github.com/pavlith/arc/sdk"
+	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/rpc"
 	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/core/modules/identity"
@@ -16,11 +20,12 @@ const RoutesSubject = "ctl.arc.fabric.routes"
 const RoutesChangedSubject = "evt.arc.fabric.routes.changed"
 
 type RouteBundle struct {
-	RequestID string         `json:"request_id"`
-	ExpiresAt time.Time      `json:"expires_at"`
-	Snapshot  SignedSnapshot `json:"snapshot"`
-	Keys      security.JWKS  `json:"keys"`
-	Signature []byte         `json:"signature"`
+	CompressedSnapshot []byte         `json:"compressed_snapshot,omitempty"`
+	RequestID          string         `json:"request_id"`
+	ExpiresAt          time.Time      `json:"expires_at"`
+	Snapshot           SignedSnapshot `json:"snapshot"`
+	Keys               security.JWKS  `json:"keys"`
+	Signature          []byte         `json:"signature"`
 }
 
 func bundleMessage(b RouteBundle) []byte {
@@ -65,7 +70,62 @@ func (c *Core) BindRoutes(s *sdk.Service) error {
 			return RouteBundle{}, rpc.SecurityError(security.ErrUnavailable)
 		}
 		b := RouteBundle{RequestID: meta.RequestID, ExpiresAt: time.Now().UTC().Add(10 * time.Second), Snapshot: snapshot, Keys: keys}
+		if e := compressBundle(&b); e != nil {
+			return RouteBundle{}, rpc.SecurityError(e)
+		}
 		b.Signature = ed25519.Sign(c.RouteTrustKey, bundleMessage(b))
 		return b, nil
 	})
+}
+
+const maxExpandedSnapshot = 1 << 20
+const maxCompressedSnapshot = 128 << 10
+
+func compressBundle(b *RouteBundle) error {
+	raw, err := json.Marshal(b.Snapshot)
+	if err != nil || len(raw) > maxExpandedSnapshot {
+		return security.ErrUnavailable
+	}
+	if len(raw) <= maxCompressedSnapshot {
+		return nil
+	}
+	var out bytes.Buffer
+	w := gzip.NewWriter(&out)
+	if _, err = w.Write(raw); err != nil {
+		return security.ErrUnavailable
+	}
+	if err = w.Close(); err != nil || out.Len() > maxCompressedSnapshot {
+		return security.ErrUnavailable
+	}
+	b.CompressedSnapshot = out.Bytes()
+	b.Snapshot = SignedSnapshot{}
+	return nil
+}
+
+// BundleSnapshot is called only after VerifyBundle authenticates the wire bytes.
+// The snapshot's own Identity signature and route digest are verified by Gate.
+func BundleSnapshot(b RouteBundle) (SignedSnapshot, error) {
+	if len(b.CompressedSnapshot) == 0 {
+		if len(b.Snapshot.Payload) > maxExpandedSnapshot {
+			return SignedSnapshot{}, security.ErrDenied
+		}
+		return b.Snapshot, nil
+	}
+	if len(b.CompressedSnapshot) > maxCompressedSnapshot || (len(b.Snapshot.Payload) != 0 && !bytes.Equal(bytes.TrimSpace(b.Snapshot.Payload), []byte("null"))) || len(b.Snapshot.Signature) != 0 {
+		return SignedSnapshot{}, security.ErrDenied
+	}
+	r, err := gzip.NewReader(bytes.NewReader(b.CompressedSnapshot))
+	if err != nil {
+		return SignedSnapshot{}, security.ErrDenied
+	}
+	defer r.Close()
+	raw, err := io.ReadAll(io.LimitReader(r, maxExpandedSnapshot+1))
+	if err != nil || len(raw) > maxExpandedSnapshot {
+		return SignedSnapshot{}, security.ErrDenied
+	}
+	var out SignedSnapshot
+	if contract.Strict(raw, &out) != nil || len(out.Payload) == 0 || len(out.Signature) != ed25519.SignatureSize {
+		return SignedSnapshot{}, security.ErrDenied
+	}
+	return out, nil
 }

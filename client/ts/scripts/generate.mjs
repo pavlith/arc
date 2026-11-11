@@ -9,13 +9,18 @@ const camel = (s) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 function type(s) {
   if (s === true) return 'unknown';
   if (s === false) return 'never';
-  if (s.$ref || s.anyOf || s.allOf) throw new Error('Unsupported schema composition');
+  if (Object.hasOwn(s, 'const')) return JSON.stringify(s.const);
+  if (s.anyOf) return s.anyOf.map(type).join(' | ');
+  if (s.$ref || s.allOf) throw new Error('Unsupported schema composition');
   if (s.oneOf) return s.oneOf.map((branch) => {
     if (Object.keys(branch).some((key) => !['required', 'not'].includes(key))) throw new Error('Unsupported oneOf branch');
-    if (branch.not && Object.keys(branch.not).some((key) => key !== 'required')) throw new Error('Unsupported exclusion');
-    if ((branch.not?.required?.length ?? 0) > 1) throw new Error('Unsupported exclusion combination');
+    const exclusions = branch.not?.anyOf ?? (branch.not ? [branch.not] : []);
+    if (branch.not?.anyOf && Object.keys(branch.not).some((key) => key !== 'anyOf')) throw new Error('Unsupported exclusion');
+    for (const exclusion of exclusions) {
+      if (Object.keys(exclusion).some((key) => key !== 'required') || exclusion.required?.length !== 1) throw new Error('Unsupported exclusion combination');
+    }
     const properties = { ...s.properties };
-    for (const key of branch.not?.required ?? []) properties[key] = false;
+    for (const exclusion of exclusions) properties[exclusion.required[0]] = false;
     return type({ ...s, oneOf: undefined, properties, required: [...(s.required ?? []), ...(branch.required ?? [])] });
   }).join(' | ');
   if (s.enum) return s.enum.map((v) => JSON.stringify(v)).join(' | ');
@@ -39,7 +44,7 @@ function treeCode(tree, indent = '  ') {
   const object = '{\n' + entries.map(([key, value]) => `${indent}${JSON.stringify(key)}: ${typeof value === 'string' ? value : treeCode(value, indent + '  ')}`).join(',\n') + '\n' + indent.slice(2) + '}';
   return tree.__call ? (entries.length ? `Object.assign(${tree.__call}, ${object})` : tree.__call) : object;
 }
-for (const service of ['task', 'notify']) {
+for (const service of ['task', 'notify', 'files', 'pages']) {
   const dir = new URL(`services/${service}/api/v1/contract/`, root);
   const manifestRaw = readFileSync(new URL('manifest.json', dir));
   const manifest = JSON.parse(manifestRaw);

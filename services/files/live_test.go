@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -23,10 +26,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nkeys"
 	"github.com/pavlith/arc/sdk"
@@ -45,6 +50,10 @@ import (
 	"github.com/pavlith/arc/services/files/storage"
 	"github.com/pavlith/arc/services/files/stream"
 	gate "github.com/pavlith/arc/services/gate/modules/http"
+	notifyservice "github.com/pavlith/arc/services/notify"
+	notifyv1 "github.com/pavlith/arc/services/notify/api/v1"
+	notifymigrations "github.com/pavlith/arc/services/notify/migrations"
+	"github.com/pavlith/arc/services/notify/modules/delivery"
 	pagesservice "github.com/pavlith/arc/services/pages"
 	pagesv1 "github.com/pavlith/arc/services/pages/api/v1"
 	pagesmigrations "github.com/pavlith/arc/services/pages/migrations"
@@ -88,7 +97,7 @@ func TestFilesLive(t *testing.T) {
 			t.Logf("RPC diagnostics: %s", logs.Bytes())
 		}
 	})
-	ctx, cancel := context.WithTimeout(context.Background(), 240*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 	defer cancel()
 	must := func(err error) {
 		t.Helper()
@@ -129,7 +138,7 @@ func TestFilesLive(t *testing.T) {
 	pools.AppendCertsFromPEM(caPEM)
 	seedFiles := map[string]string{}
 	pubs := map[string]string{}
-	for _, role := range []string{"core", "gate", "files", "task", "pages", "admin"} {
+	for _, role := range []string{"core", "gate", "files", "task", "pages", "notify", "admin"} {
 		kp, e := nkeys.CreateUser()
 		must(e)
 		seed, e := kp.Seed()
@@ -150,12 +159,13 @@ jetstream {store_dir: %q}
 tls {cert_file: %q, key_file: %q}
 authorization {users: [
  {nkey: %q, permissions: {publish: ["_INBOX.>","evt.arc.fabric.routes.changed","ctl.arc.fabric.probe.>","$SRV.>"], subscribe: ["rpc.identity.v1.>","rpc.access.v1.>","ctl.arc.fabric.>","$SRV.>","_INBOX.>"]}},
- {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","rpc.files.v1.>","rpc.task.v1.>","rpc.pages.v1.>","ctl.arc.fabric.routes"], subscribe: ["_INBOX.>"]}},
+ {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","rpc.files.v1.>","rpc.task.v1.>","rpc.pages.v1.>","rpc.notify.v1.>","ctl.arc.fabric.routes"], subscribe: ["_INBOX.>","evt.task.catalog.changed.v1","evt.task.task.created.v1","evt.notify.inbox.changed.v1"]}},
  {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","ctl.arc.fabric.>","evt.files.catalog.changed.v1","_INBOX.>","$SRV.>"], subscribe: ["rpc.files.v1.>","ctl.arc.fabric.probe.>","_INBOX.>","$SRV.>"]}},
  {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","rpc.files.v1.files.get","ctl.arc.fabric.>","evt.task.>","_INBOX.>","$SRV.>"], subscribe: ["rpc.task.v1.>","ctl.arc.fabric.probe.>","_INBOX.>","$SRV.>"]}},
  {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","rpc.files.v1.files.get","rpc.files.v1.personal.files.get","rpc.task.v1.work.get","ctl.arc.fabric.>","evt.pages.catalog.changed.v1","_INBOX.>","$SRV.>"], subscribe: ["rpc.pages.v1.>","ctl.arc.fabric.probe.>","_INBOX.>","$SRV.>"]}},
+ {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","ctl.arc.fabric.>","evt.notify.inbox.changed.v1","$JS.API.>","$JS.ACK.>","_INBOX.>","$SRV.>"], subscribe: ["rpc.notify.v1.>","ctl.arc.fabric.probe.>","_INBOX.>","$SRV.>"]}},
  {nkey: %q}
-]}`, port, filepath.Join(dir, "js"), certFile, keyFile, pubs["core"], pubs["gate"], pubs["files"], pubs["task"], pubs["pages"], pubs["admin"])
+]}`, port, filepath.Join(dir, "js"), certFile, keyFile, pubs["core"], pubs["gate"], pubs["files"], pubs["task"], pubs["pages"], pubs["notify"], pubs["admin"])
 	confFile := write("nats.conf", []byte(conf))
 	logFile, e := os.Create(filepath.Join(dir, "nats.log"))
 	must(e)
@@ -205,7 +215,8 @@ authorization {users: [
 	baseline := access.Approval{AdminUsers: []string{alice}, Deployments: []access.Deployment{{Definition: "gate", Instance: "live-gate"}, {Definition: "files", Instance: "live-files"}}}
 	taskKey := liveKey()
 	pagesKey := liveKey()
-	baseline.Deployments = append(baseline.Deployments, access.Deployment{Definition: "task", Instance: "live-task"}, access.Deployment{Definition: "pages", Instance: "live-pages"})
+	notifyKey := liveKey()
+	baseline.Deployments = append(baseline.Deployments, access.Deployment{Definition: "task", Instance: "live-task"}, access.Deployment{Definition: "pages", Instance: "live-pages"}, access.Deployment{Definition: "notify", Instance: "live-notify"})
 	static, e := access.NewContracts(operator.Public().(ed25519.PublicKey), []access.Approved{liveApproval(operator, baseline)})
 	must(e)
 	acl := &access.Core{GormDB: coreDB, Identity: id, Contracts: static, Domain: access.ReceiptVerifier{Keys: id.Verifier().Keys}}
@@ -220,6 +231,9 @@ authorization {users: [
 	pagesAccount, e := id.RegisterService(ctx, sa, "pages", "live-pages")
 	must(e)
 	must(id.AddServiceKey(ctx, sa, pagesAccount, "live-pages", pagesKey.Public().(ed25519.PublicKey), "mount:live", time.Now().Add(time.Hour)))
+	notifyAccount, e := id.RegisterService(ctx, sa, "notify", "live-notify")
+	must(e)
+	must(id.AddServiceKey(ctx, sa, notifyAccount, "live-notify", notifyKey.Public().(ed25519.PublicKey), "mount:live", time.Now().Add(time.Hour)))
 	for _, v := range []struct {
 		id, kid string
 		k       ed25519.PrivateKey
@@ -239,6 +253,9 @@ authorization {users: [
 	}
 	for _, op := range []string{"invocations.verify", "invocations.exchange_service"} {
 		baseline.Rules = append(baseline.Rules, access.Rule{Caller: pagesAccount, Audience: "identity/v1", Operation: "identity.v1." + op, ActorKinds: []string{"bootstrap"}})
+	}
+	for _, op := range []string{"invocations.verify", "invocations.exchange_service"} {
+		baseline.Rules = append(baseline.Rules, access.Rule{Caller: notifyAccount, Audience: "identity/v1", Operation: "identity.v1." + op, ActorKinds: []string{"bootstrap"}})
 	}
 	f := &fabric.Core{GormDB: coreDB, Identity: id, ApprovalKey: operator.Public().(ed25519.PublicKey), Bootstrap: []access.Approved{liveApproval(operator, baseline)}, SnapshotKey: coreKey, SnapshotKid: id.SigningKid, RouteTrustKey: trust}
 	acl.ContractSource = f
@@ -329,9 +346,11 @@ authorization {users: [
 	defer ps.Close()
 	transport := &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pools, Certificates: []tls.Certificate{clientPair}, MinVersion: tls.VersionTLS13}}
 	defer transport.CloseIdleConnections()
-	g, e := gate.New(gate.Config{Backend: remote, PublicOrigin: "https://arc.files.test", RequestsPerMinute: 10000, PrivateFiles: &gate.PrivateFilesConfig{URL: ps.URL, Client: &http.Client{Transport: transport, Timeout: 60 * time.Second}, Sign: remote.SignPrivate}})
+	g, e := gate.New(gate.Config{Backend: remote, EnableRealtime: true, RealtimeNATS: gateNC, PublicOrigin: "https://arc.files.test", RequestsPerMinute: 10000, PrivateFiles: &gate.PrivateFilesConfig{URL: ps.URL, Client: &http.Client{Transport: transport, Timeout: 60 * time.Second}, Sign: remote.SignPrivate}})
 	must(e)
 	must(g.Reconcile(ctx))
+	must(g.StartRealtime())
+	defer g.StopRealtime()
 	server := httptest.NewTLSServer(g)
 	defer server.Close()
 	client := server.Client()
@@ -838,6 +857,184 @@ authorization {users: [
 	if status != 400 {
 		t.Fatalf("unsafe editor input accepted: %d %s", status, body)
 	}
+
+	// Notify consumes three approved producers into its own database. HTTP goes
+	// only to this isolated TLS receiver, using the production webhook adapter.
+	notifyDB, e := database.Open(ctx, filepath.Join(dir, "notify.sqlite"))
+	must(e)
+	defer database.Close(notifyDB)
+	must(database.Migrate(ctx, notifyDB, notifymigrations.SQLite()))
+	must(database.Migrate(ctx, notifyDB, notifymigrations.SQLite()))
+	ncContract, e := contract.Compile(notifyv1.Artifact())
+	must(e)
+	notifyPolicy := access.Approval{ContractDigests: map[string]string{}}
+	for _, r := range ncContract.Manifest.Resources {
+		notifyPolicy.ContractDigests[r.Type] = ncContract.Digest
+		notifyPolicy.Types = append(notifyPolicy.Types, access.TypeSpec{Type: r.Type, Provider: notifyAccount, Actions: r.Actions, ShareAction: r.ShareAction, CreateAction: r.CreateAction, DeleteAction: r.DeleteAction})
+	}
+	notifySubjects := []string{}
+	notifyReadSources := map[string][]string{}
+	notifyReadBindings := map[string]map[string][]string{}
+	for _, op := range ncContract.Manifest.Operations {
+		notifySubjects = append(notifySubjects, op.Subject)
+		notifyPolicy.Rules = append(notifyPolicy.Rules, access.Rule{Caller: gateID, Audience: "notify/v1", Operation: op.ID, ActorKinds: []string{"user"}, Actions: []string{op.Auth.Action}})
+		target := "access.v1.check_many"
+		if op.ID == notifyv1.Subscribe.ID {
+			target = "access.v1.check"
+		} else if op.ID != notifyv1.InboxList.ID && op.ID != notifyv1.InboxMarkAll.ID && op.ID != notifyv1.SubscriptionList.ID {
+			continue
+		}
+		src := "notify/v1:" + op.ID
+		acts := []string{"task.read", "pages.read", "files.read"}
+		notifyReadSources[target] = append(notifyReadSources[target], src)
+		if notifyReadBindings[target] == nil {
+			notifyReadBindings[target] = map[string][]string{}
+		}
+		notifyReadBindings[target][src] = acts
+	}
+	for target, sources := range notifyReadSources {
+		notifyPolicy.Rules = append(notifyPolicy.Rules, access.Rule{Caller: notifyAccount, Audience: "access/v1", Operation: target, ActorKinds: []string{"user"}, Actions: []string{"task.read", "pages.read", "files.read"}, DownstreamFrom: sources, DownstreamActions: notifyReadBindings[target]})
+	}
+	subs := []fabric.EventSubscription{{Provider: taskAccount, Digest: taskContract.Digest, Subject: taskv1.CreatedSubject, Durable: "notify-task-created-v1"}, {Provider: pagesAccount, Digest: pc.Digest, Subject: pagesv1.ChangedSubject, Durable: "notify-pages-changed-v1"}, {Provider: provider, Digest: compiled.Digest, Subject: v1.CatalogChangedSubject, Durable: "notify-files-changed-v1"}}
+	ni := fabric.Installation{Publisher: "office-live-fixture", Account: notifyAccount, Deployment: "live-notify", Artifact: notifyv1.Artifact(), Subjects: notifySubjects, Policy: liveApproval(operator, notifyPolicy), Subscriptions: subs}
+	raw, sig = liveSigned(operator, ni)
+	_, e = f.Approve(ctx, fabric.SignedInstallation{Payload: raw, Signature: sig})
+	must(e)
+	_, e = js.AddStream(&nats.StreamConfig{Name: "NOTIFY", Subjects: []string{notifyv1.InboxChangedSubject}, Storage: nats.FileStorage})
+	must(e)
+	webhookSecret := bytes.Repeat([]byte("w"), 32)
+	var hookMu sync.Mutex
+	hookRecipients := map[string]int{}
+	hookServer := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mac := hmac.New(sha256.New, webhookSecret)
+		mac.Write([]byte(r.Header.Get("X-Arc-Timestamp") + "."))
+		mac.Write(b)
+		if r.Header.Get("X-Arc-Signature") != "v1="+hex.EncodeToString(mac.Sum(nil)) {
+			t.Error("webhook signature mismatch")
+			w.WriteHeader(403)
+			return
+		}
+		var v struct {
+			Version   int    `json:"version"`
+			Type      string `json:"type"`
+			Recipient string `json:"recipient_user_id"`
+			Key       string `json:"delivery_key"`
+		}
+		if json.Unmarshal(b, &v) != nil || v.Key != r.Header.Get("Idempotency-Key") || v.Type != "arc.inbox.changed" {
+			t.Error("invalid generic webhook")
+			w.WriteHeader(400)
+			return
+		}
+		hookMu.Lock()
+		hookRecipients[v.Recipient]++
+		hookMu.Unlock()
+		w.WriteHeader(204)
+	}))
+	hookServer.TLS = &tls.Config{Certificates: []tls.Certificate{pair}, MinVersion: tls.VersionTLS13}
+	hookServer.StartTLS()
+	defer hookServer.Close()
+	webhookProvider, e := (delivery.WebhookConfig{Enabled: true, URL: hookServer.URL, CAFile: caFile, KeyFile: write("webhook.secret", webhookSecret)}).Open()
+	must(e)
+	notifyRPCConn, e := sdk.Connect(ctx, cfg("notify"))
+	must(e)
+	defer notifyRPCConn.Close()
+	notifyRPC, e := rpc.NewClient(notifyRPCConn)
+	must(e)
+	notifyClient := identity.Client{RPC: notifyRPC, ServiceID: notifyAccount, Kid: "live-notify", PrivateKey: notifyKey}
+	notifyApp, e := notifyservice.New(notifyservice.Config{GormDB: notifyDB, Runtime: sdk.AppConfig{Connection: cfg("notify"), Instance: "live-notify"}, Identity: notifyClient, CoreTrust: coreKey.Public().(ed25519.PublicKey), Registry: &fabric.Client{Account: notifyAccount, Kid: "live-notify", Key: notifyKey, CoreKey: coreKey.Public().(ed25519.PublicKey)}, Subscriptions: subs, Provider: webhookProvider})
+	must(e)
+	must(notifyApp.Start(ctx))
+	defer notifyApp.Stop()
+	must(g.Reconcile(ctx))
+	subscribe := func(scope notifyv1.Scope, token string) {
+		b, _ := json.Marshal(scope)
+		status, b := request("POST", "/api/v1/notify/subscriptions/subscribe", string(b), token, "application/json")
+		if status != 200 {
+			t.Fatalf("subscribe: %d %s", status, b)
+		}
+	}
+	subscribe(notifyv1.Scope{WorkspaceID: wa, RootID: taskScope.RootID, ResourceKind: "task"}, ta)
+	subscribe(notifyv1.Scope{WorkspaceID: "", RootID: ppa.RootID, ResourceKind: "page"}, ta)
+	subscribe(notifyv1.Scope{WorkspaceID: "", RootID: pa.RootID, ResourceKind: "file"}, ta)
+	status, body = request("POST", "/api/v1/notify/subscriptions/subscribe", fmt.Sprintf(`{"workspace_id":"","acl_root_id":%q,"resource_kind":"file"}`, pa.RootID), tb, "application/json")
+	if !isDenied(status) {
+		t.Fatalf("forbidden subscription: %d %s", status, body)
+	}
+
+	dialer := websocket.Dialer{TLSClientConfig: client.Transport.(*http.Transport).TLSClientConfig, Subprotocols: []string{"arc.realtime.v1", "csrf." + base64.RawURLEncoding.EncodeToString([]byte(sa.CSRF))}}
+	wsHeaders := http.Header{"Origin": []string{"https://arc.files.test"}, "Cookie": []string{"__Host-arc_refresh=" + sa.Secret + "; __Host-arc_csrf=" + sa.CSRF}}
+	ws, _, e := dialer.DialContext(ctx, "wss"+strings.TrimPrefix(server.URL, "https")+"/api/v1/arc/realtime", wsHeaders)
+	must(e)
+	defer ws.Close()
+	must(ws.WriteJSON(map[string]string{"op": "subscribe", "request_id": "live-inbox", "channel": "inbox"}))
+	must(ws.SetReadDeadline(time.Now().Add(10 * time.Second)))
+	var wsAck map[string]any
+	must(ws.ReadJSON(&wsAck))
+	if wsAck["type"] != "subscribed" {
+		t.Fatalf("inbox WS subscribe: %v", wsAck)
+	}
+	// Create new effects after subscribing; historical catalog IDs disclose no content.
+	createPage(ppa, ta, "Notify personal page", "", emptyDocument)
+	upload(pa, ta)
+	notifyWorkInput, _ := json.Marshal(taskv1.WorkInput{Title: "Notify task", TeamID: team.ID})
+	status, body = request("POST", taskBase+"/work", string(notifyWorkInput), ta, "application/json")
+	if status != 201 {
+		t.Fatalf("notify task create: %d %s", status, body)
+	}
+	var inboxResult notifyv1.InboxResult
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		status, body = request("GET", "/api/v1/notify/notifications?limit=100", "", ta, "")
+		if status != 200 {
+			t.Fatalf("inbox: %d %s", status, body)
+		}
+		must(json.Unmarshal(body, &inboxResult))
+		kinds := map[string]bool{}
+		for _, n := range inboxResult.Notifications {
+			kinds[n.ResourceKind] = true
+		}
+		hookMu.Lock()
+		delivered := hookRecipients[alice]
+		hookMu.Unlock()
+		if len(kinds) == 3 && delivered >= 3 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("inbox effects incomplete: kinds=%v delivered=%d", kinds, delivered)
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+	must(ws.SetReadDeadline(time.Now().Add(10 * time.Second)))
+	var wsHint map[string]any
+	must(ws.ReadJSON(&wsHint))
+	if wsHint["type"] != "invalidate" || wsHint["subscription_id"] != wsAck["subscription_id"] {
+		t.Fatalf("inbox WS missing: %v", wsHint)
+	}
+	status, body = request("GET", "/api/v1/notify/notifications?limit=100", "", tb, "")
+	if status != 200 {
+		t.Fatalf("other inbox: %d %s", status, body)
+	}
+	var otherInbox notifyv1.InboxResult
+	must(json.Unmarshal(body, &otherInbox))
+	if len(otherInbox.Notifications) != 0 || otherInbox.UnreadCount != 0 {
+		t.Fatal("cross-recipient inbox leak")
+	}
+	n := inboxResult.Notifications[0]
+	status, body = request("POST", "/api/v1/notify/notifications/"+n.ID+"/state", fmt.Sprintf(`{"revision":%d,"action":"read"}`, n.Revision), tb, "application/json")
+	if !isDenied(status) {
+		t.Fatalf("other recipient mutation: %d %s", status, body)
+	}
+	status, body = request("POST", "/api/v1/notify/notifications/"+n.ID+"/state", fmt.Sprintf(`{"revision":%d,"action":"archive"}`, n.Revision), ta, "application/json")
+	if status != 200 {
+		t.Fatalf("own archive: %d %s", status, body)
+	}
+	var realtimeCount int64
+	must(notifyDB.Table("outbox").Where("published_at IS NOT NULL").Count(&realtimeCount).Error)
+	if realtimeCount < 3 {
+		t.Fatal("recipient realtime outbox not published")
+	}
+	t.Log("Notify live: three sources, recipient isolation, local signed HTTPS webhook and realtime outbox")
 	// Share a personal file; revocation immediately denies the same known ID.
 	shared := upload(pa, ta)
 	path := base(pa) + "/files/" + shared.ID
@@ -847,6 +1044,30 @@ authorization {users: [
 	}
 	var grant v1.GrantResult
 	must(json.Unmarshal(grantBody, &grant))
+	subscribe(notifyv1.Scope{RootID: pa.RootID, ResourceKind: "file"}, tb)
+	bobNotificationFile := upload(pa, ta)
+	notifyDeadline := time.Now().Add(15 * time.Second)
+	for {
+		status, body = request("GET", "/api/v1/notify/notifications?limit=100", "", tb, "")
+		if status != 200 {
+			t.Fatalf("shared inbox: %d %s", status, body)
+		}
+		var result notifyv1.InboxResult
+		must(json.Unmarshal(body, &result))
+		found := false
+		for _, n := range result.Notifications {
+			if n.ResourceID == bobNotificationFile.ID {
+				found = true
+			}
+		}
+		if found {
+			break
+		}
+		if time.Now().After(notifyDeadline) {
+			t.Fatal("shared file notification missing")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	status, b := request("GET", path+"/content", "", tb, "")
 	if status != 200 || len(b) != 524288 {
@@ -872,6 +1093,15 @@ authorization {users: [
 	if !isDenied(status) {
 		t.Fatal("revoked grant downloaded")
 	}
+	status, body = request("GET", "/api/v1/notify/notifications?limit=100", "", tb, "")
+	if status != 200 {
+		t.Fatalf("revoked inbox: %d %s", status, body)
+	}
+	var revokedInbox notifyv1.InboxResult
+	must(json.Unmarshal(body, &revokedInbox))
+	if len(revokedInbox.Notifications) != 0 || revokedInbox.UnreadCount != 0 {
+		t.Fatal("revoked target remains in inbox/count")
+	}
 	// Cross-root substitution and scope injection cannot authorize a known file.
 	status, _ = request("GET", base(pb)+"/files/"+shared.ID+"/content", "", tb, "")
 	if !isDenied(status) {
@@ -892,7 +1122,7 @@ authorization {users: [
 	if !isDenied(status) {
 		t.Fatal("revoked session downloaded")
 	}
-	deadline := time.Now().Add(5 * time.Second)
+	deadline = time.Now().Add(5 * time.Second)
 	for {
 		var n int64
 		must(fileDB.Table("outbox").Where("published_at IS NULL").Count(&n).Error)

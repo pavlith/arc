@@ -13,15 +13,18 @@ type Inbox struct {
 func (Inbox) TableName() string { return "inbox" }
 
 type Subscription struct {
-	WorkspaceID string `gorm:"column:workspace_id;primaryKey"`
-	RootID      string `gorm:"column:acl_root_id;primaryKey"`
-	RecipientID string `gorm:"column:recipient_user_id;primaryKey"`
-	Active      bool   `gorm:"column:active;not null"`
+	ResourceKind string `gorm:"column:resource_kind;not null"`
+	WorkspaceID  string `gorm:"column:workspace_id;primaryKey"`
+	RootID       string `gorm:"column:acl_root_id;primaryKey"`
+	RecipientID  string `gorm:"column:recipient_user_id;primaryKey"`
+	Active       bool   `gorm:"column:active;not null"`
 }
 
 func (Subscription) TableName() string { return "subscriptions" }
 
 type Notification struct {
+	ResourceKind string     `gorm:"column:resource_kind;not null"`
+	ResourceID   string     `gorm:"column:resource_id"`
 	ID           string     `gorm:"column:id;primaryKey"`
 	RecipientID  string     `gorm:"column:recipient_user_id;not null"`
 	EventID      string     `gorm:"column:event_id;not null"`

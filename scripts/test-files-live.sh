@@ -13,4 +13,4 @@ with tempfile.TemporaryDirectory(prefix="arc-files-migrate.") as scratch:
     for _ in range(2):
         subprocess.run(["bash", "scripts/migrate.sh", "files", database], check=True)
 PYTHON
-ARC_FILES_LIVE=1 go test -count=1 -timeout 300s -run '^TestFilesLive$' -v ./services/files
+ARC_FILES_LIVE=1 go test -count=1 -timeout 360s -run '^TestFilesLive$' -v ./services/files

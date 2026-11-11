@@ -33,9 +33,11 @@ if (root) {
 - `arc.task`: every HTTP-exposed Task operation in the current signed manifest,
   including Teams/workflow, work items, projects/labels, comments/history, views,
   subtasks/links, templates/triage, bulk updates and root grants.
-- `arc.notify`: every HTTP-exposed Notify Inbox and subscription operation.
+- `arc.notify`: every HTTP-exposed Notify Inbox and typed Task/Pages/Files subscription operation.
+- `arc.pages`: workspace/personal pages, tree, versions, templates and resource previews.
+- `arc.files`: workspace/personal Files metadata, upload lifecycle, folders, grants and avatar receipts. Byte streaming uses Gate's authenticated content/image endpoints.
 
-Task/Notify method paths follow operation IDs after removing the service prefix,
+Task/Notify/Pages/Files method paths follow operation IDs after removing the service prefix,
 with snake_case segments converted to camelCase. Examples: `task.work.setParent`,
 `task.work.bulkUpdate`, `task.work.links.change`, `task.work.triage`,
 `task.templates.use`, `notify.inbox.markAllRead`.

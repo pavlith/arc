@@ -37,7 +37,7 @@ The diagram includes planned components. Current executable surfaces and gaps ar
 | SDK | Transport, typed RPC/events, contract enforcement and lifecycle | No domain models or trust in client identity fields |
 | Domain service | Its objects, tables, migrations and policy enforcement | No SQL access to another owner |
 
-Core, Task and Notify each use a separate local SQLite file through GORM. Core modules share one file and may join the same transaction. Gormigrate runs explicitly before traffic; startup AutoMigrate is forbidden. Mount only the owner's directory, including WAL/SHM. Gate has no database. Redis is not a required source of truth.
+Core, Task, Files, Pages and Notify each use a separate local SQLite file through GORM. Core modules share one file and may join the same transaction. Gormigrate runs explicitly before traffic; startup AutoMigrate is forbidden. Mount only the owner's directory, including WAL/SHM. Gate has no database. Redis is not a required source of truth.
 
 ## 3. Identity, service accounts and delegation
 
@@ -284,7 +284,7 @@ Fabric validates method, normalized path and major, including static/parameter/w
 
 Snapshot wire format is `SignedSnapshot{payload,signature}`. Payload includes revision, issued time, `kid`, digest, routes/bindings and artifacts. Digest is SHA-256 of canonical `{routes,artifacts}`; Ed25519 signature covers canonical `["arc.route_snapshot.v1", payload]`. Reject rollback or equal revision with a different digest; identical revision/content is replay-safe. Older unsigned/non-domain-separated forms are rejected.
 
-`ctl.arc.fabric.routes` uses signed-service assertion/proof and exact `fabric/v1:fabric.v1.routes` bootstrap policy. A separately pinned RouteTrustKey signs request-bound `RouteBundle(snapshot, active JWKS, request_id, expires_at, signature)` with domain separator `arc.route_bundle.v1`. Snapshot kid must be a live Identity verification key. Gate does not trust reply publisher or unsigned change hints; hints trigger authenticated fetch and periodic reconciliation repairs missed notifications.
+`ctl.arc.fabric.routes` uses signed-service assertion/proof and exact `fabric/v1:fabric.v1.routes` bootstrap policy. A separately pinned RouteTrustKey signs request-bound `RouteBundle(snapshot, active JWKS, request_id, expires_at, signature)` with domain separator `arc.route_bundle.v1`. Snapshot kid must be a live Identity verification key. Large route bundles optionally carry the same signed snapshot as gzip bytes, authenticated by the outer request-bound signature. Compressed data is limited to 128 KiB and expanded snapshot JSON to 1 MiB; Gate rejects ambiguous/corrupt encodings and verifies the original Identity signature/digest after bounded expansion. Ordinary RPC remains limited to 256 KiB. Upgrade Core and Gate together for this encoding. Gate does not trust reply publisher or unsigned change hints; hints trigger authenticated fetch and periodic reconciliation repairs missed notifications.
 
 Gate atomically swaps immutable validated tables. Cold start serves no dynamic routes before a valid snapshot; a bad update retains the previous table while online auth remains mandatory. Signed HTTP bindings are scalar `{source:path|query,name,field,type}`; reject missing path bindings, unknown query keys, body collisions and authority fields. Body is a JSON object. Validate response before HTTP delivery. Commands cannot use GET/HEAD. Build SemVer and API major are distinct; incompatible handlers never share a queue.
 
@@ -574,7 +574,21 @@ snapshot-consistent; concurrent edits may change later pages and their revisions
 
 Private `identity.v1.invocations.verify` checks recipient audience, JWT/proof/nonce and live state, returning a Core-signed response bound to full envelope hash, subject, claims and five-second expiry. Domain services receive no Core DB credential. `auth.workspace_from` provides an exchange context selector, not membership authority.
 
-Notify installation pins Task provider/digest/subject/durable. `ctl.arc.fabric.event_permit` requires current approvals/readiness before pull/effect. Recipient addressing comes from operator-managed Notify subscriptions, not event fields. Inbox/notification/outbound intent commit together; ACK follows commit. The persisted SHA-256 notification/recipient/channel key is reused by the fake provider. Real outbound delivery may duplicate without provider idempotency. Runtime/Task product UI, richer Office features and external channels remain separate Issues.
+Notify installations pin each Task/Pages/Files provider, current artifact digest,
+subject and durable consumer. `ctl.arc.fabric.event_permit` requires current
+approvals/readiness before pull/effect. Recipients come from verified user
+subscriptions (or operator-managed addressing), never event fields. Inbox,
+notification, optional outbound intent and realtime hint commit together before
+ACK. Inbox lists/counts/mark-all-read apply current `task.read`, `pages.read` or
+`files.read` for the actual target root. Exact signed user-only Notify read edges
+to Access are permitted for these operations and subscription creation; they
+confer no mutation or bootstrap authority. An operator-enabled HTTPS webhook
+sends generic Inbox wakeups with HMAC signatures and stable persisted keys.
+Delivery claims a fenced lease in a short transaction and performs I/O after
+commit, with bounded retry/exhaustion. The provider must deduplicate uncertain
+external effects; no external exactly-once guarantee is made. Default outbound
+is disabled; fake delivery is a fixture. See [Notify](NOTIFY.md). Product UI and
+the full M7 matrix remain separate work.
 
 ## 9. Storage, observability and resilience
 

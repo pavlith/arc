@@ -7,7 +7,7 @@
 | `task/` | `cmd/arc-task`, scoped Teams/workflow, shared work items, projects/labels, comments/history, subtasks/links, atomic bulk updates, saved-view APIs and atomic replay/outbox | Triage, UI adaptation and live template acceptance #10 |
 | `pages/` | `cmd/arc-pages`, owner SQLite, scoped Tiptap tree, revisions/restore, templates, target-authorized references and metadata outbox | UI, production installation and large-scale acceptance #11 |
 | `files/` | `cmd/arc-files`, owner SQLite, signed folder/file/upload metadata, hidden mTLS stream receiver, live ACL and bounded chunks, post-commit cleanup and metadata outbox | Operator installation, live certificate/Core acceptance, production installation and large-transfer acceptance #29 |
-| `notify/` | `cmd/arc-notify`, personal Inbox/subscriptions and persisted fake outbound intents | Realtime and real channels #9/#12 |
+| `notify/` | `cmd/arc-notify`, typed Task/Pages/Files Inbox/subscriptions, realtime outbox and operator-enabled signed HTTP webhook with fenced retry leases | UI and production installation #12 |
 | `agent/` | `cmd/arc-agent`, private node RPC, durable journal, restricted systemd and Docker drivers | Admin/Gate/UI, live Docker acceptance, LXD and Core reconcile #13 |
 
 The first Svelte workspace and Task view is in `client/web/`. Historical reports of
@@ -53,8 +53,8 @@ constitute a live production deployment or multi-user acceptance.
 
 Task artifact: `task/api/v1/contract/`; Notify: `notify/api/v1/contract/`.
 `fabric.Core.Approve` requires operator signature and exact identity/deployment.
-Notify pins Task provider/digest/subject/durable and uses operator-managed recipient
-addressing. The proof fixture provisions Task/DLQ streams; it is not an operator
+Notify pins each Task/Pages/Files provider/digest/subject/durable and uses verified
+user subscriptions or operator-managed addressing. The proof fixture provisions Task/DLQ streams; it is not an operator
 installation API.
 
 ## Task proof API
@@ -73,7 +73,7 @@ GET the collection with `?limit=10` lists up to 100 own permitted tasks; GET
 root/workspace; online Access applies on execution and replay. Internal
 `task.roots.grants` exposes root-scoped grant/revoke through the approved Gate
 route below. Task mutation/audit/result/outbox and
-Notify inbox/notification/intent are atomic. Fake delivery preserves provider key;
+Notify inbox/notification/intent/realtime hints are atomic. Delivery preserves its provider key;
 external delivery has no exactly-once guarantee.
 
 Run `make m0-06-smoke`; dependencies and limits are in
@@ -474,3 +474,15 @@ Pages startup: `bash scripts/migrate.sh pages /absolute/pages.sqlite`, then
 `go run ./cmd/arc-pages -config /path/to/pages.json`. Configuration example:
 [Pages](../deploy/pages/config.example.json). The Pages 0.1.0 artifact has 32
 approved operations across personal/workspace roots. See [Pages contract](../docs/PAGES.md).
+
+## Notify integration and HTTP webhook
+
+Notify 0.3 consumes separately approved Task-created, Pages catalog and Files
+upload events into its own database. Subscriptions and current Inbox filtering
+use typed target read decisions, including personal roots. A generic recipient
+hint is published by its transactional outbox. Outbound defaults to disabled;
+operators can explicitly enable a signed HTTPS webhook using a private mounted
+secret, optional pinned CA, timeout and retry/lease policy. See
+[Notify](../docs/NOTIFY.md) and
+[configuration](../deploy/notify/config.example.json). Reapprove changed contract
+digests and exact signed policies before deploying. UI remains paused.

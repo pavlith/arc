@@ -85,12 +85,16 @@ func TestTaskNotifyComposeNoNetworkAndExactSubscription(t *testing.T) {
 	if reg.calls != 0 {
 		t.Fatal("composition contacted Fabric before Start")
 	}
+	disabled := cfg
+	disabled.Provider = nil
+	if _, err := notify.New(disabled); err != nil {
+		t.Fatal("disabled outbound composition", err)
+	}
 	for _, mutate := range []func(*notify.Config){
 		func(c *notify.Config) { c.Subscription.Subject = "evt.rogue" },
 		func(c *notify.Config) { c.Subscription.Digest = "incorrect" },
 		func(c *notify.Config) { c.Subscription.Durable = "wrong-durable" },
 		func(c *notify.Config) { c.Subscription.Provider = "" },
-		func(c *notify.Config) { c.Provider = nil },
 	} {
 		bad := cfg
 		mutate(&bad)

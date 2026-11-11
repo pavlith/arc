@@ -183,8 +183,11 @@ Acceptance: UI/API share a model; ACL controls assignee visibility, search and
 links; task-created events drive Notify. The current M0 proof covers workspace
 create/get/list, atomic replay/outbox and Notify inbox/record/fake outbound intent.
 Root/workspace/ACL are checked online before mutation and replay. Recipients come
-from operator subscriptions, not event input; stable provider dedup keys do not
-promise external exactly-once. Product work: #9, #10, #12.
+from verified user or operator subscriptions, not event input; typed Task/Pages/Files
+Inbox entries require current target read access. Notify provides an explicitly
+enabled, signed HTTP webhook with fenced leases, timeout and bounded retries;
+outbound defaults to disabled. Stable provider dedup keys do not promise external
+exactly-once. See [Notify](NOTIFY.md). Product work: #9, #10, #12.
 
 ### 2.6 Calendars / CalDAV (P1)
 
@@ -338,7 +341,7 @@ Other SLOs, p95/RTO/RPO and capacity require measurements.
 
 ### 3.1 SQL storage
 
-Core, Task and Notify own separate local SQLite files and GORM models/migrations;
+Core, Task, Files, Pages and Notify own separate local SQLite files and GORM models/migrations;
 Core modules share its file and Gate has no DB. Explicit Gormigrate before traffic,
 immutable IDs, safe replay and denial of unknown history. WAL/foreign keys/busy
 timeout on every connection. Owner mounts/OS permissions and RPC/events isolate

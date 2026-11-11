@@ -8,6 +8,7 @@ import (
 	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/notify/models"
 	"github.com/pavlith/arc/services/notify/modules/delivery"
+	inboxevents "github.com/pavlith/arc/services/notify/modules/outbox"
 	taskv1 "github.com/pavlith/arc/services/task/api/v1"
 	"gorm.io/gorm"
 )
@@ -51,6 +52,9 @@ func (s *Service) Effect(ctx context.Context, tx *gorm.DB, ev events.Envelope) e
 			NotificationID: id, RecipientID: recipient,
 			Channel: "fake", DedupKey: delivery.DedupKey(id, recipient, "fake"),
 		}).Error; err != nil {
+			return err
+		}
+		if err := inboxevents.Change(ctx, tx, recipient, id, 1); err != nil {
 			return err
 		}
 	}

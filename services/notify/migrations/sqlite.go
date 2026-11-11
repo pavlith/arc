@@ -43,5 +43,5 @@ func SQLite() []*gormigrate.Migration {
 			}
 			return nil
 		},
-	}, userInbox()}
+	}, userInbox(), notifyOutbox()}
 }

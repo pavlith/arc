@@ -419,3 +419,17 @@ in the same Team. Requires live `task.create`, CSRF/Origin for browser
 requests and Idempotency-Key. The ordinary `work.update` workflow remains
 available for other transitions. Reapprove the new Task contract and replace
 the Notify Task producer digest before deployment.
+
+## Notify-owned realtime invalidation (Notify 0.2.0)
+
+Apply migration `000003_notify_outbox` after `000002_user_inbox`.
+Notify now stores `evt.notify.inbox.changed.v1` in its own transactional
+outbox for new notifications and user Inbox changes. The event has the selected
+recipient UUID and optionally a notification UUID/revision; mark-all produces
+one recipient-scoped collection invalidation. It carries no notification content.
+The Notify publisher is protected by the active signed Fabric lease and retries
+uncertain NATS delivery using the persisted event ID. Operator provisioning must
+add the exact Notify subject to a private JetStream stream and Notify NKey
+publish permissions, reapprove the updated Notify artifact/digest, and update
+Notify service deployment. This does not expose WebSocket to browsers; see
+[realtime contract](../docs/REALTIME.md).

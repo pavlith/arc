@@ -17,6 +17,9 @@ func TestNotifyApprovedArtifact(t *testing.T) {
 		compiled.Manifest.Service.APIMajor != 1 || len(compiled.Manifest.Operations) != 7 {
 		t.Fatal("Notifications contract operation set diverged")
 	}
+	if len(compiled.Manifest.Events) != 1 || compiled.Manifest.Events[0].Subject != notifyv1.InboxChangedSubject {
+		t.Fatal("Notify inbox invalidation event missing")
+	}
 	if _, err := compiled.Operation(notifyv1.HealthQuery.ID); err != nil {
 		t.Fatal(err)
 	}

@@ -18,6 +18,7 @@ import (
 	"github.com/pavlith/arc/services/notify/modules/delivery"
 	"github.com/pavlith/arc/services/notify/modules/health"
 	"github.com/pavlith/arc/services/notify/modules/inbox"
+	inboxoutbox "github.com/pavlith/arc/services/notify/modules/outbox"
 	"github.com/pavlith/arc/services/notify/modules/userinbox"
 	taskv1 "github.com/pavlith/arc/services/task/api/v1"
 	"gorm.io/gorm"
@@ -46,6 +47,7 @@ type Service struct {
 	App      *service.App
 	Inbox    *inbox.Module
 	Delivery *delivery.Module
+	Publisher *inboxoutbox.Module
 }
 
 func New(cfg Config) (*Service, error) {
@@ -109,12 +111,22 @@ func New(cfg Config) (*Service, error) {
 		},
 	}
 	sender := &delivery.Module{GormDB: cfg.GormDB, Provider: cfg.Provider, Permit: permit}
+	publisher := &inboxoutbox.Module{
+		GormDB: cfg.GormDB, Contract: own, Registry: cfg.Registry,
+		Registration: registration,
+		Connection: func() *nats.Conn {
+			if s.App == nil {
+				return nil
+			}
+			return s.App.Connection()
+		},
+	}
 	app, err := service.Compose(service.Config{
 		Definition: service.Definition{
 			Name: "notify", APIMajor: 1, Kind: service.Domain,
 			Modules: []module.Module{
 				&health.Module{ServiceID: cfg.Identity.ServiceID}, receiver, sender,
-				&userinbox.Module{GormDB: cfg.GormDB, Identity: cfg.Identity},
+				&userinbox.Module{GormDB: cfg.GormDB, Identity: cfg.Identity}, publisher,
 			},
 		},
 		Runtime: cfg.Runtime,
@@ -125,6 +137,7 @@ func New(cfg Config) (*Service, error) {
 	s.App = app
 	s.Inbox = receiver
 	s.Delivery = sender
+	s.Publisher = publisher
 	return s, nil
 }
 func (s *Service) Start(ctx context.Context) error {

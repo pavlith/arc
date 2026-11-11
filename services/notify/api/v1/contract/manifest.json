@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "service": {
     "name": "notify",
-    "build_version": "0.1.0",
+    "build_version": "0.2.0",
     "api_major": 1
   },
   "resources": [
@@ -195,6 +195,13 @@
           }
         ]
       }
+    }
+  ],
+  "events": [
+    {
+      "name": "notify.inbox.changed",
+      "subject": "evt.notify.inbox.changed.v1",
+      "schema": "schemas/inbox-event.json"
     }
   ]
 }

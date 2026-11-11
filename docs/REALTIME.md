@@ -45,7 +45,7 @@ subscription has a safe error code, never target metadata.
 | Channel | Permitted producer | Subscribe and per-delivery live authorization |
 |---|---|---|
 | `task` | Task `evt.task.catalog.changed.v1`, `evt.task.task.created.v1` | Core active browser session, workspace membership, active Task root and `task.read` through approved Access.Check |
-| `inbox` | Notify `evt.notify.inbox.changed.v1` (**not yet implemented**) | Core active browser session, recipient ID exactly equals authenticated actor, no caller-controlled recipient |
+| `inbox` | Notify `evt.notify.inbox.changed.v1` (Notify 0.2.0 outbox producer) | Core active browser session, recipient ID exactly equals authenticated actor, no caller-controlled recipient |
 
 Gate accepts only exact approved event subjects and an operator-installed
 publisher/consumer permit. It validates the envelope, version, root/recipient
@@ -70,7 +70,7 @@ A successful invalidation message contains only:
 ```json
 {"type":"invalidate","subscription_id":"opaque-id","entity_kind":"work","entity_id":"<uuid>","revision":4}
 ```
-For Inbox: `entity_kind` is `inbox` and `entity_id` is the notification UUID.
+For Inbox: `entity_kind` is `inbox`; `entity_id` is the notification UUID when available. Collection changes omit `entity_id` and `revision`, requiring full Inbox refetch.
 The message omits titles, descriptions, emails, Markdown, comment bodies,
 private links, actor IDs and NATS envelope details. The initial receiver
 performs an authorized refetch of the subscribed collection; it never applies
@@ -98,7 +98,10 @@ per-browser replay or exactly-once stream guarantee.
 
 1. Add a Notify-owned event for personal Inbox changes, with an additive
    migration, bounded payload and atomic notification mutation/outbox write.
-   The existing Notify inbox/outbound fixture cannot substitute for this.
+   **Implemented:** Notify 0.2.0 produces `evt.notify.inbox.changed.v1` with
+   recipient UUID, optional notification UUID and revision (omitted for bulk).
+   Migration `000003_notify_outbox` is required; broker stream permissions,
+   signed reapproval and live rollout remain separate.
 2. Add Gate WebSocket handshake, bounded protocol reader/writer, private NATS
    consumer and explicit domain event → channel mapping. Do not expose the
    browser endpoint until all required authorizers are wired.

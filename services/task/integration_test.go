@@ -295,6 +295,8 @@ func TestM006(t *testing.T) {
 	must(e)
 	_, e = js.AddStream(&nats.StreamConfig{Name: "TASK_DLQ", Subjects: []string{"dlq." + tasks.Created + "." + notifyinbox.Durable}, Storage: nats.FileStorage})
 	must(e)
+	_, e = js.AddStream(&nats.StreamConfig{Name: "NOTIFY", Subjects: []string{notifyv1.InboxChangedSubject}, Storage: nats.FileStorage})
+	must(e)
 	// Start actual standalone domain binaries, mounted credentials and domain roles.
 	confDir := t.TempDir()
 	write := func(name string, v any) string {

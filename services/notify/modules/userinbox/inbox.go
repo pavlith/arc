@@ -6,6 +6,7 @@ import (
 
 	notifyv1 "github.com/pavlith/arc/services/notify/api/v1"
 	"github.com/pavlith/arc/services/notify/models"
+	inboxevents "github.com/pavlith/arc/services/notify/modules/outbox"
 	"gorm.io/gorm"
 )
 
@@ -143,7 +144,13 @@ func (m *Module) update(ctx context.Context, tx *gorm.DB, q notifyv1.Notificatio
 	if err := tx.WithContext(ctx).Save(&row).Error; err != nil {
 		return notifyv1.NotificationState{}, fail(err)
 	}
-	return state(row), audit(ctx, tx, uid, "notifications."+q.Action, row.ID)
+	if err := audit(ctx, tx, uid, "notifications."+q.Action, row.ID); err != nil {
+		return notifyv1.NotificationState{}, err
+	}
+	if err := inboxevents.Change(ctx, tx, uid, row.ID, row.Revision); err != nil {
+		return notifyv1.NotificationState{}, err
+	}
+	return state(row), nil
 }
 func (m *Module) markAll(ctx context.Context, tx *gorm.DB, _ notifyv1.Empty) (notifyv1.MarkAllResult, error) {
 	uid, err := user(ctx)
@@ -173,5 +180,13 @@ func (m *Module) markAll(ctx context.Context, tx *gorm.DB, _ notifyv1.Empty) (no
 		}
 		count += res.RowsAffected
 	}
-	return notifyv1.MarkAllResult{Updated: count}, audit(ctx, tx, uid, "notifications.mark_all_read", uid)
+	if err := audit(ctx, tx, uid, "notifications.mark_all_read", uid); err != nil {
+		return notifyv1.MarkAllResult{}, err
+	}
+	if count > 0 {
+		if err := inboxevents.Change(ctx, tx, uid, "", 0); err != nil {
+			return notifyv1.MarkAllResult{}, err
+		}
+	}
+	return notifyv1.MarkAllResult{Updated: count}, nil
 }

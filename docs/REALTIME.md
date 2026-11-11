@@ -55,6 +55,8 @@ reauthorize closes the affected subscription/socket rather than allowing a
 cached decision. A revoked session closes all subscriptions; root grant changes
 close the affected Task subscriptions. Periodic live checks are required even
 without events (at most 30 seconds) so silent revoked sockets do not persist.
+Gate's 30-second heartbeat revalidates both the browser session and every
+active Task root; any denied or unavailable check terminates the socket.
 Authorization checks also occur on each incoming subscribe and immediately
 before each outgoing event, including retries.
 

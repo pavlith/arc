@@ -355,6 +355,22 @@ func (c *realtimeClient) write() {
 			if err != nil || !c.hub.connected(c.ctx) {
 				return
 			}
+			// A revoked root must terminate a silent WebSocket, not only one
+			// carrying events. Never cache decisions across heartbeats.
+			c.mu.Lock()
+			scopes := make([]liveSubscription, 0, len(c.subs))
+			for _, scope := range c.subs {
+				scopes = append(scopes, scope)
+			}
+			c.mu.Unlock()
+			for _, scope := range scopes {
+				checkCtx, checkCancel := context.WithTimeout(c.ctx, 5*time.Second)
+				err = c.check(checkCtx, scope)
+				checkCancel()
+				if err != nil {
+					return
+				}
+			}
 			if err := c.socket.WriteControl(websocket.PingMessage, []byte("arc"), time.Now().Add(15*time.Second)); err != nil {
 				return
 			}

@@ -158,7 +158,7 @@ Policy denial yields `PERMISSION_DENIED` or contract-defined concealing `NOT_FOU
 | `check` | Verified actor, resource/action → allowed/revision |
 | `check_many` | At most 100 pairs from one consistent policy snapshot |
 | `list_accessible_roots` | Paginated owner/workspace/type/action filtering without hidden metadata |
-| `grants.add` / `revoke` | ACL management or bounded share authority; transaction, audit/revision |
+| `grants.add` / `revoke` | ACL management or bounded share authority; transaction, audit/revision; revoke optionally binds `resource_id` to the grant's actual root |
 
 Names use `access.v1.*`; concrete RPC subjects follow §5.3. Check payload contains resource/action, not trusted actor/caller. Listings also apply domain filters. Use batched checks rather than N+1 RPC. Denial diagnostics are limited to trusted auditors.
 
@@ -421,7 +421,26 @@ M6: integrated single-node Docker lifecycle, approved templates, desired/observe
 | Workflows | Events/schedules, CEL, Starlark, durable typed actions |
 | Connectors | Owner connections, external APIs, webhooks and optional DAV sources |
 
-Resource links grant no access to targets. Search and previews recheck resource ACL. Existing Task/Notify are proof services, not the full Kuayle migration. Task create/get/list uses verified workspace roots; lists are limited to 100 own tasks. Reserve/domain receipt/activate establishes roots. Internal `task.roots.grants` has no HTTP exposure and requires approved downstream management authority.
+Resource links grant no access to targets. Search and previews recheck resource ACL. Existing Task/Notify are proof services, not the full Kuayle migration. Task create/get/list uses verified workspace roots; lists are limited to 100 own tasks. Reserve/domain receipt/activate establishes roots.
+
+`task.roots.grants` is exposed as POST
+`/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/grants`. Adding requires
+`action` (`task.read` or `task.create`), `principal_kind` (`user`, `role` or `group`)
+and `principal_id`. Revoking uses `grant_id`; legacy descriptive fields are
+optional and do not choose the grant being revoked. Path-bound workspace/root
+fields cannot also appear in the HTTP body. Both paths require live
+`access.grants.manage`, an active domain root bound to that workspace and exact
+approved Gate/Task/downstream Access operations. Browser mutations require
+Origin/CSRF; CLI uses its separate Bearer flow. An `Idempotency-Key` is required.
+Task rechecks domain binding and management authority before local command replay.
+
+Task passes the bound root as `resource_id` on Access revoke. Access rejects a
+grant from another root before applying the mutation, and rechecks the actual
+grant's action authority. User recipients must be active workspace members,
+groups must belong to that workspace, and roles must be one of its four roles.
+Grants permit only the two content actions above; this endpoint cannot delegate
+ACL administration. Mutations retain Access audit/revision and cross-service
+idempotency. Grant listing and Permissions UI remain separate work.
 
 Private `identity.v1.invocations.verify` checks recipient audience, JWT/proof/nonce and live state, returning a Core-signed response bound to full envelope hash, subject, claims and five-second expiry. Domain services receive no Core DB credential. `auth.workspace_from` provides an exchange context selector, not membership authority.
 

@@ -168,7 +168,8 @@ type Grant struct {
 	RevokedAt *time.Time `json:"revoked_at,omitempty"`
 }
 type RevokeRequest struct {
-	GrantID string `json:"grant_id"`
+	GrantID    string `json:"grant_id"`
+	ResourceID string `json:"resource_id,omitempty"`
 }
 type MutationResult struct {
 	ResourceID string `json:"resource_id,omitempty"`

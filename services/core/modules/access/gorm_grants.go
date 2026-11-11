@@ -213,7 +213,7 @@ func (c *Core) addGrantGORM(ctx context.Context, q GrantRequest) (MutationResult
 func (c *Core) revokeGrantGORM(ctx context.Context, q RevokeRequest) (MutationResult, error) {
 	return c.mutationGORM(ctx, "grants.revoke", q,
 		func(tx *gorm.DB, cl security.Claims, revision int64) (MutationResult, error) {
-			if !validUUID(q.GrantID) {
+			if !validUUID(q.GrantID) || q.ResourceID != "" && !validUUID(q.ResourceID) {
 				return MutationResult{}, ErrValidation
 			}
 			var resourceID, action, creator string
@@ -226,6 +226,9 @@ func (c *Core) revokeGrantGORM(ctx context.Context, q RevokeRequest) (MutationRe
 			}
 			if err != nil {
 				return MutationResult{}, err
+			}
+			if q.ResourceID != "" && q.ResourceID != resourceID {
+				return MutationResult{}, ErrDenied
 			}
 			resource, err := readResourceGORM(tx, resourceID)
 			if err != nil {

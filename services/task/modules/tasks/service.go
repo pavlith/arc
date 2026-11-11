@@ -5,6 +5,8 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/pavlith/arc/sdk/contract"
@@ -89,8 +91,7 @@ func (s *Service) ActivateRoot(ctx context.Context, q Scope) error {
 	return s.activateRootGORM(ctx, q)
 }
 
-// GrantCommand is an internal provisioning operation; HTTP exposure is disabled.
-
+// Grant mutations preserve the domain-bound root on the downstream Access call.
 func (s *Service) grantsAccess(ctx context.Context, q GrantCommand) (access.MutationResult, error) {
 	op := "grants.add"
 	if q.GrantID != "" {
@@ -99,13 +100,17 @@ func (s *Service) grantsAccess(ctx context.Context, q GrantCommand) (access.Muta
 	client := s.Identity
 	meta, _ := rpc.Metadata(ctx)
 	client.IdempotencyKey = "task.grants:" + meta.IdempotencyKey
+	if len(client.IdempotencyKey) > 128 {
+		sum := sha256.Sum256([]byte(meta.IdempotencyKey))
+		client.IdempotencyKey = "task.grants-long:" + hex.EncodeToString(sum[:])
+	}
 	ctx, e := InvocationContext(ctx, client, identity.Target{Audience: "access/v1", Operation: "access.v1." + op})
 	if e != nil {
 		return access.MutationResult{}, e
 	}
 	ac := &access.Client{RPC: client.RPC}
 	if q.GrantID != "" {
-		return ac.RevokeGrant(ctx, access.RevokeRequest{GrantID: q.GrantID})
+		return ac.RevokeGrant(ctx, access.RevokeRequest{GrantID: q.GrantID, ResourceID: q.RootID})
 	}
 	return ac.AddGrant(ctx, access.GrantRequest{ResourceID: q.RootID, PrincipalKind: q.PrincipalKind, PrincipalID: q.PrincipalID, Action: q.Action})
 }

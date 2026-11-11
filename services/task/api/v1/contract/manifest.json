@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "service": {
     "name": "task",
-    "build_version": "0.0.7",
+    "build_version": "0.0.8",
     "api_major": 1
   },
   "resources": [
@@ -185,7 +185,14 @@
       "idempotency": "required",
       "timeout_ms": 10000,
       "http": {
-        "expose": false
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/grants",
+        "success_status": 200,
+        "bindings": [
+          { "source": "path", "name": "workspace_id", "field": "workspace_id", "type": "string" },
+          { "source": "path", "name": "acl_root_id", "field": "acl_root_id", "type": "string" }
+        ]
       }
     }
   ],

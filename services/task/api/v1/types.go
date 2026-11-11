@@ -45,9 +45,9 @@ type CreatedEvent struct {
 
 type GrantCommand struct {
 	Scope
-	Action        string `json:"action"`
-	PrincipalKind string `json:"principal_kind"`
-	PrincipalID   string `json:"principal_id"`
+	Action        string `json:"action,omitempty"`
+	PrincipalKind string `json:"principal_kind,omitempty"`
+	PrincipalID   string `json:"principal_id,omitempty"`
 	GrantID       string `json:"grant_id,omitempty"`
 }
 

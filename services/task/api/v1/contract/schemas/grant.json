@@ -18,12 +18,14 @@
     "principal_kind": {
       "enum": [
         "role",
-        "user"
+        "user",
+        "group"
       ]
     },
     "principal_id": {
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "maxLength": 128
     },
     "grant_id": {
       "type": "string",
@@ -32,10 +34,14 @@
   },
   "required": [
     "workspace_id",
-    "acl_root_id",
-    "action",
-    "principal_kind",
-    "principal_id"
+    "acl_root_id"
+  ],
+  "oneOf": [
+    {
+      "required": ["action", "principal_kind", "principal_id"],
+      "not": { "required": ["grant_id"] }
+    },
+    { "required": ["grant_id"] }
   ],
   "additionalProperties": false
 }

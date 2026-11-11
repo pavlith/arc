@@ -57,12 +57,36 @@ Content-Type: application/json
 GET the collection with `?limit=10` lists up to 100 own permitted tasks; GET
 `.../tasks/{task_id}` reads one. Signed route bindings and domain DB establish
 root/workspace; online Access applies on execution and replay. Internal
-`task.roots.grants` has no HTTP exposure. Task mutation/audit/result/outbox and
+`task.roots.grants` exposes root-scoped grant/revoke through the approved Gate
+route below. Task mutation/audit/result/outbox and
 Notify inbox/notification/intent are atomic. Fake delivery preserves provider key;
 external delivery has no exactly-once guarantee.
 
 Run `make m0-06-smoke`; dependencies and limits are in
 [verification](../docs/DEVELOPMENT.md#verification).
+
+## Task permission API
+
+```http
+POST /api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/grants
+Authorization: Bearer <access token>
+Idempotency-Key: <stable client key>
+Content-Type: application/json
+
+{"action":"task.read","principal_kind":"group","principal_id":"<group UUID>"}
+```
+
+The caller needs `access.grants.manage` on the root. Supported principals are
+`user`, `role` and `group`; supported actions are `task.read` and `task.create`.
+For a role principal, use `owner`, `admin`, `member` or `guest` as `principal_id`.
+Revoke at the same URL with `{"grant_id":"<grant UUID>"}`. Access verifies that
+the grant belongs to the root from the URL. The response includes the grant ID,
+state and policy revision. Browser callers use session cookies plus Origin/CSRF
+instead of Bearer. Grant listing is not exposed yet.
+
+This requires signed replacement approvals and updated Task/Notify deployment;
+see [development](../docs/DEVELOPMENT.md#browser-and-cli-setup). Deploy the updated
+Core first so it accepts the root-bound revoke request.
 
 ## Runtime
 

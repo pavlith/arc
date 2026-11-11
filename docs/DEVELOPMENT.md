@@ -186,6 +186,24 @@ Include the exact `rpc.task.v1.tasks.edit` subject in Task broker permissions.
 New workspaces receive a corporate ACL root. Task roots still require the existing
 operator setup.
 
+Task 0.0.8 also exposes `task.roots.grants` as POST
+`/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}/grants`. Allow the
+exact Gate → Task operation for actor kind `user`, action
+`access.grants.manage`. The Task provider needs Access `check` for that action,
+and `access.v1.grants.add`/`access.v1.grants.revoke` for `task.read`/`task.create`
+with signed downstream provenance `task/v1:task.roots.grants`. Keep existing
+Task operation approvals; do not replace them with wildcard authority.
+
+Deploy updated Core before updated Task: Task now binds downstream revoke to
+`resource_id`. Approve the new Task artifact and update the Notify subscription
+approval/configuration to the new producer digest. Notify pins the Task artifact
+even though this change adds no event. Regenerate the signed route snapshot via
+the normal Fabric replacement workflow; editing the local manifest alone does
+not enable the endpoint in an existing deployment. Include
+`rpc.task.v1.roots.grants` in the appropriate Gate publish/Task subscribe broker
+permissions, and the existing Access grant RPC permissions for Task. API request
+and response examples are in [services](../services/README.md#task-permission-api).
+
 ## Agent workflow
 
 Read `AGENTS.md`, applicable skill and only relevant normative sections. Project

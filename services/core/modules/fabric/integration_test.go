@@ -109,7 +109,7 @@ func TestM0Fabric(t *testing.T) {
 	must(id.PublishSigningKey(ctx, time.Now().Add(time.Hour)))
 	owner, _, e := id.BootstrapUser(ctx, "fabric-owner@example.test", "fabric owner password")
 	must(e)
-	login, e := id.Login(ctx, "fabric-owner@example.test", "fabric owner password")
+	login, e := id.LoginBrowser(ctx, "fabric-owner@example.test", "fabric owner password")
 	must(e)
 	auth := identity.UserSession{Secret: login.Secret, CSRF: login.CSRF}
 	baseline := access.Approval{AdminUsers: []string{owner}, Deployments: []access.Deployment{{Definition: "gate", Instance: "fabric-gate"}, {Definition: "books", Instance: "books-v1"}, {Definition: "books", Instance: "books-v2"}}}

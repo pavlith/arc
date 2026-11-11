@@ -193,7 +193,7 @@ func (c *Core) checkInvocationGORM(ctx context.Context, cl security.Claims) erro
 			SELECT 1 FROM identity_sessions s JOIN identity_users u ON u.id=s.user_id
 			WHERE s.id=? AND u.id=? AND s.revoked_at IS NULL
 			AND s.expires_at>? AND u.status='active'
-			AND (? <> 'gate' OR s.auth_channel IN ('legacy','cli')))`
+			AND (? <> 'gate' OR s.auth_channel='cli'))`
 		args = []any{cl.SessionID, strings.TrimPrefix(cl.Subject, "user:"), c.now(), cl.Audience}
 	case strings.HasPrefix(cl.Subject, "service:"):
 		query = "SELECT EXISTS(SELECT 1 FROM identity_service_accounts WHERE id=? AND disabled_at IS NULL)"

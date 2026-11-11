@@ -144,13 +144,19 @@ func (c *Core) provisionUser(ctx context.Context, email, password, actor string,
 	})
 	return id, recovery, e
 }
-func (c *Core) Login(ctx context.Context, email, password string) (LoginResult, error) {
-	return c.login(ctx, email, password, "legacy")
+// Browser login never returns an access token.
+func (c *Core) LoginBrowser(ctx context.Context, email, password string) (LoginResult, error) {
+	return c.login(ctx, email, password, "browser")
+}
+
+// CLI login never returns browser cookie/CSRF secrets.
+func (c *Core) LoginCLI(ctx context.Context, email, password string) (LoginResult, error) {
+	return c.login(ctx, email, password, "cli")
 }
 
 func (c *Core) login(ctx context.Context, email, password, channel string) (LoginResult, error) {
 	var out LoginResult
-	if channel != "legacy" && channel != "browser" && channel != "cli" {
+	if channel != "browser" && channel != "cli" {
 		return out, ErrDenied
 	}
 	email = strings.ToLower(strings.TrimSpace(email))
@@ -247,7 +253,7 @@ func (c *Core) Introspect(ctx context.Context, sessionSecret string) (Session, e
 	if sessionSecret == "" {
 		return s, ErrUnauthenticated
 	}
-	e := c.db(ctx).WithContext(ctx).Raw(`SELECT s.id,s.user_id,s.expires_at FROM identity_sessions s JOIN identity_users u ON u.id=s.user_id WHERE s.secret_hash=? AND s.auth_channel IN ('legacy','browser') AND s.revoked_at IS NULL AND s.expires_at>? AND u.status='active'`, hash(sessionSecret), c.now()).Row().Scan(&s.ID, &s.UserID, &s.ExpiresAt)
+	e := c.db(ctx).WithContext(ctx).Raw(`SELECT s.id,s.user_id,s.expires_at FROM identity_sessions s JOIN identity_users u ON u.id=s.user_id WHERE s.secret_hash=? AND s.auth_channel='browser' AND s.revoked_at IS NULL AND s.expires_at>? AND u.status='active'`, hash(sessionSecret), c.now()).Row().Scan(&s.ID, &s.UserID, &s.ExpiresAt)
 	return s, keyError(e)
 }
 func (c *Core) user(ctx context.Context, auth UserSession) (Session, error) {
@@ -295,10 +301,6 @@ func (c *Core) revokeSession(ctx context.Context, user, id string) error {
 		return audit(ctx, t, "user:"+user, "sessions.revoke", id, "ok")
 	})
 }
-func (c *Core) Refresh(ctx context.Context, token string) (LoginResult, error) {
-	return c.refresh(ctx, token, "legacy", "")
-}
-
 func (c *Core) refresh(ctx context.Context, token, channel, sessionID string) (LoginResult, error) {
 	var out LoginResult
 	if e := c.rate(ctx, "refresh:global"); e != nil {
@@ -317,7 +319,7 @@ func (c *Core) refresh(ctx context.Context, token, channel, sessionID string) (L
 		if e != nil {
 			return keyError(e)
 		}
-		if (storedChannel != channel && !(channel == "browser" && storedChannel == "legacy")) || (sessionID != "" && sessionID != out.Session.ID) {
+		if storedChannel != channel || (sessionID != "" && sessionID != out.Session.ID) {
 			return ErrUnauthenticated
 		}
 		if consumed.Valid {

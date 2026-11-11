@@ -127,5 +127,6 @@ func SQLite() []*gormigrate.Migration {
 		runtimeEnrollment(),
 		profileSettings(),
 		avatarAssets(),
+		retireLegacySessions(),
 	}
 }

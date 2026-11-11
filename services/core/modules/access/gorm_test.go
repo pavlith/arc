@@ -78,10 +78,10 @@ func sqliteAccessFixture(t *testing.T, db *gorm.DB) *Core {
 		{`INSERT INTO identity_service_credentials(kid,service_account_id,public_key,secret_reference,not_before,expires_at)
 		VALUES('test-kid',?,?,'mount:test',?,?)`,
 			[]any{sqliteProvider, bytes.Repeat([]byte{7}, 32), now.Add(-time.Hour), now.Add(time.Hour)}},
-		{`INSERT INTO identity_sessions(id,user_id,secret_hash,csrf_hash,expires_at)
-		VALUES(?,?,x'0102',x'0304',?)`, []any{sqliteSession, sqliteOwner, now.Add(time.Hour)}},
-		{`INSERT INTO identity_sessions(id,user_id,secret_hash,csrf_hash,expires_at)
-		VALUES(?,?,x'0506',x'0708',?)`, []any{sqliteMemberSession, sqliteMember, now.Add(time.Hour)}},
+		{`INSERT INTO identity_sessions(id,user_id,secret_hash,csrf_hash,expires_at,auth_channel)
+		VALUES(?,?,x'0102',x'0304',?,'browser')`, []any{sqliteSession, sqliteOwner, now.Add(time.Hour)}},
+		{`INSERT INTO identity_sessions(id,user_id,secret_hash,csrf_hash,expires_at,auth_channel)
+		VALUES(?,?,x'0506',x'0708',?,'browser')`, []any{sqliteMemberSession, sqliteMember, now.Add(time.Hour)}},
 	}
 	for _, query := range queries {
 		if err := db.Exec(query.statement, query.values...).Error; err != nil {

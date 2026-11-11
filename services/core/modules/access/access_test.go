@@ -121,11 +121,11 @@ func newFixture(t *testing.T) *fixture {
 	if e != nil {
 		t.Fatal(e)
 	}
-	ownerLogin, e := id.Login(ctx, "acl-owner@example.test", "access owner password")
+	ownerLogin, e := id.LoginBrowser(ctx, "acl-owner@example.test", "access owner password")
 	if e != nil {
 		t.Fatal(e)
 	}
-	memberLogin, e := id.Login(ctx, "acl-member@example.test", "access member password")
+	memberLogin, e := id.LoginBrowser(ctx, "acl-member@example.test", "access member password")
 	if e != nil {
 		t.Fatal(e)
 	}

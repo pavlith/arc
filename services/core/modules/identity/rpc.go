@@ -119,11 +119,10 @@ func (c *Core) BindInternal(s *sdk.Service) error {
 		},
 		func() error {
 			return bind(s, c, "sessions.login", func(ctx context.Context, r LoginRequest) (LoginResult, error) {
-				channel := r.Channel
-				if channel == "" {
-					channel = "legacy"
+				if r.Channel != "browser" && r.Channel != "cli" {
+					return LoginResult{}, ErrDenied
 				}
-				return c.login(ctx, r.Email, r.Password, channel)
+				return c.login(ctx, r.Email, r.Password, r.Channel)
 			})
 		},
 		func() error {
@@ -134,7 +133,7 @@ func (c *Core) BindInternal(s *sdk.Service) error {
 					}
 					return c.refresh(ctx, r.Token, "cli", "")
 				}
-				if r.Channel != "" && r.Channel != "browser" {
+				if r.Channel != "browser" {
 					return LoginResult{}, ErrDenied
 				}
 				return c.RefreshBrowser(ctx, r.Session, r.Token)

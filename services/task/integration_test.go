@@ -99,7 +99,7 @@ func TestM006(t *testing.T) {
 	must(e)
 	member, _, e := id.BootstrapUser(ctx, "proof-member@example.test", "proof fixture password")
 	must(e)
-	login, e := id.Login(ctx, "proof-owner@example.test", "proof fixture password")
+	login, e := id.LoginBrowser(ctx, "proof-owner@example.test", "proof fixture password")
 	must(e)
 	session := identity.UserSession{Secret: login.Secret, CSRF: login.CSRF}
 	workspace, e := id.CreateWorkspace(ctx, session, "Proof")

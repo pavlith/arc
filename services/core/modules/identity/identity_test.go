@@ -126,10 +126,12 @@ func TestM0Identity(t *testing.T) {
 	member, _, e := c.BootstrapUser(ctx, "member@example.test", "member long password")
 	must(e)
 	must(c.PublishSigningKey(ctx, now.Add(time.Hour)))
-	login, e := c.Login(ctx, "owner@example.test", "owner long password")
+	login, e := c.LoginBrowser(ctx, "owner@example.test", "owner long password")
 	must(e)
 	auth := UserSession{login.Secret, login.CSRF}
-	_, e = c.Verifier().Access(ctx, login.AccessToken)
+	cliLogin, e := c.LoginCLI(ctx, "owner@example.test", "owner long password")
+	must(e)
+	_, e = c.Verifier().Access(ctx, cliLogin.AccessToken)
 	must(e)
 	gate, e := c.RegisterService(ctx, auth, "gate", "test-gate")
 	must(e)
@@ -215,7 +217,7 @@ func TestM0Identity(t *testing.T) {
 		if e = c.SetMembership(ctx, auth, workspace, owner, "member", true); e == nil {
 			t.Fatal("revoked last owner")
 		}
-		memberLogin, e := c.Login(ctx, "member@example.test", "member long password")
+		memberLogin, e := c.LoginBrowser(ctx, "member@example.test", "member long password")
 		must(e)
 		memberAuth := UserSession{memberLogin.Secret, memberLogin.CSRF}
 		if e = c.SetMembership(ctx, memberAuth, workspace, member, "owner", false); e == nil {
@@ -353,32 +355,33 @@ func TestM0Identity(t *testing.T) {
 		if _, e = c.Verifier().Invocation(ctx, original.Token, "task/v1", "task.read", gate); e == nil {
 			t.Fatal("invocation survived logout")
 		}
-		if _, e = c.Verifier().Access(ctx, login.AccessToken); e == nil {
+		must(c.LogoutAccess(ctx, cliLogin.AccessToken))
+		if _, e = c.Verifier().Access(ctx, cliLogin.AccessToken); e == nil {
 			t.Fatal("access survived logout")
 		}
 	})
-	login, e = c.Login(ctx, "owner@example.test", "owner long password")
+	login, e = c.LoginBrowser(ctx, "owner@example.test", "owner long password")
 	must(e)
 	auth = UserSession{login.Secret, login.CSRF}
 	t.Run("refresh_rotation_reuse_and_concurrency", func(t *testing.T) {
-		rotated, e := c.Refresh(ctx, login.Refresh)
+		rotated, e := c.RefreshBrowser(ctx, auth, login.Refresh)
 		must(e)
-		if _, e = c.Refresh(ctx, login.Refresh); e == nil {
+		if _, e = c.RefreshBrowser(ctx, auth, login.Refresh); e == nil {
 			t.Fatal("refresh reuse accepted")
 		}
-		if _, e = c.Refresh(ctx, rotated.Refresh); e == nil {
+		if _, e = c.RefreshBrowser(ctx, auth, rotated.Refresh); e == nil {
 			t.Fatal("family not revoked")
 		}
 		if _, e = c.Introspect(ctx, login.Secret); e == nil {
 			t.Fatal("reuse did not revoke session")
 		}
-		fresh, e := c.Login(ctx, "owner@example.test", "owner long password")
+		fresh, e := c.LoginBrowser(ctx, "owner@example.test", "owner long password")
 		must(e)
 		var wg sync.WaitGroup
 		results := make(chan error, 2)
 		for i := 0; i < 2; i++ {
 			wg.Add(1)
-			go func() { defer wg.Done(); _, e := c.Refresh(ctx, fresh.Refresh); results <- e }()
+			go func() { defer wg.Done(); _, e := c.RefreshBrowser(ctx, UserSession{fresh.Secret, fresh.CSRF}, fresh.Refresh); results <- e }()
 		}
 		wg.Wait()
 		close(results)
@@ -395,7 +398,7 @@ func TestM0Identity(t *testing.T) {
 			t.Fatal("concurrent reuse not revoked")
 		}
 	})
-	login, e = c.Login(ctx, "owner@example.test", "owner long password")
+	login, e = c.LoginBrowser(ctx, "owner@example.test", "owner long password")
 	must(e)
 	auth = UserSession{login.Secret, login.CSRF}
 	t.Run("online_credential_and_service_revoke", func(t *testing.T) {

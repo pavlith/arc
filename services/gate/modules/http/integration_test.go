@@ -101,7 +101,7 @@ func TestM0Gate(t *testing.T) {
 	must(id.PublishSigningKey(ctx, time.Now().Add(time.Hour)))
 	owner, _, e := id.BootstrapUser(ctx, "gate-owner@example.test", "gate fixture password")
 	must(e)
-	login, e := id.Login(ctx, "gate-owner@example.test", "gate fixture password")
+	login, e := id.LoginBrowser(ctx, "gate-owner@example.test", "gate fixture password")
 	must(e)
 	session := identity.UserSession{Secret: login.Secret, CSRF: login.CSRF}
 	baseline := access.Approval{AdminUsers: []string{owner}, Deployments: []access.Deployment{{Definition: "gate", Instance: "m005-gate"}, {Definition: "task", Instance: "m005-task"}}}
@@ -339,7 +339,7 @@ func TestM0Gate(t *testing.T) {
 	httpClient.Jar = nil
 	expect(do("GET", "/api/v1/task/read/"+root+"?value=expired-bearer", "", map[string]string{"Authorization": "Bearer " + expiredJWT}), 401)
 	httpClient.Jar = jarBefore
-	expiredSession, e := id.Login(ctx, "gate-owner@example.test", "gate fixture password")
+	expiredSession, e := id.LoginBrowser(ctx, "gate-owner@example.test", "gate fixture password")
 	must(e)
 	_, e = db.ExecContext(ctx, `UPDATE identity_sessions SET expires_at=datetime('now','-1 second') WHERE id=?`, expiredSession.Session.ID)
 	must(e)

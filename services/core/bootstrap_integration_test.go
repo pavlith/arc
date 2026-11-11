@@ -133,7 +133,7 @@ func TestCoreProcess(t *testing.T) {
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
-		login, err := identity.Call[identity.LoginRequest, identity.LoginResult](ctx, caller, "identity.v1.sessions.login", identity.LoginRequest{Email: "core-smoke@example.test", Password: "standalone fixture password"})
+		login, err := identity.Call[identity.LoginRequest, identity.LoginResult](ctx, caller, "identity.v1.sessions.login", identity.LoginRequest{Email: "core-smoke@example.test", Password: "standalone fixture password", Channel: "cli"})
 		bootstrapMust(t, err)
 		if login.Session.UserID != user || login.AccessToken == "" {
 			t.Fatal("real Identity login did not produce the expected session")

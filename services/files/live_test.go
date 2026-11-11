@@ -202,10 +202,10 @@ authorization {users: [
 	must(e)
 	bob, _, e := id.BootstrapUser(ctx, "bob@files.test", "live fixture password")
 	must(e)
-	la, e := id.Login(ctx, "alice@files.test", "live fixture password")
+	la, e := id.LoginBrowser(ctx, "alice@files.test", "live fixture password")
 	must(e)
 	sa := identity.UserSession{Secret: la.Secret, CSRF: la.CSRF}
-	lb, e := id.Login(ctx, "bob@files.test", "live fixture password")
+	lb, e := id.LoginBrowser(ctx, "bob@files.test", "live fixture password")
 	must(e)
 	sb := identity.UserSession{Secret: lb.Secret, CSRF: lb.CSRF}
 	wa, e := id.CreateWorkspace(ctx, sa, "Alice workspace")

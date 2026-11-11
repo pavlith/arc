@@ -219,7 +219,7 @@ func TestSQLiteIdentityRefreshReuseAcrossConnections(t *testing.T) {
 	if _, _, err := owners[0].BootstrapUser(ctx, "refresh@example.test", "refresh fixture password"); err != nil {
 		t.Fatal(err)
 	}
-	login, err := owners[0].Login(ctx, "refresh@example.test", "refresh fixture password")
+	login, err := owners[0].LoginBrowser(ctx, "refresh@example.test", "refresh fixture password")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +230,7 @@ func TestSQLiteIdentityRefreshReuseAcrossConnections(t *testing.T) {
 	results := make(chan result, 2)
 	start := make(chan struct{})
 	for _, owner := range owners {
-		go func(c *Core) { <-start; v, e := c.Refresh(ctx, login.Refresh); results <- result{v, e} }(owner)
+		go func(c *Core) { <-start; v, e := c.RefreshBrowser(ctx, UserSession{login.Secret, login.CSRF}, login.Refresh); results <- result{v, e} }(owner)
 	}
 	close(start)
 	var successful LoginResult
@@ -249,7 +249,7 @@ func TestSQLiteIdentityRefreshReuseAcrossConnections(t *testing.T) {
 	if successes != 1 || rejections != 1 {
 		t.Fatalf("refresh race: %d successes, %d rejections", successes, rejections)
 	}
-	if _, err := owners[0].Refresh(ctx, successful.Refresh); !errors.Is(err, ErrUnauthenticated) {
+	if _, err := owners[0].RefreshBrowser(ctx, UserSession{login.Secret, login.CSRF}, successful.Refresh); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("reuse did not revoke rotated family: %v", err)
 	}
 	if _, err := owners[1].Introspect(ctx, login.Secret); !errors.Is(err, ErrUnauthenticated) {

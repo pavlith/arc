@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -26,9 +27,38 @@ func main() {
 	previewProfile := flag.String("preview-profile", "", "preview a Core-approved profile by ID (read-only)")
 	profileRevision := flag.Int64("profile-revision", 0, "approved profile revision for preview")
 	enrollmentKeygen := flag.String("enrollment-keygen", "", "create a private Ed25519 service seed (no NATS connection)")
+	enrollmentClaim := flag.String("enrollment-claim", "", "sign the one-time offer ID using secret token read from stdin")
+	enrollmentKeyFile := flag.String("enrollment-key-file", "", "private Ed25519 service seed to use for an offline claim")
 	flag.Parse()
+	if *enrollmentClaim != "" {
+		if *enrollmentKeygen != "" || *hostInfo || *checkConfig ||
+			*aptPlan != "" || *previewProfile != "" || *enrollmentKeyFile == "" {
+			slog.Error("invalid enrollment claim options")
+			os.Exit(2)
+		}
+		raw, err := io.ReadAll(io.LimitReader(os.Stdin, 128))
+		if err != nil || len(raw) > 127 {
+			slog.Error("enrollment token unavailable on stdin")
+			os.Exit(1)
+		}
+		token := strings.TrimSpace(string(raw))
+		clear(raw)
+		signature, err := agent.SignEnrollmentFile(*enrollmentKeyFile, *enrollmentClaim, token)
+		if err != nil {
+			slog.Error("enrollment proof unavailable")
+			os.Exit(1)
+		}
+		if err := json.NewEncoder(os.Stdout).Encode(struct {
+			OfferID   string `json:"offer_id"`
+			Signature string `json:"signature"`
+		}{OfferID: *enrollmentClaim, Signature: signature}); err != nil {
+			slog.Error("public proof output failed")
+			os.Exit(1)
+		}
+		return
+	}
 	if *enrollmentKeygen != "" {
-		if *hostInfo || *checkConfig || *aptPlan != "" || *previewProfile != "" {
+		if *hostInfo || *checkConfig || *aptPlan != "" || *previewProfile != "" || *enrollmentKeyFile != "" {
 			slog.Error("key generation cannot be combined with other commands")
 			os.Exit(2)
 		}

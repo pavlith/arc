@@ -32,12 +32,13 @@ if (root) {
   lookup, provisioning/user status, invitations, members, groups and Task roots.
 - `arc.task`: every HTTP-exposed Task operation in the current signed manifest,
   including Teams/workflow, work items, projects/labels, comments/history, views,
-  subtasks/links, bulk updates and root grants.
+  subtasks/links, templates/triage, bulk updates and root grants.
 - `arc.notify`: every HTTP-exposed Notify Inbox and subscription operation.
 
 Task/Notify method paths follow operation IDs after removing the service prefix,
 with snake_case segments converted to camelCase. Examples: `task.work.setParent`,
-`task.work.bulkUpdate`, `task.work.links.change`, `notify.inbox.markAllRead`.
+`task.work.bulkUpdate`, `task.work.links.change`, `task.work.triage`,
+`task.templates.use`, `notify.inbox.markAllRead`.
 Legacy proof operations remain under `task.task` and `task.tasks`. The grants
 command is callable as `task.roots.grants(input, options)` and its query as
 `task.roots.grants.list(input, options)`. Service-only health operations are excluded.

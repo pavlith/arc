@@ -40,7 +40,7 @@ func Run(ctx context.Context, path string) error {
 			Kid: cfg.Kid, PrivateKey: deps.Key,
 		},
 		CoreTrust: deps.CoreTrust,
-		Storage: store,
+		Storage:   store,
 	})
 	if err != nil {
 		return err

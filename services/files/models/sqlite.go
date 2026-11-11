@@ -40,7 +40,6 @@ type Audit struct {
 
 func (Audit) TableName() string { return "audit" }
 
-
 // File and Upload are persisted in Files' own database; blob keys never cross
 // the HTTP or RPC metadata boundary.
 type File struct {
@@ -58,6 +57,7 @@ type File struct {
 	CreatedAt   time.Time `gorm:"column:created_at;not null"`
 	UpdatedAt   time.Time `gorm:"column:updated_at;not null"`
 }
+
 func (File) TableName() string { return "files" }
 
 type Upload struct {
@@ -79,4 +79,5 @@ type Upload struct {
 	CreatedAt      time.Time `gorm:"column:created_at;not null"`
 	UpdatedAt      time.Time `gorm:"column:updated_at;not null"`
 }
+
 func (Upload) TableName() string { return "uploads" }

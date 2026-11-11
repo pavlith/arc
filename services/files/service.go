@@ -15,8 +15,8 @@ import (
 	filesv1 "github.com/pavlith/arc/services/files/api/v1"
 	"github.com/pavlith/arc/services/files/modules/folders"
 	"github.com/pavlith/arc/services/files/modules/objects"
-	"github.com/pavlith/arc/services/files/storage"
 	"github.com/pavlith/arc/services/files/modules/outbox"
+	"github.com/pavlith/arc/services/files/storage"
 	"gorm.io/gorm"
 )
 
@@ -27,14 +27,14 @@ type Config struct {
 	Runtime   sdk.AppConfig
 	Identity  identity.Client
 	CoreTrust ed25519.PublicKey
-	Storage *storage.Local
+	Storage   *storage.Local
 }
 
 type Service struct {
 	App       *service.App
 	Folders   *folders.Service
 	Publisher *outbox.Module
-	Objects *objects.Module
+	Objects   *objects.Module
 }
 
 func New(cfg Config) (*Service, error) {

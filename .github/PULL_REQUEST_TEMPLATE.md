@@ -1,13 +1,7 @@
-## Outcome
+Issue: Refs #N <!-- Closes #N only after full acceptance -->
 
-<!-- What problem is solved and how behavior changes. An open repository Issue is required. -->
-Closes #
-<!-- Use Refs #N for partial/draft delivery; Closes #N only when all scope is satisfied. -->
+Outcome: <!-- What changed? -->
 
-## Verification
+Checks: <!-- Exact commands and pass/fail/skip; required negative guards -->
 
-<!-- Actual checks and results only. Include relevant skips and deferred M7 coverage. -->
-
-## Risks
-
-<!-- Material security, migration, operational or known limitations. -->
+Risks: <!-- Only material blockers, migration and release caveats -->

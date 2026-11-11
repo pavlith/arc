@@ -1,40 +1,20 @@
 name: Proposal
-description: Change requirements, architecture or product scope
+description: A change to Arc product or architecture
 title: "[Proposal]: "
 labels: ["type: proposal"]
 body:
   - type: textarea
-    id: problem
+    id: decision
     attributes:
-      label: Problem
-      description: What problem does the change solve?
-    validations:
-      required: true
-  - type: textarea
-    id: proposal
-    attributes:
-      label: Proposed solution
-    validations:
-      required: true
-  - type: textarea
-    id: alternatives
-    attributes:
-      label: Alternatives
-      description: Which alternatives were considered and rejected?
+      label: Problem and proposed decision
+      description: What should change and why? Include rejected alternative briefly.
     validations:
       required: true
   - type: textarea
     id: impact
     attributes:
-      label: Impact
-      description: Security, migrations, operations, contracts and documentation.
-    validations:
-      required: true
-  - type: dropdown
-    id: target
-    attributes:
-      label: Target milestone
-      options: [M0, M1, M2, M3, M4, M5, M6, M7, After M7]
+      label: Security / contracts / migration impact
+      description: Trust boundaries, tradeoffs and verifiable acceptance.
     validations:
       required: true
   - type: dropdown
@@ -44,3 +24,8 @@ body:
       options: [P0, P1, P2, P3]
     validations:
       required: true
+  - type: dropdown
+    id: target
+    attributes:
+      label: Target milestone
+      options: [M0, M1, M2, M3, M4, M5, M6, M7, After M7]

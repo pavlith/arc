@@ -345,6 +345,13 @@ func TestM006(t *testing.T) {
 	}
 	stopTasks := start("task", provider, taskClient.Kid, taskKey, fabric.EventSubscription{})
 	remote := &gate.Remote{Client: gateClient, TrustRoot: trust.Public().(ed25519.PublicKey)}
+	routeBundle, jwks, e := remote.Fetch(ctx)
+	if e != nil {
+		t.Fatalf("fetch signed Gate route bundle: %v", e)
+	}
+	if _, e = fabric.VerifySnapshotJWKS(jwks, routeBundle, 0); e != nil {
+		t.Fatalf("verify signed Gate route snapshot (%d bytes): %v", len(routeBundle.Payload), e)
+	}
 	g, e := gate.New(gate.Config{Backend: remote, PublicOrigin: "https://arc.example", RequestsPerMinute: 1000})
 	must(e)
 	must(g.Reconcile(ctx))

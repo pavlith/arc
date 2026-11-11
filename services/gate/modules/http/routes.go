@@ -2,6 +2,7 @@ package gate
 
 import (
 	"context"
+	"fmt"
 	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/core/modules/fabric"
@@ -38,22 +39,22 @@ func (r *routes) apply(s fabric.SignedSnapshot, keys security.JWKS) error {
 	for digest, a := range snap.Artifacts {
 		m, e := contract.Compile(a)
 		if e != nil || m.Digest != digest {
-			return contract.ErrInvalid
+			return fmt.Errorf("gate artifact %s invalid: %w", digest, contract.ErrInvalid)
 		}
 		artifacts[digest] = m
 	}
 	for _, route := range snap.Routes {
 		m := artifacts[route.Digest]
 		if m == nil {
-			return contract.ErrInvalid
+			return fmt.Errorf("gate route %s unknown digest: %w", route.Operation, contract.ErrInvalid)
 		}
 		o, e := m.Operation(route.Operation)
 		if e != nil || !o.HTTP.Expose || o.Kind == "command" && (o.HTTP.Method == "GET" || o.HTTP.Method == "HEAD") || contract.ValidateHTTP(o.HTTP) != nil || route.APIMajor != m.Manifest.Service.APIMajor || route.Service != m.Manifest.Service.Name || route.Path != o.HTTP.Path || route.Method != o.HTTP.Method || route.Subject != o.Subject || route.SuccessStatus != o.HTTP.SuccessStatus || !reflect.DeepEqual(route.Bindings, o.HTTP.Bindings) {
-			return contract.ErrInvalid
+			return fmt.Errorf("gate route %s mismatched contract: %w", route.Operation, contract.ErrInvalid)
 		}
 		for _, old := range next.entries {
 			if contract.RoutesOverlap(old.op.HTTP, o.HTTP) {
-				return contract.ErrInvalid
+				return fmt.Errorf("gate routes %s and %s overlap: %w", old.op.ID, o.ID, contract.ErrInvalid)
 			}
 		}
 		// A public path parameter needs an explicit, signed payload binding.
@@ -67,7 +68,7 @@ func (r *routes) apply(s fabric.SignedSnapshot, keys security.JWKS) error {
 					}
 				}
 				if !found {
-					return contract.ErrInvalid
+					return fmt.Errorf("gate route %s unbound parameter %s: %w", o.ID, name, contract.ErrInvalid)
 				}
 			}
 		}

@@ -47,10 +47,6 @@ jobs:
         with:
           go-version: "1.27.3"
           cache-dependency-path: go.sum
-      - name: One-time finalized SQLite schema capture
-        run: |
-          gofmt -w test/schema-snapshot/main.go
-          go run ./test/schema-snapshot
       - name: Verify formatting, vet and build
         run: |
           files=$(gofmt -l sdk services cmd test deploy/migrate)

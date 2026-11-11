@@ -5,7 +5,8 @@ import (
 	"time"
 
 	"github.com/pavlith/arc/sdk/security"
-	"github.com/pavlith/arc/services/files/models")
+	"github.com/pavlith/arc/services/files/models"
+)
 
 // Cleanup removes bytes only AFTER the upload state is durably aborted or
 // expired. Failed disk cleanup is retried on the next pass; no pending upload

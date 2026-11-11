@@ -61,23 +61,23 @@ type File struct {
 func (File) TableName() string { return "files" }
 
 type Upload struct {
-	ID             string    `gorm:"column:id;primaryKey"`
-	WorkspaceID    string    `gorm:"column:workspace_id;not null"`
-	RootID         string    `gorm:"column:acl_root_id;not null"`
-	FolderID       *string   `gorm:"column:folder_id"`
-	ActorID        string    `gorm:"column:actor_id;not null"`
-	SessionID      string    `gorm:"column:session_id;not null"`
-	Filename       string    `gorm:"column:filename;not null"`
-	DeclaredMIME   string    `gorm:"column:declared_mime;not null"`
-	ExpectedSize   int64     `gorm:"column:expected_size;not null"`
-	ExpectedSHA256 string    `gorm:"column:expected_sha256;not null"`
-	TempKey        string    `gorm:"column:temp_key;not null"`
-	Offset         int64     `gorm:"column:offset;not null"`
-	State          string    `gorm:"column:state;not null"`
-	IdempotencyKey string    `gorm:"column:idempotency_key;not null"`
-	ExpiresAt      time.Time `gorm:"column:expires_at;not null"`
-	CreatedAt      time.Time `gorm:"column:created_at;not null"`
-	UpdatedAt      time.Time `gorm:"column:updated_at;not null"`
+	ID             string     `gorm:"column:id;primaryKey"`
+	WorkspaceID    string     `gorm:"column:workspace_id;not null"`
+	RootID         string     `gorm:"column:acl_root_id;not null"`
+	FolderID       *string    `gorm:"column:folder_id"`
+	ActorID        string     `gorm:"column:actor_id;not null"`
+	SessionID      string     `gorm:"column:session_id;not null"`
+	Filename       string     `gorm:"column:filename;not null"`
+	DeclaredMIME   string     `gorm:"column:declared_mime;not null"`
+	ExpectedSize   int64      `gorm:"column:expected_size;not null"`
+	ExpectedSHA256 string     `gorm:"column:expected_sha256;not null"`
+	TempKey        string     `gorm:"column:temp_key;not null"`
+	Offset         int64      `gorm:"column:offset;not null"`
+	State          string     `gorm:"column:state;not null"`
+	IdempotencyKey string     `gorm:"column:idempotency_key;not null"`
+	ExpiresAt      time.Time  `gorm:"column:expires_at;not null"`
+	CreatedAt      time.Time  `gorm:"column:created_at;not null"`
+	UpdatedAt      time.Time  `gorm:"column:updated_at;not null"`
 	CleanedAt      *time.Time `gorm:"column:cleaned_at"`
 }
 

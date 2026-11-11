@@ -27,7 +27,10 @@ Enroll a new Ubuntu VPS, inspect it from Core, plan and approve host changes, an
 
 Current: an administrator-only, immutable NodeProfile approval contract (versioned
 per node) with a separate Core SQLite migration is available. This does not
-permit Agent execution. Enrollment and signed package apply are not implemented.
+permit Agent execution. A local read-only `PlanProfilePackages` helper
+simulates version-pinned APT requests and binds output to the approved
+profile digest. Core-to-Agent signed execution, enrollment, package transactions,
+and Docker/LXD profile application are not implemented.
 
 - Store a versioned and immutable approved `NodeProfile` in Core, with Ubuntu version constraints, exact apt package versions or approved repositories, system services, Docker/LXD enablement and update policy.
 - `plan` must return the proposed package additions, upgrades, removals, held-package changes, service restarts, connectivity risks and reboot requirement; plans expire and bind to the observed node state and profile revision.

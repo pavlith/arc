@@ -60,8 +60,13 @@ locally and reports additions/removals without executing changes. Each online in
 its first node-scoped RPC page. Core stores these facts separately from permissions;
 they do not authorize any host actions. APT supports read-only installed-package
 listing and a fixed-argv `apt-get -s` installation plan, including removal
-warnings. Neither API installs, removes nor updates packages; Core-approved,
-signed host operations are a subsequent milestone.
+warnings. Core can now store immutable manager-approved, node-scoped NodeProfiles
+(versioned with revocation and exact package pins). The read-only
+`apt.Manager.PlanProfilePackages` checks the supported Ubuntu release and
+simulates pinned package versions, identifying removals and binding its
+result to the profile digest. This does not execute Docker/LXD directives or
+authorize any host changes. Neither API installs, removes nor updates packages;
+Core-approved, signed host operations are a subsequent milestone.
 
 ## Reconciliation
 

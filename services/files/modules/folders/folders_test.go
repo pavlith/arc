@@ -87,7 +87,7 @@ func TestFolderScopedMutationsAndOutbox(t *testing.T) {
 		var err error
 		changed, err = s.move(ctx, tx, filesv1.FolderMoveRequest{
 			FolderRef: filesv1.FolderRef{Scope: scope, FolderID: parent.ID},
-			ParentID:  child.ID, Revision:  parent.Revision,
+			ParentID:  child.ID, Revision: parent.Revision,
 		})
 		return err
 	})
@@ -108,7 +108,7 @@ func TestFolderScopedMutationsAndOutbox(t *testing.T) {
 		var err error
 		changed, err = s.rename(ctx, tx, filesv1.FolderRenameRequest{
 			FolderRef: filesv1.FolderRef{Scope: scope, FolderID: child.ID},
-			Name:      "Projects2", Revision:  child.Revision,
+			Name:      "Projects2", Revision: child.Revision,
 		})
 		return err
 	})
@@ -118,7 +118,7 @@ func TestFolderScopedMutationsAndOutbox(t *testing.T) {
 	err = db.Transaction(func(tx *gorm.DB) error {
 		_, err := s.rename(ctx, tx, filesv1.FolderRenameRequest{
 			FolderRef: filesv1.FolderRef{Scope: scope, FolderID: child.ID},
-			Name:      "stale", Revision:  child.Revision,
+			Name:      "stale", Revision: child.Revision,
 		})
 		return err
 	})

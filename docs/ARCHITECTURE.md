@@ -69,6 +69,14 @@ M0 does not support workspace groups on personal resources or cross-workspace sh
 
 Passwords use Argon2id. Authentication/recovery/credential changes are audited without secrets; rate limits are required. Refresh reuse revokes the family and requires interactive authentication. Session and refresh state are excluded from workspace export. MFA/SSO/SCIM and dynamic NATS user/JWT issuance are later work.
 
+New accounts can register only with an email-bound workspace invitation. Account,
+password/recovery hashes, membership, invitation consumption, workspace revision
+and success audit commit in one Core transaction. Redemption rechecks the live
+workspace and issuer authority; existing accounts use invitation acceptance after
+sign-in. Public self-registration without an invitation is disabled. Registration
+returns a recovery code once, stores only its hash and creates no session. A lost
+response cannot replay that code; the user should try signing in before retrying.
+
 Core, Gate and Agent broker credentials and TLS roots are provisioned independently through operator-managed secret files. Bootstrap must not depend on a running Identity service to connect to NATS.
 
 ### 3.3. Invocation and request proof v1
@@ -274,6 +282,15 @@ Protected handler pipeline: verify invocation/proof → validate schema → reso
 Gate is a standalone HTTP process without a database. HTTPS is direct or behind explicitly trusted proxy CIDRs; forwarded headers are accepted only from trusted peers, resolving client IP from the right of the proxy chain. Configure header/read/write/idle deadlines, graceful shutdown, 200 KiB HTTP bodies within the 256 KiB RPC envelope, bounded per-IP rates and explicit HTTPS CORS origins. `/healthz` is liveness; `/readyz` reflects accepted routes and reconciliation.
 
 Browser auth uses POST `/api/v1/arc/auth/login`, `/refresh`, `/logout` and GET `/api/v1/arc/auth/session`. Login requires allowed Origin and returns session metadata and CSRF data. Session and refresh credentials are Secure/HttpOnly/SameSite=Lax `__Host-` cookies. The CSRF cookie/header must match and Identity checks its hash for mutations. Browser sessions issue no Bearer token. CLI clients use POST `/api/v1/arc/cli/token`, `/refresh` and `/logout` without Origin or cookies. CLI token families rotate independently of browser families. Bearer uses Core `Verifier.Access` with `aud=gate` and live session. Mixing Bearer and session cookie is rejected.
+
+POST `/api/v1/arc/auth/register-invited` accepts only `email`, `password` and
+`token`, requires an allowed Origin and applies a per-client rate limit. Core also
+limits registration attempts. It calls the exact operator-approved
+`identity.v1.sessions.register_invited` RPC with Gate assertion/proof; Core rejects
+callers whose live service definition is not `gate`. The 201 response contains
+`user_id`, `workspace_id` and one-time `recovery_code`, with `Cache-Control:
+no-store` and no auth cookies. Invitation links keep tokens in URL fragments; the
+UI removes the fragment and keeps the token and recovery code only in memory.
 
 The reserved `/api/v1/arc/identity/` routes map to exact operator-approved `identity.v1.product.*` RPCs. Core verifies the Gate assertion and request proof, then resolves the live browser session and checks current workspace membership or administrator authority. Workspace commands check permission inside their owner transaction before replay. Domain Task routes still require a verified Fabric snapshot and operation-bound invocation.
 

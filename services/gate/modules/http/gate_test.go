@@ -24,6 +24,10 @@ import (
 // closedBackend is an unavailable boundary, never a permissive auth substitute.
 type closedBackend struct{}
 
+func (closedBackend) RegisterInvited(context.Context, identity.RegisterInvitedRequest) (identity.RegisterInvitedResult, error) {
+	return identity.RegisterInvitedResult{}, security.ErrUnavailable
+}
+
 func (closedBackend) Fetch(context.Context) (fabric.SignedSnapshot, security.JWKS, error) {
 	return fabric.SignedSnapshot{}, security.JWKS{}, security.ErrUnavailable
 }

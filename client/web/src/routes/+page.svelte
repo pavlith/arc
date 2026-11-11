@@ -29,6 +29,8 @@
   let inviteRole = $state('member');
   let shareInvite = $state<Invitation & { url: string } | null>(null);
   let incomingInvite = $state('');
+  let registering = $state(false);
+  let recoveryCode = $state('');
   let inviteDraft: { signature: string; token: string } | null = null;
   let retry: { signature: string; key: string } | null = null;
 
@@ -106,6 +108,32 @@
       password = '';
       await api(`${auth}/login`, { method: 'POST', body: credentials });
       await loadProfile();
+    });
+  }
+
+  async function registerInvited(event: SubmitEvent) {
+    event.preventDefault();
+    if (!incomingInvite) return;
+    await run(async () => {
+      const credentials = { email, password, token: incomingInvite };
+      password = '';
+      let result;
+      try {
+        result = await api<{ recovery_code: string }>(`${auth}/register-invited`, { method: 'POST', body: credentials });
+      } catch (err) {
+        if (err instanceof APIError && err.status === 403) {
+          error = 'Check your invitation and email. If you already have an account, sign in. Otherwise, ask an administrator for a new invitation.';
+          return;
+        }
+        if (err instanceof APIError && (err.status === 0 || err.status >= 500)) {
+          error = 'Registration could not be confirmed. Try signing in with your new password before registering again.';
+          return;
+        }
+        throw err;
+      }
+      recoveryCode = result.recovery_code;
+      incomingInvite = '';
+      registering = false;
     });
   }
 
@@ -227,14 +255,29 @@
 
 {#if loading}
   <main class="center"><p role="status">Opening Arc…</p></main>
+{:else if recoveryCode}
+  <main class="center">
+    <section class="signin" aria-labelledby="recovery-title">
+      <span class="brand">Arc</span>
+      <h1 id="recovery-title">Save your recovery code</h1>
+      <p>Your account is ready and you have joined the workspace. Store this code in a safe place. It is shown only once and can be used through an administrator-assisted recovery process.</p>
+      <Field.FieldGroup class="gap-4">
+        <Field.Field>
+          <Field.FieldLabel for="recovery-code">Recovery code</Field.FieldLabel>
+          <Input id="recovery-code" type="text" readonly value={recoveryCode} autocomplete="off" spellcheck={false} />
+        </Field.Field>
+        <Button onclick={() => { recoveryCode = ''; }}>I saved the code — sign in</Button>
+      </Field.FieldGroup>
+    </section>
+  </main>
 {:else if !profile}
   <main class="center">
     <section class="signin" aria-labelledby="signin-title">
       <span class="brand">Arc</span>
-      <h1 id="signin-title">Sign in</h1>
-      {#if incomingInvite}<p class="muted">Sign in with the email address on your invitation.</p>{/if}
+      <h1 id="signin-title">{registering ? 'Create your account' : 'Sign in'}</h1>
+      {#if incomingInvite}<p class="muted">Use the email address on your invitation. {registering ? 'Creating an account also joins the workspace.' : 'New to Arc? Create an account with this invitation.'}</p>{/if}
       {#if error}<p class="error" role="alert">{error}</p>{/if}
-      <form onsubmit={signIn}>
+      <form onsubmit={registering ? registerInvited : signIn}>
         <Field.FieldGroup class="gap-4">
           <Field.Field>
             <Field.FieldLabel for="email">Email</Field.FieldLabel>
@@ -242,9 +285,13 @@
           </Field.Field>
           <Field.Field>
             <Field.FieldLabel for="password">Password</Field.FieldLabel>
-            <Input id="password" type="password" autocomplete="current-password" required bind:value={password} />
+            <Input id="password" type="password" autocomplete={registering ? 'new-password' : 'current-password'} minlength={registering ? 12 : undefined} maxlength={1024} required bind:value={password} />
+            {#if registering}<Field.FieldDescription>Use at least 12 characters.</Field.FieldDescription>{/if}
           </Field.Field>
-          <Button type="submit" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</Button>
+          <Button type="submit" disabled={busy}>{registering ? (busy ? 'Creating account…' : 'Create account and join') : (busy ? 'Signing in…' : 'Sign in')}</Button>
+          {#if incomingInvite}
+            <Button type="button" variant="outline" disabled={busy} onclick={() => { registering = !registering; password = ''; error = ''; }}>{registering ? 'Use an existing account' : 'Create an account'}</Button>
+          {/if}
         </Field.FieldGroup>
       </form>
     </section>

@@ -83,7 +83,7 @@ func bind[Req, Res any](service *sdk.Service, c *Core, name string, h func(conte
 func bindOperation[Req, Res any](service *sdk.Service, c *Core, name string, mutation bool, h func(context.Context, Req) (Res, error)) error {
 	id := "identity.v1." + name
 	return rpc.Handle(service, rpc.Operation{ID: id, Endpoint: strings.ReplaceAll(name, ".", "_"), Subject: "rpc." + id, QueueGroup: "q.identity.v1", Timeout: 10 * time.Second, Protected: true, Mutation: mutation, Authorize: rpc.AssertionAuthorizer(c.Verifier(), func(ctx context.Context, caller, op string) error {
-		if strings.HasPrefix(name, "product.") {
+		if strings.HasPrefix(name, "product.") || name == "sessions.register_invited" {
 			var gate bool
 			if err := c.db(ctx).WithContext(ctx).Raw(`SELECT EXISTS(SELECT 1 FROM identity_service_accounts WHERE id=? AND service_definition='gate' AND disabled_at IS NULL)`, caller).Row().Scan(&gate); err != nil {
 				return wireError(ErrUnavailable)
@@ -112,6 +112,7 @@ func (c *Core) BindInternal(s *sdk.Service) error {
 		return ErrUnavailable
 	}
 	registrations := []func() error{
+		func() error { return bind(s, c, "sessions.register_invited", c.RegisterInvited) },
 		func() error { return bind(s, c, "invocations.verify", c.verifyRequest) },
 		func() error {
 			return bind(s, c, "sessions.validate", func(ctx context.Context, r Authentication) (Session, error) { return c.Authenticate(ctx, r) })

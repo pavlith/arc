@@ -12,6 +12,34 @@ import (
 func (g *Gate) auth(w http.ResponseWriter, r *http.Request, id, client string) {
 	endpoint := r.URL.Path
 	ctx := r.Context()
+	if endpoint == "/api/v1/arc/auth/register-invited" && r.Method == http.MethodPost {
+		if !g.origins[r.Header.Get("Origin")] {
+			writeError(w, id, fault(rpc.CodePermissionDenied))
+			return
+		}
+		if !g.rate(client, "register-invited", g.cfg.LoginsPerMinute) {
+			writeError(w, id, fault(rpc.CodeRateLimited))
+			return
+		}
+		obj, err := readObject(r)
+		if err != nil {
+			g.inputError(w, id, err)
+			return
+		}
+		raw, _ := json.Marshal(obj)
+		var q identity.RegisterInvitedRequest
+		if contract.Strict(raw, &q) != nil || q.Email == "" || q.Password == "" || q.Token == "" {
+			writeError(w, id, fault(rpc.CodeValidation))
+			return
+		}
+		result, err := g.cfg.Backend.RegisterInvited(ctx, q)
+		if err != nil {
+			writeError(w, id, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, result)
+		return
+	}
 	if endpoint == "/api/v1/arc/auth/login" && r.Method == "POST" {
 		if !g.origins[r.Header.Get("Origin")] {
 			writeError(w, id, fault(rpc.CodePermissionDenied))

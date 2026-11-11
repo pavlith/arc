@@ -60,6 +60,15 @@ Constrain these subjects to the Core broker identity. Gate and domain callers
 retain separate broker permissions, Arc assertions/invocations and request proof.
 Broker access alone never grants login, business or administrative authority.
 
+Invitation onboarding requires a signed bootstrap rule for the provisioned Gate
+account: audience `identity/v1`, operation `identity.v1.sessions.register_invited`,
+actor kind `bootstrap`. Give that account broker publish permission for
+`rpc.identity.v1.sessions.register_invited` and replies. Core additionally verifies
+the live `gate` service definition. Existing deployments without this explicit
+approval fail closed; do not grant wildcard Identity operations. The public
+endpoint and one-time recovery behavior are described in
+[architecture](../../docs/ARCHITECTURE.md#32-credential-boundaries).
+
 Readiness is reported after all module subscriptions and broker permissions have
 been checked. SIGINT/SIGTERM unsubscribe Fabric control and module handlers,
 stop the SDK transport and close the database. A failed start also closes owned

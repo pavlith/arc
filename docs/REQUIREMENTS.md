@@ -37,6 +37,10 @@ strategy in #10 before implementing it.
   one-time recovery token without a mail connector.
 - **I-02:** Workspace creation, owner/admin/member/guest roles, invitations and
   membership changes; one global user may join multiple workspaces.
+  Initial onboarding is invitation-only: a new user creates credentials and joins
+  atomically with a live email-bound invitation; an existing user signs in to
+  accept it. Open registration and configurable registration policy remain later
+  work. The recovery code is shown once before a separate browser login.
 - **I-03:** Access groups (`Group/GroupMember`) remain separate from domain teams;
   authorized owners/admins manage membership and permissions.
 - **I-04:** Scoped service accounts and agent identities; credential lifecycle

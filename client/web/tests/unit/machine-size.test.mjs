@@ -127,7 +127,7 @@ test('snaps a typed disk size to a 2 GB step within the allowed range', () => {
 	assert.equal(snapDiskGb(21, options.disk_gb, 20), 22, 'a step up reaches the next size');
 	assert.equal(snapDiskGb(21, options.disk_gb, 22), 20, 'a step down reaches the previous size');
 	assert.equal(snapDiskGb(5, options.disk_gb, 22), 20);
-	const legacy = [20, 30, 40, 50, 75];
-	assert.equal(snapDiskGb(74, legacy, 75), 50);
-	assert.equal(snapDiskGb(76, legacy, 75), 75);
+	const supportedSizes = [20, 30, 40, 50, 75];
+	assert.equal(snapDiskGb(74, supportedSizes, 75), 50);
+	assert.equal(snapDiskGb(76, supportedSizes, 75), 75);
 });

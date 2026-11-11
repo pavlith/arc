@@ -15,7 +15,7 @@
 	import TeamPrivacySettings from '$lib/features/teams/TeamPrivacySettings.svelte';
 	import TeamIcon from '$lib/components/shared/TeamIcon.svelte';
 	import TeamIconGlyph from '$lib/components/shared/TeamIconGlyph.svelte';
-	import { legacyTeamIconNodes } from '$lib/components/shared/legacy-team-icons';
+	import { teamBrandIconNodes } from '$lib/components/shared/team-brand-icons';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -118,17 +118,8 @@
 	const visibleEmojis = $derived(emojiResults.slice(0, visibleEmojiCount));
 	const selectedEmoji = $derived(team?.icon?.startsWith('emoji:') ? team.icon.slice(6) : '');
 	const selectedColor = $derived(team?.color ?? PRESET_COLORS[5]);
-	const LEGACY_ICON_NAMES: Record<string, string> = {
-		box: 'Box',
-		'circle-dot': 'CircleDot',
-		layers: 'Layers',
-		settings: 'Settings',
-		shield: 'ShieldCheck',
-		'square-user': 'SquareUser',
-		users: 'Users'
-	};
 	const selectedIconName = $derived(
-		team?.icon && !team.icon.startsWith('emoji:') ? (LEGACY_ICON_NAMES[team.icon] ?? team.icon) : 'SquareUser'
+		team?.icon && !team.icon.startsWith('emoji:') ? team.icon : 'SquareUser'
 	);
 
 	// The server checks the format from the file's content; browsers often report

@@ -15,7 +15,7 @@
 		size?: number;
 	} = $props();
 
-	// Map legacy status slugs to categories
+	// Map workflow status slugs to current display categories
 	const STATUS_TO_CATEGORY: Record<string, StatusCategory> = {
 		backlog: 'backlog',
 		todo: 'unstarted',

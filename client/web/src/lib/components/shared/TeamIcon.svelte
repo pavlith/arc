@@ -4,21 +4,11 @@
 	import { getStableTeamColor } from '$lib/features/layout/sidebar.state.svelte';
 	import TeamIconGlyph from './TeamIconGlyph.svelte';
 
-	const LEGACY_ICON_NAMES: Record<string, string> = {
-		box: 'Box',
-		'circle-dot': 'CircleDot',
-		layers: 'Layers',
-		settings: 'Settings',
-		shield: 'ShieldCheck',
-		'square-user': 'SquareUser',
-		users: 'Users'
-	};
-
 	const IMAGE_ICON = /^image:([0-9a-f-]{36}\.(?:png|jpg|webp|gif|ico))$/;
 
 	function resolveIconName(icon?: string | null): string {
 		if (!icon || icon.startsWith('emoji:') || icon.startsWith('image:')) return 'SquareUser';
-		return LEGACY_ICON_NAMES[icon] ?? icon;
+		return icon;
 	}
 
 	let {

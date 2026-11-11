@@ -41,4 +41,3 @@ func (m *Module) Bind(service *sdk.Service) (func(), error) {
 	}
 	return nil, nil
 }
-

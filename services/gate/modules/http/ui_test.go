@@ -19,7 +19,7 @@ func TestServeUIAssets(t *testing.T) {
 			"_app/immutable/assets/app.abc.css": {Data: []byte("body {}")},
 			"_app/version.json":                 {Data: []byte(`{"version":"abc"}`)},
 			"_app/immutable/internal.json":      {Data: []byte("{}")},
-			"assets/legacy.js":                  {Data: []byte("export {}")},
+			"assets/app.js":                  {Data: []byte("export {}")},
 		},
 	})
 	if err != nil {
@@ -36,7 +36,7 @@ func TestServeUIAssets(t *testing.T) {
 		{http.MethodGet, "/_app/immutable/entry/start.abc.js", "text/javascript", http.StatusOK},
 		{http.MethodHead, "/_app/immutable/assets/app.abc.css", "text/css", http.StatusOK},
 		{http.MethodGet, "/_app/version.json", "application/json", http.StatusOK},
-		{http.MethodGet, "/assets/legacy.js", "text/javascript", http.StatusOK},
+		{http.MethodGet, "/assets/app.js", "text/javascript", http.StatusOK},
 		{http.MethodGet, "/_app/immutable/internal.json", "", http.StatusNotFound},
 		{http.MethodGet, "/_app/immutable/missing.js", "", http.StatusNotFound},
 		{http.MethodPost, "/_app/immutable/entry/start.abc.js", "", http.StatusNotFound},

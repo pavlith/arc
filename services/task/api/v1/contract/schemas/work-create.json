@@ -1,0 +1,60 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300
+    },
+    "team_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "status_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 60000
+    },
+    "priority": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4
+    },
+    "due_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sort_order": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000000000
+    },
+    "assignee_ids": {
+      "type": "array",
+      "maxItems": 20,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      }
+    }
+  },
+  "required": [
+    "workspace_id",
+    "acl_root_id",
+    "title",
+    "team_id"
+  ],
+  "additionalProperties": false
+}

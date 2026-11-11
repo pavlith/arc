@@ -52,6 +52,7 @@ func (c *Core) BindInternal(s *sdk.Service) error {
 		func() error { return bind(s, c, "grants.add", true, c.AddGrant) },
 		func() error { return bind(s, c, "grants.revoke", true, c.RevokeGrant) },
 		func() error { return bind(s, c, "grants.list", false, c.ListGrants) },
+		func() error { return bind(s, c, "principals.validate_users", false, c.ValidateUsers) },
 	}
 	for _, register := range registrations {
 		if e := register(); e != nil {

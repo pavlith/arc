@@ -160,6 +160,7 @@ Policy denial yields `PERMISSION_DENIED` or contract-defined concealing `NOT_FOU
 | `list_accessible_roots` | Paginated owner/workspace/type/action filtering without hidden metadata |
 | `grants.add` / `revoke` | ACL management or bounded share authority; transaction, audit/revision; revoke optionally binds `resource_id` to the grant's actual root |
 | `grants.list` | Paginated direct unrevoked/unexpired grants for one root; live ACL management authority and policy snapshot; no implicit/inherited rights |
+| `principals.validate_users` | Batched active user/membership and target-action checks in one root snapshot; requires the invocation-approved actor action; returns validity only |
 
 Names use `access.v1.*`; concrete RPC subjects follow §5.3. Check payload contains resource/action, not trusted actor/caller. Listings also apply domain filters. Use batched checks rather than N+1 RPC. Denial diagnostics are limited to trusted auditors.
 

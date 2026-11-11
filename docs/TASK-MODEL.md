@@ -46,6 +46,41 @@ root authority. Domain mutation, audit, replay result and change hint outbox
 commit together. Hints contain identifiers/revisions, not titles or descriptions;
 subscribers must reacquire permission to fetch content.
 
+## Work-item projection
+
+`tasks` retains the immutable proof storage shape; additive `task_details` and
+`task_assignees` hold product fields. New `task.work.*` operations use the same
+Task IDs and titles while returning workflow category/status ID, Team, stable
+creation identifier, description, priority, due date, card order and assignees.
+Legacy tasks appear in the new read model with status `open`, revision 1, no Team
+and their UUID as identifier until explicitly assigned to a Team by an update.
+Identifiers allocated from a Team key/counter remain stable if the task moves
+between Teams inside the same root. Cross-root moves are not supported.
+
+Product reads list all tasks permitted by the root's `task.read`, including other
+creators; the legacy list remains creator-filtered. Root `task.create` is the
+explicit write authority for shared product edits. Such edits require both the
+current product revision and base `updated_at`, so concurrent legacy title edits
+also conflict rather than overwrite. Archive needs `task.delete` and returns only
+scope/ID/revision/timestamp, never content. Legacy and product reads hide archived
+work items and tasks in archived Teams.
+
+Updates replace the full mutable product representation; omitted description,
+priority, due date, order and assignees reset to their empty/default values.
+No raw HTML is served or executed; descriptions are plain text/Markdown data.
+List/search order is stable by UUID with a cursor, not a rank-sorted database
+query. `sort_order` supports client board layout; changing it is a versioned edit.
+The page may stop early to stay within the RPC response budget; always follow
+`next_cursor` rather than assuming a short page is final.
+
+Assignees are checked through an exact approved downstream
+`access.v1.principals.validate_users` operation: actor write authority, live target
+membership and target `task.read` on the same root. Task never queries Identity's
+database. Validation and later mutation are separate owner transactions; a revoke
+after validation may leave an assigned identifier but cannot authorize a later
+read. Active tasks prevent their status from being archived; a status can instead
+be renamed/reordered or tasks moved first.
+
 ## Delivery boundary
 
 Each artifact/schema change requires signed Task replacement approval, exact

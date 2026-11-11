@@ -119,25 +119,25 @@ func (s *Service) updateTeam(ctx context.Context, tx *gorm.DB, q taskv1.TeamUpda
 	}
 	return toTeam(row), s.catalogChanged(ctx, tx, q.Scope, "team", row.ID, row.Revision)
 }
-func (s *Service) archiveTeam(ctx context.Context, tx *gorm.DB, q taskv1.TeamArchiveRequest) (taskv1.Team, error) {
+func (s *Service) archiveTeam(ctx context.Context, tx *gorm.DB, q taskv1.TeamArchiveRequest) (taskv1.ArchivedItem, error) {
 	row, err := catalogTeam(ctx, tx, q.TeamScope)
 	if err != nil {
-		return taskv1.Team{}, err
+		return taskv1.ArchivedItem{}, err
 	}
 	if q.Revision < 1 {
-		return taskv1.Team{}, invalidCatalog()
+		return taskv1.ArchivedItem{}, invalidCatalog()
 	}
 	if row.Revision != q.Revision {
-		return taskv1.Team{}, catalogConflict()
+		return taskv1.ArchivedItem{}, catalogConflict()
 	}
 	now := time.Now().UTC()
 	row.ArchivedAt = &now
 	row.UpdatedAt = now
 	row.Revision++
 	if err := tx.WithContext(ctx).Save(&row).Error; err != nil {
-		return taskv1.Team{}, catalogError(err)
+		return taskv1.ArchivedItem{}, catalogError(err)
 	}
-	return toTeam(row), s.catalogChanged(ctx, tx, q.Scope, "team", row.ID, row.Revision)
+	return taskv1.ArchivedItem{Scope: q.Scope, ID: row.ID, Revision: row.Revision, Archived: true, UpdatedAt: row.UpdatedAt}, s.catalogChanged(ctx, tx, q.Scope, "team", row.ID, row.Revision)
 }
 func (s *Service) getTeam(ctx context.Context, q taskv1.TeamScope) (taskv1.Team, error) {
 	row, err := catalogTeam(ctx, s.GormDB, q)
@@ -156,8 +156,19 @@ func (s *Service) listTeams(ctx context.Context, q taskv1.CatalogPage) (taskv1.T
 		rows = rows[:q.Limit]
 		out.NextCursor = rows[len(rows)-1].ID
 	}
+	size := 0
 	for _, row := range rows {
-		out.Teams = append(out.Teams, toTeam(row))
+		item := toTeam(row)
+		raw, err := json.Marshal(item)
+		if err != nil {
+			return out, unavailable(err)
+		}
+		if size+len(raw) > 180000 && len(out.Teams) > 0 {
+			out.NextCursor = out.Teams[len(out.Teams)-1].ID
+			break
+		}
+		size += len(raw)
+		out.Teams = append(out.Teams, item)
 	}
 	return out, nil
 }
@@ -217,28 +228,35 @@ func (s *Service) updateStatus(ctx context.Context, tx *gorm.DB, q taskv1.Status
 	}
 	return toStatus(row), s.catalogChanged(ctx, tx, q.Scope, "status", row.ID, row.Revision)
 }
-func (s *Service) deleteStatus(ctx context.Context, tx *gorm.DB, q taskv1.StatusDeleteRequest) (taskv1.WorkflowStatus, error) {
+func (s *Service) deleteStatus(ctx context.Context, tx *gorm.DB, q taskv1.StatusDeleteRequest) (taskv1.ArchivedItem, error) {
 	if _, err := catalogTeam(ctx, tx, q.TeamScope); err != nil {
-		return taskv1.WorkflowStatus{}, err
+		return taskv1.ArchivedItem{}, err
 	}
 	row, err := catalogStatus(ctx, tx, q.TeamScope, q.StatusID)
 	if err != nil {
-		return taskv1.WorkflowStatus{}, err
+		return taskv1.ArchivedItem{}, err
 	}
 	if q.Revision < 1 {
-		return taskv1.WorkflowStatus{}, invalidCatalog()
+		return taskv1.ArchivedItem{}, invalidCatalog()
 	}
 	if row.Revision != q.Revision || row.IsDefault {
-		return taskv1.WorkflowStatus{}, catalogConflict()
+		return taskv1.ArchivedItem{}, catalogConflict()
+	}
+	var used int64
+	if err := tx.WithContext(ctx).Model(&models.TaskDetails{}).Where("status_id=? AND archived_at IS NULL", row.ID).Count(&used).Error; err != nil {
+		return taskv1.ArchivedItem{}, catalogError(err)
+	}
+	if used > 0 {
+		return taskv1.ArchivedItem{}, catalogConflict()
 	}
 	now := time.Now().UTC()
 	row.ArchivedAt = &now
 	row.UpdatedAt = now
 	row.Revision++
 	if err := tx.WithContext(ctx).Save(&row).Error; err != nil {
-		return taskv1.WorkflowStatus{}, catalogError(err)
+		return taskv1.ArchivedItem{}, catalogError(err)
 	}
-	return toStatus(row), s.catalogChanged(ctx, tx, q.Scope, "status", row.ID, row.Revision)
+	return taskv1.ArchivedItem{Scope: q.Scope, ID: row.ID, TeamID: q.TeamID, Revision: row.Revision, Archived: true, UpdatedAt: row.UpdatedAt}, s.catalogChanged(ctx, tx, q.Scope, "status", row.ID, row.Revision)
 }
 func (s *Service) listStatuses(ctx context.Context, q taskv1.TeamScope) (taskv1.StatusesResult, error) {
 	out := taskv1.StatusesResult{Statuses: []taskv1.WorkflowStatus{}}

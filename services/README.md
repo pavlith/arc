@@ -146,6 +146,54 @@ task-created event schema and subscription subject are unchanged.
 
 The model/import/personal-task decision is in [Task product model](../docs/TASK-MODEL.md).
 
+## Shared Task work-item APIs
+
+Task 0.2.0 adds the product work-item projection without rewriting legacy tasks.
+Apply Task migration `000003_work_items` after `000002_teams`, and deploy updated
+Core for user reference validation before Task/Notify. All paths below are
+relative to `/api/v1/task/workspaces/{workspace_id}/roots/{acl_root_id}`:
+
+| Method/path | Authority and behavior |
+|---|---|
+| POST `/work` | `task.create`; create in a Team, default its status and allocate a stable Team-key identifier |
+| GET `/work/{task_id}` | `task.read`; read a shared product task or legacy task projection |
+| GET `/work?limit=100` | `task.read`; list shared tasks in UUID order, following `next_cursor` |
+| PATCH `/work/{task_id}` | `task.create`; replace product fields with current `revision` and `expected_updated_at` |
+| POST `/work/{task_id}/archive` | `task.delete`; archive a product task with both concurrency checks; return metadata only |
+
+Create/update fields are `title`, `team_id`, optional `status_id` (defaults to the
+Team's default), `description` (plain text/Markdown, at most 60,000 bytes),
+`priority` (0–4), optional `due_date` (RFC3339), `sort_order` (0–1e12) and up to 20
+unique `assignee_ids`. Updates replace all mutable fields; omission clears an
+optional value. The Team/status must belong to the same active root/workspace.
+Assigning a legacy task to a Team preserves its Task ID and title history.
+The JSON-encoded mutable representation is additionally capped at 160,000 bytes
+to bound responses even when JSON escaping expands user text. Team list pages
+also honor a response-size budget; follow their cursor even after a short page.
+
+List filters are optional `team_id`, `status_id`, `assignee_id`, `priority`,
+`search` (literal title/description substring, ASCII case-insensitive), and UUID
+`cursor`. `limit` is required, 1–100. Pages are independently snapshot-consistent
+and may be shorter to respect the RPC size budget. Always follow `next_cursor`.
+Descriptions are returned as data and must be safely rendered by clients.
+
+Granting `task.create` to a root permits shared product edits under the new
+operation approvals; it does not change the creator-only legacy edit behavior.
+For nonempty assignees, Task needs exact Access
+`access.v1.principals.validate_users` approval with actor action `task.create`
+and downstream sources `task/v1:task.work.create` / `task/v1:task.work.update`.
+Core checks active workspace membership and target `task.read` on the same root;
+there is no cross-owner SQL access. The operation returns no profile information.
+
+Approve exact new Work operations with their table actions and corresponding
+downstream Access `check` actions (including `task.delete` for archive). Update
+Task subjects/routes, signed artifact approval and Notify producer digest.
+`evt.task.catalog.changed.v1` now also carries `entity_kind=work`, while new tasks
+still publish the unchanged `evt.task.task.created.v1` event. Domain data,
+assignees, audit, outbox and command result commit atomically. Team/status archive
+responses now return identifier/revision metadata only, avoiding content exposure
+to management-only callers. No UI changes are included.
+
 ## Runtime
 
 Core Control requires explicit live `RuntimeControlPolicy` and a snapshot signing

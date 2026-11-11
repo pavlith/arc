@@ -121,6 +121,7 @@ func (s *Service) listGORM(ctx context.Context, q ListRequest) (ListResponse, er
 	var rows []models.Task
 	result := s.GormDB.WithContext(ctx).
 		Where("workspace_id=? AND acl_root_id=? AND created_by=?", q.WorkspaceID, q.RootID, strings.TrimPrefix(cl.Subject, "user:")).
+		Where("NOT EXISTS(SELECT 1 FROM task_details d JOIN teams tm ON tm.id=d.team_id WHERE d.task_id=tasks.id AND (d.archived_at IS NOT NULL OR tm.archived_at IS NOT NULL))").
 		Order("created_at, id").Limit(q.Limit).Find(&rows)
 	if result.Error != nil {
 		return ListResponse{}, unavailable(result.Error)
@@ -149,7 +150,7 @@ func (s *Service) authorizeGORM(ctx context.Context, root, action string) error 
 	}
 	query := "SELECT EXISTS(SELECT 1 FROM roots WHERE acl_root_id=? AND workspace_id=? AND state='active')"
 	args := []any{root, q.WorkspaceID}
-	if cl.Operation == Get || cl.Operation == taskv1.EditID {
+	if cl.Operation == Get || cl.Operation == taskv1.EditID || cl.Operation == taskv1.WorkGet.ID || cl.Operation == taskv1.WorkUpdate.ID || cl.Operation == taskv1.WorkArchive.ID {
 		query = `SELECT EXISTS(SELECT 1 FROM tasks t JOIN roots r USING(acl_root_id,workspace_id)
 			WHERE t.acl_root_id=? AND t.workspace_id=? AND t.id=? AND r.state='active'`
 		args = append(args, q.TaskID)
@@ -157,6 +158,7 @@ func (s *Service) authorizeGORM(ctx context.Context, root, action string) error 
 			query += " AND t.created_by=?"
 			args = append(args, strings.TrimPrefix(cl.Subject, "user:"))
 		}
+		query += " AND NOT EXISTS(SELECT 1 FROM task_details d JOIN teams tm ON tm.id=d.team_id WHERE d.task_id=t.id AND (d.archived_at IS NOT NULL OR tm.archived_at IS NOT NULL))"
 		query += ")"
 	}
 	var exists bool

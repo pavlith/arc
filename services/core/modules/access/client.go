@@ -55,3 +55,7 @@ func (c *Client) ListGrants(ctx context.Context, q ListGrantsRequest) (ListGrant
 }
 
 var _ Checker = (*Client)(nil)
+
+func (c *Client) ValidateUsers(ctx context.Context, q ValidateUsersRequest) (ValidateUsersResult, error) {
+	return invokeRPC[ValidateUsersRequest, ValidateUsersResult](ctx, c, "principals.validate_users", q)
+}

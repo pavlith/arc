@@ -182,6 +182,15 @@ type ListGrantsResult struct {
 	NextCursor string  `json:"next_cursor,omitempty"`
 	Revision   int64   `json:"policy_revision"`
 }
+type ValidateUsersRequest struct {
+	ResourceID  string   `json:"resource_id"`
+	ActorAction string   `json:"actor_action"`
+	UserAction  string   `json:"user_action"`
+	UserIDs     []string `json:"user_ids"`
+}
+type ValidateUsersResult struct {
+	Valid bool `json:"valid"`
+}
 type MutationResult struct {
 	ResourceID string `json:"resource_id,omitempty"`
 	GrantID    string `json:"grant_id,omitempty"`

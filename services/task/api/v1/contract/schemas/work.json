@@ -1,0 +1,109 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "workspace_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300
+    },
+    "status": {
+      "enum": [
+        "open",
+        "backlog",
+        "todo",
+        "in_progress",
+        "in_review",
+        "done",
+        "cancelled"
+      ]
+    },
+    "created_by": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "team_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "status_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 60000
+    },
+    "priority": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4
+    },
+    "due_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sort_order": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000000000
+    },
+    "assignee_ids": {
+      "type": "array",
+      "maxItems": 20,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      }
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "archived": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "id",
+    "workspace_id",
+    "acl_root_id",
+    "title",
+    "status",
+    "created_by",
+    "created_at",
+    "updated_at",
+    "identifier",
+    "description",
+    "priority",
+    "sort_order",
+    "assignee_ids",
+    "revision",
+    "archived"
+  ],
+  "additionalProperties": false
+}

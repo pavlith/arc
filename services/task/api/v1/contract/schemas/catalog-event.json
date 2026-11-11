@@ -12,7 +12,8 @@
     "entity_kind": {
       "enum": [
         "team",
-        "status"
+        "status",
+        "work"
       ]
     },
     "entity_id": {

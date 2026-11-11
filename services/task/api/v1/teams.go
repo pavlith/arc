@@ -1,8 +1,9 @@
 package v1
 
 import (
-	"github.com/pavlith/arc/sdk/module"
 	"time"
+
+	"github.com/pavlith/arc/sdk/module"
 )
 
 type Team struct {
@@ -95,11 +96,11 @@ const CatalogChangedName = "task.catalog.changed"
 var (
 	TeamCreate   = module.Command[TeamCreateRequest, Team]{ID: "task.teams.create"}
 	TeamUpdate   = module.Command[TeamUpdateRequest, Team]{ID: "task.teams.update"}
-	TeamArchive  = module.Command[TeamArchiveRequest, Team]{ID: "task.teams.archive"}
+	TeamArchive  = module.Command[TeamArchiveRequest, ArchivedItem]{ID: "task.teams.archive"}
 	TeamGet      = module.Query[TeamScope, Team]{ID: "task.teams.get"}
 	TeamList     = module.Query[CatalogPage, TeamsResult]{ID: "task.teams.list"}
 	StatusCreate = module.Command[StatusCreateRequest, WorkflowStatus]{ID: "task.statuses.create"}
 	StatusUpdate = module.Command[StatusUpdateRequest, WorkflowStatus]{ID: "task.statuses.update"}
-	StatusDelete = module.Command[StatusDeleteRequest, WorkflowStatus]{ID: "task.statuses.delete"}
+	StatusDelete = module.Command[StatusDeleteRequest, ArchivedItem]{ID: "task.statuses.delete"}
 	StatusList   = module.Query[TeamScope, StatusesResult]{ID: "task.statuses.list"}
 )

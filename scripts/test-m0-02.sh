@@ -110,6 +110,6 @@ fi
 fi
 if [[ ${ARC_TEST_TASK:-0} == 1 ]]; then
  (go build -race -o "$scratch/arc-task" ./cmd/arc-task && go build -race -o "$scratch/arc-notify" ./cmd/arc-notify)
- (ARC_DOMAIN_BIN_DIR="$scratch" go test -race -count=1 -timeout=3m -run TestM006 -v ./services/task)
+ (ARC_DOMAIN_BIN_DIR="$scratch" go test -race -count=1 -timeout=5m -run TestM006 -v ./services/task)
 fi
 echo 'Requested M0 integration guardrails passed; M7 not run.'

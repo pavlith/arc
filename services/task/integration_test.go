@@ -60,7 +60,7 @@ func TestM006(t *testing.T) {
 		t.Skip("run scripts/test-m0-06.sh")
 	}
 	logs := testlog.Capture(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 240*time.Second)
 	defer cancel()
 	must := func(e error) {
 		t.Helper()

@@ -15,8 +15,19 @@ GitHub Issues are the only task/status tracker. This file records *dependencies*
 
 Issue scope and labels determine remaining work and any temporary pause. No dependency row establishes completion or authorizes production rollout.
 
+Planned [Mail](MAIL.md) adds an independent M2 personal-data path: account/ACL and
+credential contracts plus noninteractive synchronization authority precede
+background IMAP ingestion; bounded local reads/private content streaming precede
+Notify/Files integration, workspace/shared accounts and remote mutations/SMTP.
+Provider OAuth adapters precede compatibility claims for those providers. Mail
+backend contracts and integration smokes are independent of TS/Svelte; the order
+above does not make frontend completion a prerequisite for that backend. Exact
+implementation tasks/status belong in GitHub Issues; [MAIL-01–MAIL-10](REQUIREMENTS.md#214-mail--imap-p1)
+define the product scope, including two-account read/sync/restart/disconnect
+acceptance and separate M7 matrices.
+
 ## Contracts
 
 [Architecture](ARCHITECTURE.md) defines ownership, approved transport and authorization. [Development](DEVELOPMENT.md) defines installation and verification. Task stores plain text/Markdown; Pages uses validated Tiptap. M7 and later product domains retain their own requirement scope.
 
-Component details: [Task](TASK-MODEL.md), [Realtime](REALTIME.md), [Files](FILES.md), [References](RESOURCE-REFERENCES.md), [Pages](PAGES.md), [Notify](NOTIFY.md).
+Component details: [Task](TASK-MODEL.md), [Realtime](REALTIME.md), [Files](FILES.md), [References](RESOURCE-REFERENCES.md), [Pages](PAGES.md), [Notify](NOTIFY.md), planned [Mail](MAIL.md).

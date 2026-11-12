@@ -5,7 +5,7 @@
 
 ## 1. Purpose and boundaries
 
-Arc is a self-hosted collaboration platform derived from applicable [Kuayle](https://github.com/carbogninalberto/kuayle) concepts. It covers tasks, calendars, contacts, files, pages, agents, connectors and workflows. HTTP, DAV, RPC and tools share the same authorization model.
+Arc is a self-hosted collaboration platform derived from applicable [Kuayle](https://github.com/carbogninalberto/kuayle) concepts. It covers tasks, calendars, contacts, files, pages, planned multi-account IMAP Mail, agents, connectors and workflows. HTTP, DAV, RPC and tools share the same authorization model.
 
 One modular Go Core owns Identity, Access, Fabric and Runtime state. Modules call Go interfaces within Core; separate processes communicate over NATS. Gate is the public API ingress. NATS, databases and the infrastructure Agent remain private. Large files use private HTTP streaming behind Gate or approved object URLs rather than NATS payloads. Bootstrap infrastructure operates independently of Runtime Control.
 
@@ -379,6 +379,7 @@ M6: integrated single-node Docker lifecycle, approved templates, desired/observe
 | Pages | Personal/workspace Tiptap tree, versions, restore and referenced resources; [Pages](PAGES.md) |
 | Notify | Per-user Inbox, approved subscriptions, transactional hints and optional signed HTTPS webhook; [Notify](NOTIFY.md) |
 | Calendars / Contacts | Independent calendar/address-book owners and iCalendar/vCard objects under the same ACL; DAV adapters planned; [Calendar](CALENDAR.md), [Contacts](CONTACTS.md) |
+| Mail (planned) | Multiple external IMAP accounts, personal read-only first, private content cache and revocable background synchronization; [Mail](MAIL.md) |
 | Agents / Workflows / Connectors | Bounded approved tools, durable events, delegation and external credentials; [Requirements](REQUIREMENTS.md) |
 
 Each domain process owns its SQLite schema and transactional replay/outbox; no cross-owner SQL or implicit grants. A task attachment, avatar or page reference is an opaque pointer **not** a permission; target title/preview/bytes require a fresh actor-scoped target read and exact signed invocation edge. Cross-root moves are rejected, archives deny content at the next check, and failure to resolve policy fails closed. [Resource references](RESOURCE-REFERENCES.md) define those checks.
@@ -388,6 +389,23 @@ File bytes never travel over NATS. Files private Gate streaming checks Core proo
 Task root grants require live `access.grants.manage`, correct bound workspace/root and principal validation, plus stable command replay. Grant listing is a separately signed management operation and never follows from content read alone; a grant cannot authorize its own escalation. See the actual [Task model](TASK-MODEL.md) and approved domain manifests.
 
 Notify never trusts event fields to select recipients. The approved consumer checks producer/digest/subject/durable and live target read; inbox rows, dedup, optional outbound intent and realtime hints commit before ACK. Webhook delivery is at-least-once with durable keys, fenced leases, HMAC, bounded retry and no target content. Default outbound remains disabled; [Notify](NOTIFY.md) defines its exact channel contract.
+
+Planned Mail owns connection metadata, encrypted external credentials, remote
+account/folder/UID bindings, synchronization jobs/cursors and private MIME caches
+in its own persistence boundary. External IMAP remains authoritative for messages
+and flags. Each account is an ACL root; cached reads/streams require current Core
+authorization. First delivery is personal/read-only with EXAMINE/BODY.PEEK.
+Raw MIME and attachment bytes use approved private streaming behind Gate, not
+NATS payloads. Mail-to-Files exports and Notify consumption require separate
+approved contracts and current source/target authority.
+
+Mail background synchronization requires separately approved revocable account
+consent and a noninteractive Core/service authorization contract, bounded jobs
+and generation/lease fencing. It cannot reuse a saved browser session or saved
+positive ACL decision. Credentials use write-only management, encrypted storage
+and a separately provisioned key; secret hashing/replay, OAuth binding/rotation
+and key recovery need concrete contracts before implementation. A design entry
+does not enable these permissions or a general connector vault. See [Mail](MAIL.md).
 
 Runtime host management has a separate signed node boundary; ordinary workspace roles cannot become infrastructure administrators. Domain availability, successful compilation and tests do not imply installation or M7 readiness.
 

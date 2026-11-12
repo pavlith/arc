@@ -1,0 +1,225 @@
+# Mail service design
+
+Mail is a planned Arc domain service for connecting multiple external IMAP
+accounts, synchronizing folders/messages and exposing an ACL-controlled local
+view. The first delivery is personal, read-only IMAP access. Workspace accounts,
+remote mutations and sending are later capabilities. This document defines the
+approved direction, not implemented APIs, deployment instructions or acceptance
+evidence. Requirements: [MAIL-01–MAIL-10](REQUIREMENTS.md#214-mail--imap-p1).
+
+## Ownership and boundaries
+
+The proposed owner is `services/mail`, with a future `arc-mail` process, its own
+SQLite migrations/models and private content cache. These paths and executable
+do not exist yet. Core retains Identity/Access/Fabric authority; Gate owns public
+HTTPS and authentication. Mail owns connection configuration, encrypted external
+credentials, remote bindings, synchronization state and cached message content.
+Notify may later consume approved minimal Mail events for notifications.
+
+External IMAP servers are authoritative for message content, folder membership
+and flags. Arc owns connection settings, local IDs, cache policy, synchronization
+consent and progress. Fetching and reconciliation must preserve this distinction.
+SMTP submission, inbound SMTP/MX hosting, mail delivery and spam filtering are
+outside the first delivery; operating an Arc mail server is outside this design.
+
+User requests pass through signed Gate/Fabric operations with online Core checks.
+NATS carries bounded commands, job references and metadata invalidations. Raw MIME,
+large bodies and attachment bytes use an approved private Mail-to-Gate stream,
+following the Files transport boundary. They never become NATS file payloads,
+public cache paths or browser IMAP connections.
+
+## Accounts and access
+
+One Arc user can connect several unrelated accounts. A connection stores its
+display name, IMAP host/port/TLS policy, remote login, display email identity,
+authentication method, secret reference/version, selected folders, cache policy
+and synchronization state. Remote login and display email need not be equal.
+Changing host, login or account identity creates a new remote binding generation;
+old cursors and message mappings cannot be reused against another account.
+
+Each connection is an independently permissioned ACL root. Proposed types are
+`mail.personal` and, for a later shared-account delivery, `mail.workspace`.
+Personal roots have one user owner and empty workspace; workspace roots bind one
+workspace and may grant access to its users/groups. Personal connections are not
+shared implicitly with a workspace. Provisioning must follow the existing
+reserve/prepare/activate lifecycle under the approved Mail provider.
+
+Proposed actions distinguish `mail.read`, `mail.connection.manage`, `mail.sync`
+and `access.grants.manage`. Managing a root alone does not confer message read;
+reading messages does not expose credentials or permit connection changes.
+`mail.modify` and `mail.send` belong to later explicitly approved contracts.
+Final operation IDs, schemas, limits and action bindings require an implementation
+Issue and exact Fabric approval before any route is exposed.
+
+Folder/message lookup, search, job inspection and byte streaming bind their local
+IDs to the verified account root/workspace. A unified Inbox aggregates only
+currently readable accounts and preserves source-account identity. Known UUIDs,
+email addresses and cached data do not grant access. Grant revocation or root
+archive denies subsequent content access; unavailable Core fails closed.
+
+## Authentication and credential storage
+
+Support a generic TLS IMAP adapter using a password/application password when the
+server permits it, plus provider-specific OAuth2 adapters. Negotiate IMAP4rev1/
+IMAP4rev2 capabilities rather than assuming every extension is present. TLS
+certificate/hostname validation is mandatory; an explicitly provisioned private
+CA can support internal mail servers. Cleartext authentication and automatic
+certificate-verification bypass are outside the design.
+
+Exchange Online has removed Basic authentication for IMAP, so its adapter needs
+OAuth. Microsoft documents `IMAP.AccessAsUser.All` and `offline_access` for delegated
+access/refresh. Its shared-mailbox flow also distinguishes the authorizing user
+from the selected mailbox. See [Basic authentication removal](https://learn.microsoft.com/en-us/exchange/clients-and-mobile-in-exchange-online/deprecation-of-basic-authentication-exchange-online)
+and [IMAP OAuth authentication](https://learn.microsoft.com/en-us/exchange/client-developer/legacy-protocols/how-to-authenticate-an-imap-pop-smtp-application-by-using-oauth).
+
+Gmail supports SASL XOAUTH2. Its ordinary IMAP OAuth scope is
+`https://mail.google.com/`, which is broader than this first delivery's read-only
+behavior. Arc enforces read-only operation selection; it must not describe the
+provider token as read-only. OAuth client registration, consent and applicable
+provider verification remain installation concerns. See [Gmail IMAP OAuth](https://developers.google.com/workspace/gmail/imap/xoauth2-protocol).
+
+Credentials use a Mail-owned secret-store interface with encrypted records and
+an independently provisioned encryption key outside SQLite/Git. Bind encryption
+to the account/scope and secret version, support key identification/rotation and
+include protected key recovery in backup design. An initial implementation may
+use owner-local encrypted storage; it does not establish a general connector
+vault or allow other services to read Mail secrets.
+
+Secret submission/replacement is write-only. Read APIs return safe metadata;
+passwords, access/refresh tokens and OAuth authorization material are excluded
+from logs, audit, events, exports and stored command results. Credential handlers
+must explicitly review request hashing, retry records and OAuth callbacks so
+generic command replay cannot persist a secret or an offline password verifier.
+Secret references are scope-bound opaque IDs, never caller-selected filesystem
+paths or references to another account's credentials.
+
+OAuth state/PKCE and account binding, refresh-token rotation, credential write
+semantics and the concrete encryption/key lifecycle require focused contracts
+and security guardrails in their owning implementation Issues before credential
+endpoints are enabled. The generic connector requirements
+[X-01–X-03](REQUIREMENTS.md#210-connectors-p2) retain their broader scope.
+
+## Background synchronization authority
+
+Mail needs revocable, durable consent to synchronize one external connection
+while its user has no open browser session. A worker runs as its approved service
+identity with a separately bound read-only synchronization authorization; it does
+not retain or impersonate a browser session. Consent binds account/root, owner,
+scope, allowed remote operations and connection/credential generation.
+
+Before each bounded batch and before publishing its local effects, validate
+current account/consent state, Core authority and Fabric readiness. Jobs have
+exclusive leases/fencing and cancellation; a stale worker cannot commit using a
+superseded connection generation. Workspace authorization must also account for
+archive and membership rules when shared accounts are introduced. Core outage
+pauses background work; a saved positive decision is not an authorization fallback.
+
+Pause stops synchronization while retaining permitted cache reads. Disconnect
+revokes synchronization consent and credentials, closes active remote sessions
+and fences pending jobs. Retained cache remains subject to current root ACL;
+root archive/delete denies content independently of retention. Cache purge is a
+separate explicit operation. Credential failures require reauthentication rather
+than an unbounded login retry loop; transient failures use bounded backoff.
+
+This noninteractive authorization contract is a prerequisite, not a capability
+already supplied by the current user-invocation helpers. Specify its exact
+Core/service edges and verify revoke behavior before enabling an autonomous
+worker; deployment still requires exact operator-approved Fabric policy.
+
+## Data model and synchronization
+
+| Entity | Role |
+|---|---|
+| Account | ACL root, remote configuration, binding generation, consent and credential reference |
+| Folder | Local UUID, account binding, remote mailbox name, delimiter/attributes and selection policy |
+| Message occurrence | Local UUID bound to account, folder, UIDVALIDITY and UID; envelope, flags, size and MIME metadata |
+| Content cache | Private raw MIME/body/part objects, account binding, size/digest and retention state |
+| Folder cursor | Binding generation, UIDVALIDITY, progress and optional server modification sequence |
+| Job | Account/generation, operation, state, lease/fence, bounded progress, safe error and retry time |
+
+The remote identity is account + folder + UIDVALIDITY + UID. Sequence numbers and
+Message-ID are not storage identities. Repeated Message-ID values do not collapse
+messages across folders or accounts; Gmail-style labels may expose multiple
+occurrences of related content. Provider-specific stable IDs or account-local
+blob deduplication may optimize storage later without changing ACL boundaries.
+
+On connection, discover capabilities/folders and synchronize selected folders in
+bounded batches. Initial ingestion prioritizes metadata and recent messages;
+history backfill is resumable and visible in job progress. Lists read local
+metadata with pagination. Opening uncached content schedules a bounded fetch and
+returns a job reference when it cannot finish within the normal RPC deadline.
+No public request waits for a whole mailbox synchronization.
+
+New-UID tracking is only part of reconciliation: existing flags and expunged UIDs
+also need periodic comparison. A UIDVALIDITY change invalidates that folder's old
+binding/cursor and triggers a controlled rescan; renamed/recreated folders must
+not inherit guessed mappings. Preserve local generation history so stale IDs
+cannot resolve to newly assigned remote UIDs. See [IMAP identifier semantics](https://www.rfc-editor.org/rfc/rfc9051.html#section-2.3.1.1).
+
+Polling is the baseline. IDLE is an optional change hint for selected folders,
+with periodic reconciliation/reconnect. CONDSTORE/QRESYNC may optimize flag and
+deletion synchronization when supported; they are not connection prerequisites.
+Bound connections per account/provider instead of opening one permanent session
+for every folder. See [IMAP IDLE](https://www.rfc-editor.org/rfc/rfc9051.html#section-6.3.13)
+and [CONDSTORE/QRESYNC](https://www.rfc-editor.org/rfc/rfc7162.html).
+
+The first adapter uses EXAMINE and BODY.PEEK so fetching content does not
+implicitly set `\Seen`. It issues no STORE, MOVE, COPY, APPEND, EXPUNGE or send
+operation. Flags still reflect changes made by external clients. See
+[EXAMINE](https://www.rfc-editor.org/rfc/rfc9051.html#section-6.3.3) and
+[FETCH](https://www.rfc-editor.org/rfc/rfc9051.html#section-6.4.5).
+
+Commit validated message changes, cursor progress, audit and minimal outbox hints
+atomically in Mail SQLite. Retries use stable remote bindings and job generations
+to avoid duplicate occurrences/events. Cache writes need private staging/promotion
+and safe orphan cleanup before their metadata is committed. Events contain IDs,
+scope and revision, never subjects, participants, bodies or credentials; consumers
+must reauthorize and refetch. Restart resumes durable progress without assuming
+that an interrupted IMAP batch completed.
+
+## Content, network and resource bounds
+
+Define explicit limits for pages, batch size/runtime, folders/connections, header
+and literal sizes, message/attachment size, MIME nesting/part counts, decoded text,
+history window and per-account/installation cache quotas before implementation.
+Inspect advertised sizes and bound reads/decoding; an oversized message may retain
+safe metadata with an explicit content-unavailable reason. Large content is
+streamed rather than materialized in RPC envelopes or unbounded memory buffers.
+
+The first representation exposes plain text and attachment metadata/downloads.
+Raw MIME remains private. Later HTML rendering needs sanitization and isolated
+display; external images/resources default off and require explicit policy.
+CID references and filenames are untrusted input, not local paths or authority.
+Destination policy applies to IMAP and OAuth endpoints, including resolved
+addresses/reconnects; internal servers require explicit operator configuration.
+
+Saving an attachment into Files is a later explicit action with fresh Mail source
+read and Files target create authority, approved transport and separate ownership.
+A Mail grant never grants Files access. Notification and future Contacts/Task links
+likewise require exact contracts and current target authorization.
+
+## Delivery boundaries and verification
+
+| Delivery boundary | Intended result / dependency |
+|---|---|
+| Personal connections | Multiple accounts, encrypted credentials, bounded connection checks, safe statuses, pause/disconnect; credential and worker-authorization contracts first |
+| Read-only synchronization | Folders, metadata, content/attachments, local pagination, jobs/cursors, restart/revoke behavior; provider OAuth adapters before claiming that provider supported |
+| Remote changes and integrations | Explicit flag/move/delete policies, workspace/shared accounts, Notify and Files actions; SMTP/drafts/sending have a separate approved delivery contract |
+
+These are durable capability boundaries, not a task/status backlog. GitHub Issues
+own implementation scope, labels, provider acceptance and execution evidence.
+Backend work precedes TS/Svelte integration; full M7 coverage remains separate.
+
+The first integrated acceptance connects two distinct IMAP accounts, lists their
+folders/messages, opens content without changing remote flags, resumes after a
+restart and stops synchronization after disconnect. Focused guardrails cover
+account/root isolation, current read/stream revoke, UIDVALIDITY reset, changed
+flags/expunges, stale-worker fencing, TLS/destination denial, secret-free
+logs/replay, MIME/content bounds and empty/reopened migration replay. Exercise a
+real local IMAP fixture and the signed Gate/Core/NATS path; a parser or mock alone
+does not establish integration or provider compatibility.
+
+Provider matrices, long outage/rate-limit behavior, full MIME/HTML compatibility,
+large-history load, crash/restore, key rotation/recovery and all-client regression
+belong to M7 verification. Encrypted credentials and their protected recovery key
+must be considered alongside SQLite, cached content and relevant JetStream state.

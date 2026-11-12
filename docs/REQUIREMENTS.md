@@ -7,15 +7,16 @@
 ## 1. Product, goals and scope
 
 Arc is a self-hosted team collaboration platform with shared identity, workspaces,
-groups and ACL; tasks, calendars, contacts, files and hierarchical pages; then
-connectors, agents and workflows. REST, CalDAV, CardDAV, WebDAV and tools use the
-same permissions. Users retain control of data without a developer cloud or a
-mandatory GitHub dependency. Engineering materials and new UI use English.
+groups and ACL; tasks, calendars, contacts, files, hierarchical pages and planned
+multi-account IMAP mail; then connectors, agents and workflows. REST, CalDAV,
+CardDAV, WebDAV and tools use the same permissions. Users retain control of data
+without a developer cloud or a mandatory GitHub dependency. Engineering materials
+and new UI use English.
 
 Actors: installation owner, workspace admin, member, guest, service and explicitly
 delegated AI agent. Initial scope excludes enterprise IAM (SAML/SCIM/LDAP), CRM,
 Notion databases, browser DOCX/XLSX editing, a Kubernetes/Portainer replacement,
-built-in mail, initial third-party DAV sync and hostile-code isolation in ordinary Docker.
+inbound SMTP/MX hosting, initial third-party DAV sync and hostile-code isolation in ordinary Docker.
 
 ### 1.1 Kuayle adaptation
 
@@ -299,6 +300,55 @@ actor/on_behalf_of provenance and bounded traced runs.
 
 Management requires explicit trusted policy/signing keys and node-scoped authority. See [Runtime architecture](ARCHITECTURE.md#7-runtime-control-and-infrastructure-agent) and [Agent configuration](../services/agent/README.md); #13 owns remaining integration and driver acceptance. M7 covers full crash/offline/replica/recovery.
 
+### 2.14 Mail / IMAP (P1)
+
+Mail is planned, with personal read-only accounts as the first delivery. Its
+presence here does not establish a service binary, routes or provider acceptance.
+See [Mail design](MAIL.md) for ownership, authentication and delivery boundaries.
+
+- **MAIL-01:** Connect multiple independent external IMAP accounts per user.
+  Each connection has its own ACL root, remote login, configuration, selected
+  folders, cache policy and safe status. Personal accounts are not implicitly
+  shared with workspaces; workspace/shared accounts are a later delivery.
+- **MAIL-02:** Verified TLS and capability-based IMAP4rev1/IMAP4rev2 support;
+  password/application-password authentication where supported and provider OAuth2
+  adapters. Claim Gmail/Microsoft compatibility only after the relevant OAuth and
+  provider path is implemented and exercised.
+- **MAIL-03:** Write-only external credential management with encrypted storage,
+  separately provisioned keys, scope binding, rotation/revoke and safe recovery.
+  Secrets never enter logs, events, exports or replay results; credential request
+  hashing/retries also require explicit review before implementation.
+- **MAIL-04:** Bounded asynchronous folder/message synchronization, durable cursors,
+  restart/resume, leases/fencing, retries and safe progress/error reporting.
+  Remote identity binds account/folder/UIDVALIDITY/UID; reconcile changed flags
+  and expunges as well as new UIDs. Polling is sufficient; IDLE/CONDSTORE/QRESYNC
+  optimize supported servers. UIDVALIDITY changes require a controlled rescan.
+- **MAIL-05:** Local paginated lists and message reads with current account ACL;
+  unified Inbox preserves source-account identity. Fetch metadata first and
+  content on demand or by bounded prefetch. First delivery uses EXAMINE/BODY.PEEK
+  without changing remote flags, folders or messages.
+- **MAIL-06:** Separate revocable background synchronization authority bound to
+  the account/owner/scope and connection/credential generation. It works without
+  an open browser session, checks current Core/Fabric authority and fences stale
+  work. Disconnect stops sessions/jobs and revokes consent/credentials; retained
+  cache remains subject to current ACL. Core outage fails closed.
+- **MAIL-07:** Owner-private MIME/content cache, quotas and bounded parsing;
+  attachment bytes use approved private streaming behind Gate. Plain text and
+  attachment metadata/downloads first; sanitized HTML/CID handling later, external
+  resources default off. Apply destination policy to IMAP/OAuth endpoints.
+- **MAIL-08:** Independent SQLite/migrations and atomic metadata/cursor/audit/
+  replay/outbox, safe content promotion and minimal invalidations. Notify and
+  saving attachments into Files require separate approved source/target checks.
+- **MAIL-09 (later):** Remote flag changes, moves/deletion, workspace/shared
+  accounts and optional integrations. SMTP submission, drafts and sending require
+  their own action scopes and delivery/retry semantics. SMTP/MX hosting remains
+  outside the product scope.
+- **MAIL-10:** Focused integrated acceptance connects two accounts, reads folders/
+  messages without changing remote flags, resumes after restart and stops after
+  disconnect. Require isolation/revoke, UIDVALIDITY, stale-worker, TLS/destination,
+  secret-leak, MIME/size and migration guardrails. Full provider/client, recovery
+  and load matrices belong to M7.
+
 ## 3. Non-functional requirements
 
 | ID | Requirement | Evidence |
@@ -308,7 +358,7 @@ Management requires explicit trusted policy/signing keys and node-scoped authori
 | N-03 Reliability | Outbox, idempotent consumers, retry/deadline/shutdown | Network/crash/duplicate tests |
 | N-04 Portability | Linux/Compose, documented storage and backup/restore | Clean-host install and restore |
 | N-05 Observability | Safe JSON logs, request/trace IDs, health/readiness and metrics | Correlated end-to-end request |
-| N-06 Compatibility | Approved CalDAV/CardDAV/WebDAV clients | Client integration matrix |
+| N-06 Compatibility | Approved CalDAV/CardDAV/WebDAV clients and Mail IMAP providers | Client/provider integration matrix |
 | N-07 UX | Responsive Svelte 5, search, keyboard and accessible navigation | Browser/accessibility checks |
 | N-08 Language | English UI and engineering materials; other locales optional | Key flows and language scan |
 | N-09 Contracts | Immutable digests, API major isolation, additive compatibility | Contract/version/collision tests |
@@ -321,7 +371,8 @@ Other SLOs, p95/RTO/RPO and capacity require measurements.
 
 ### 3.1 SQL storage
 
-Core, Task, Files, Pages and Notify own separate local SQLite files and GORM models/migrations;
+Core, Task, Files, Pages, Notify, Calendar and Contacts own separate local SQLite
+files and GORM models/migrations; planned Mail follows the same ownership rule.
 Core modules share its file and Gate has no DB. Explicit Gormigrate before traffic,
 immutable IDs, safe replay and denial of unknown history. WAL/foreign keys/busy
 timeout on every connection. Owner mounts/OS permissions and RPC/events isolate
@@ -336,7 +387,7 @@ busy transactions. Independent SQLite replicas across hosts are unsupported.
 |---|---|---|
 | M0 Foundation | Core, NATS/JetStream, SDK, Gate, proof Task/Notify, migrations, fake Runtime | Focused vertical smoke and mandatory guardrails; no Docker management required |
 | M1 Office Core | Product Identity, Task/Projects/Views, Pages, resource links, Notify, English UI | Two-workspace/personal/product paths integrated |
-| M2 Personal Data | Calendars/CalDAV, Contacts/CardDAV, free_busy and groups | One client per protocol smoke; full client matrix in M7 |
+| M2 Personal Data | Calendars/CalDAV, Contacts/CardDAV, free_busy, groups and planned personal read-only IMAP Mail | One client per DAV protocol; two-account IMAP read/sync/restart/disconnect smoke; full matrices in M7 |
 | M3 Files | Storage, WebDAV/shares and attachment migration | Streaming/sync/revoke happy path |
 | M4 Automation | Event catalog, CEL/Starlark workflows and run history | Durable path, replay and denied-action guards |
 | M5 Integration & Agents | Connectors, bounded agents, tools/MCP and approvals | One approved end-to-end path using shared ACL |
@@ -359,6 +410,10 @@ No whole-milestone readiness follows from a historical issue closure or one test
 8. Invalid service digest/major/schema/proof denies; duplicate events preserve internal effects.
 9. Runtime UI changes desired replicas; Agent reconciles and denies privileged/bootstrap targets.
 10. Restore databases, objects, secrets and relevant JetStream state on a clean host.
+11. Multiple IMAP accounts retain isolation, UID/flag/expunge coherence and bounded
+    content handling across reconnect/restart; revoked synchronization and read
+    access remain denied. Exercise supported provider authentication and protected
+    credential/cache recovery.
 
 ## 6. Readiness and verification policy
 
@@ -367,6 +422,14 @@ Use the single [readiness and verification policy](ARCHITECTURE.md#10-verificati
 ## 7. Deferred design decisions
 
 Issue status and implementation evidence belong in [GitHub Issues](https://github.com/pavlith/arc/issues), never a duplicated delivery report. Still requiring explicit design approval: personal Task ownership/import; M2 cross-workspace sharing/DAV scheduling and client matrix; M3 WebDAV locking/versioning/stream revoke; M4–M5 Starlark limits, connector secrets and approvals; beyond-M6 placement/rollback/zero-downtime. All implementations preserve operation-bound proofs, online ACL, signed routes and transaction/outbox integrity.
+
+The Mail direction and personal read-only first boundary are approved. Concrete
+Mail credential write/encryption/OAuth/key-recovery contracts and noninteractive
+Core synchronization authority must be specified with focused security guardrails
+in their owning implementation Issues before connections are enabled;
+[Mail](MAIL.md) records the boundaries. Existing general connector-secret/vault
+approval rules remain unchanged. This design does not install a secret store,
+worker permission or provider app.
 
 ## 8. M7 verification
 

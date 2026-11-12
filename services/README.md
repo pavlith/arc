@@ -14,6 +14,15 @@
 
 These are code surfaces, **not production acceptance**. Progress, unfinished UI and verification live in [GitHub Issues](https://github.com/pavlith/arc/issues), not this catalog. `main` is authoritative; historical delivery notes are in Git.
 
+## Planned Mail owner
+
+[Mail](../docs/MAIL.md) defines a future `services/mail` / `arc-mail` owner for
+multiple external IMAP accounts, personal read-only synchronization, encrypted
+credentials and a private content cache. No Mail package, executable, migrator,
+manifest or deployment configuration exists yet. Workspace/shared accounts,
+remote mutations, Notify/Files integration and SMTP submission follow separate
+approved delivery boundaries. See [MAIL-01–MAIL-10](../docs/REQUIREMENTS.md#214-mail--imap-p1).
+
 ## Shared rules
 Each SQL owner has its own explicit migrations, models, idempotency/replay and transactional outbox; no cross-owner database joins. Domain services compose typed modules with `sdk/service`, private NATS and signed installation contracts. Core alone owns Identity/Access/Fabric authority; Gate does not store or infer ACL. Never trust a browser, a known UUID, a source resource reference or a previous grant to authorize a target read. Revocation and unavailable Core fail closed; NATS carries metadata, not file bytes.
 

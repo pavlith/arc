@@ -307,6 +307,11 @@ Task root discovery separates current `task.read` and `access.grants.manage` aut
 
 All protected requests exchange an operation-/audience-bound invocation and fresh proof. Domain services recheck root binding, current ACL, replay and request integrity. Preserve request/trace IDs, deadlines and idempotency; never cache ACL in a route snapshot. Missing responder is unavailable; deadlines and authority outages fail closed. The signed manifest and implementation are authoritative for exact route payloads.
 
+After request-schema validation, a signed `workspace_from` selector may resolve to
+an explicit empty string for personal scope when the schema permits it. Missing
+or non-string values fail validation. Resource selectors remain nonempty; Core
+and the domain owner still verify the actual root and workspace binding.
+
 The optional Gate `/api/v1/arc/realtime` WSS adapter is implemented but disabled by default. It requires live browser Origin/session/CSRF, exact private event subscriptions and metadata-only invalidations with authorized refetch; see [Realtime](REALTIME.md). DAV remains a planned Gate adapter with the same ACL, revocation, opaque storage and protocol-specific validation. Browser auth is not a DAV credential.
 
 ## 7. Runtime Control and Infrastructure Agent

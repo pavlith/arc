@@ -301,7 +301,7 @@ func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer opCancel()
 	workspace := ""
 	if en.op.Auth.WorkspaceFrom != "" {
-		workspace, e = contract.Extract(payload, en.op.Auth.WorkspaceFrom)
+		workspace, e = workspaceScope(payload, en.op.Auth.WorkspaceFrom)
 		if e != nil {
 			writeError(w, id, fault(rpc.CodeValidation))
 			return
@@ -359,6 +359,32 @@ func readObject(r *http.Request) (map[string]any, error) {
 	}
 	return out, nil
 }
+
+// workspaceScope follows an approved selector after request-schema validation.
+// An explicit empty string represents personal scope; absent/non-string values
+// remain invalid. Resource selectors continue using nonempty contract.Extract.
+func workspaceScope(payload json.RawMessage, selector string) (string, error) {
+	if !strings.HasPrefix(selector, "payload.") {
+		return "", contract.ErrInvalid
+	}
+	var value any
+	if json.Unmarshal(payload, &value) != nil {
+		return "", contract.ErrInvalid
+	}
+	for _, field := range strings.Split(strings.TrimPrefix(selector, "payload."), ".") {
+		object, ok := value.(map[string]any)
+		if !ok {
+			return "", contract.ErrInvalid
+		}
+		value = object[field]
+	}
+	workspace, ok := value.(string)
+	if !ok {
+		return "", contract.ErrInvalid
+	}
+	return workspace, nil
+}
+
 func bindPayload(r *http.Request, en entry, params map[string]string) (json.RawMessage, error) {
 	body, e := readObject(r)
 	if e != nil {

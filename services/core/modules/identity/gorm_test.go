@@ -156,7 +156,7 @@ func TestSQLiteIdentityInvocationRechecksUserAndDelegation(t *testing.T) {
 		}
 	}
 	if err := db.Exec(`INSERT INTO identity_sessions
-		(id,user_id,secret_hash,csrf_hash,expires_at) VALUES('s','u',?,?,?)`,
+		(id,user_id,secret_hash,csrf_hash,expires_at,auth_channel) VALUES('s','u',?,?,?,'cli')`,
 		[]byte("secret"), []byte("csrf"), now.Add(time.Hour)).Error; err != nil {
 		t.Fatal(err)
 	}

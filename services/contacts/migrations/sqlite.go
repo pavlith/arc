@@ -15,6 +15,8 @@ func SQLite() []*gormigrate.Migration {
 			}
 		}
 		return nil
+	}}, {ID: "000002_contacts_vcard", Migrate: func(tx *gorm.DB) error {
+		return tx.Exec("ALTER TABLE contacts ADD COLUMN v_card_raw TEXT NOT NULL DEFAULT ''").Error
 	}}}
 }
 

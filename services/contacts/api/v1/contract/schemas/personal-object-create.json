@@ -1,0 +1,31 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "const": ""
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "contact_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "if_none_match": {
+      "const": true
+    },
+    "data": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 98304
+    }
+  },
+  "required": [
+    "acl_root_id",
+    "contact_id",
+    "if_none_match",
+    "data"
+  ],
+  "additionalProperties": false
+}

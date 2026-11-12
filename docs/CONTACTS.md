@@ -1,11 +1,12 @@
 # Contacts backend
 
-Contacts 0.1.0 is an independent SQLite owner with the signed `contacts/v1`
+Contacts 0.2.0 is an independent SQLite owner with the signed `contacts/v1`
 contract. This foundation implements personal/workspace address books and native
-structured contact CRUD/search for [K-01 and initial K-02](REQUIREMENTS.md#27-contacts--carddav-p1).
-vCard import/export, unknown-property preservation, CardDAV, incremental sync,
-photos/Files references, resource links, remote sources and CRM remain deferred.
-Native custom fields do not imply vCard property round-trip support.
+structured contact CRUD/search and vCard objects for [K-01 and initial K-02](REQUIREMENTS.md#27-contacts--carddav-p1).
+Bounded vCard 3.0/4.0 import/export preserves unknown properties and parameters.
+CardDAV transport/credentials, incremental sync, photos/Files references, resource
+links, remote sources and CRM remain deferred. K-03 is not fully accepted by these
+owner APIs.
 
 ## Roots and authority
 
@@ -39,7 +40,7 @@ invocation and a stable downstream idempotency key. No content grant is implicit
 
 Workspace base: `/api/v1/contacts/workspaces/{workspace_id}/roots/{acl_root_id}`.
 Personal base: `/api/v1/contacts/personal/roots/{acl_root_id}`. Personal requests
-omit `workspace_id` or use `""`; responses include `""`. The 16 exact operation IDs,
+omit `workspace_id` or use `""`; responses include `""`. The 24 exact operation IDs,
 NATS subjects and schemas live in [the manifest](../services/contacts/api/v1/contract/manifest.json).
 
 | Method / suffix | Behavior / action |
@@ -51,14 +52,19 @@ NATS subjects and schemas live in [the manifest](../services/contacts/api/v1/con
 | PUT `/contacts/{contact_id}` | Replace all fields with expected `revision`; `contacts.write` |
 | DELETE `/contacts/{contact_id}` | Soft-delete with expected `revision`; `contacts.delete` |
 | GET `/contacts?limit=...&query=...&cursor=...` | Search summaries in one book; `contacts.read` |
+| GET `/objects/{contact_id}` | vCard data, UID, ETag and revision; `contacts.read` |
+| POST `/objects/{contact_id}` | Conditional create-only vCard import; `contacts.create` |
+| PUT `/objects/{contact_id}` | Conditional full vCard replacement; `contacts.write` |
+| DELETE `/objects/{contact_id}` | Conditional soft deletion; `contacts.delete` |
 | POST `/grants` | Add user/group action grant or revoke by `grant_id`; `access.grants.manage` |
 
 Commands require `Idempotency-Key`. An identical retry returns the committed
 result only after current authorization; changed payloads conflict. Revisions
 start at 1; stale writes return a conflict. PUT is full replacement: omitted
-optional fields are cleared. IDs are generated UUIDs. The immutable generated UID
-is `<id>@arc`; UID uniqueness includes soft-deleted records within a book. UID is
-not a permission or caller-supplied create key.
+optional fields are cleared. Native create generates a UUID and UID `<id>@arc`. Object create accepts a
+caller-chosen UUID and the card's UID. The UID is immutable through either API;
+uniqueness includes soft-deleted records within a book, while the same UID may
+exist in independently permissioned books. UID is not a permission.
 
 Create example (same fields for PUT, plus expected `revision`):
 
@@ -115,6 +121,91 @@ returned ID when more rows remain. Continue with the same book/query and that
 cursor. This is current-state pagination, not a frozen sync snapshot: concurrent
 changes can affect subsequent pages.
 
+## vCard objects and native coherence
+
+These are JSON owner operations for a later CardDAV adapter; there is no new DAV
+HTTP/XML endpoint, media negotiation, discovery or DAV credential. Rules follow
+[vCard 4.0](https://www.rfc-editor.org/rfc/rfc6350.html) and the bounded
+[vCard 3.0](https://www.rfc-editor.org/rfc/rfc2426.html) subset below. Unknown
+parameter text, including [caret-encoded values](https://www.rfc-editor.org/rfc/rfc6868.html),
+is retained without interpretation.
+
+POST `/objects/{contact_id}` takes `{"if_none_match":true,"data":"BEGIN:VCARD\r\n..."}`;
+PUT takes `{"if_match":"\"<64 lowercase hex characters>\"","data":"..."}`;
+DELETE takes `{"if_match":"\"<64 lowercase hex characters>\""}`. The match value
+is the exact quoted `etag` returned by object GET or a successful object command.
+These are JSON fields, not HTTP conditional headers. No wildcard, weak validator,
+validator list, unconditional overwrite or UID rebinding is accepted. Syntax
+errors return validation errors; stale validators, duplicate IDs or same-book
+UIDs (including tombstones) conflict. Missing/deleted objects are unavailable.
+
+An object response contains scope, `contact_id`, `uid`, `etag`, `revision` and
+`data`. ETag hashes the stored revision and serialized data, so even a committed
+same-content replacement changes it. Idempotent replay returns the original
+result after current authorization, regardless of later edits; that old result
+must not be treated as the current representation. Native JSON writes and object
+writes share the same row, revision, online ACL, replay/audit/outbox and soft delete.
+A native update invalidates the object's previous ETag and vice versa. Imported
+`REV` is retained as opaque text; it does not control owner revisions or clocks.
+
+Each import is one UTF-8 VCARD, version 3.0 or 4.0, with VERSION first, one nonempty
+UID and one FN. Version 3.0 also requires N. UID is at most 255 bytes without
+whitespace/control characters; a URI-valued UID requires a scheme. Version 4.0
+native export uses `UID;VALUE=text:<id>@arc`. Duplicate singleton projections
+(UID/FN/N/ORG/ROLE/NOTE), nested/multiple cards, malformed property headers,
+unsupported versions, unsupported managed VALUE/ENCODING/CHARSET representations
+or native projection bound failures are rejected. Multi-language alternate FN
+instances and legacy vCard 2.1/quoted-printable/charset conversion are deferred.
+
+Native projection:
+
+| vCard property | Native field / preserved remainder |
+|---|---|
+| FN | `display_name` |
+| N (five components) | family/given/additional name, prefix, suffix |
+| ORG | First organization component; remaining units stay in the object |
+| ROLE | `role`; TITLE is independent opaque data |
+| TEL / EMAIL | Repeated `phones` / `emails` in property order |
+| ADR (seven components) | street/locality/region/postal code/country; PO box and extended-address components stay in the object |
+| NOTE | `notes` |
+| X-ARC-CUSTOM;X-ARC-KEY=... | Native custom field; key is unpadded base64url of its UTF-8 bytes |
+
+TEXT values decode backslash/comma/semicolon/newline escapes. Structured component
+lists project as comma-containing strings, while their original separators remain
+in the template until that component is explicitly edited. Managed text must use
+UTF-8 without transfer encoding; TEL additionally supports version 4 URI values
+and version 3 phone-number values. URI phone values remain literal strings in the
+native projection; a native value edit exports TEXT. ADR needs at least one
+projected non-label field, so a PO-box-only card is outside this subset.
+
+TYPE token lists become comma-joined native labels. Native labels that fit token
+lists use TYPE; other labels use Arc's `X-ARC-LABEL-B64` parameter (unpadded
+base64url UTF-8). This Arc parameter takes precedence when present. Changing a
+label changes only these modeled parameters; unrelated parameters remain intact.
+Unmodeled properties are not added to native search.
+Unknown properties, grouped names, photo data/URIs, TITLE, vendor extensions and
+unmodeled parameter text are retained as inert card data. Nothing is fetched,
+executed, displayed as an image or resolved through Files automatically.
+
+Native full replacement clears omitted modeled fields, but patches their old
+property lines rather than rebuilding imported data. Changed names/organization/
+address components retain unprojected neighbors and unknown parameters. Repeated
+items first match unchanged values (including labels), then matching values
+without labels, then unused old positions for explicit edits; survivors retain
+their original group/metadata during removal or reordering. Ambiguous simultaneous
+value edits use position. Removing a modeled item removes its own property line;
+independent opaque properties remain. Use full object replacement when exact
+vendor-specific group restructuring is intended.
+
+Input accepts CRLF or LF. Output uses CRLF and folds at 75 octets without splitting
+UTF-8; physical folding and line grouping may normalize, so preservation is not a
+byte-identical copy of the upload. Each card fits 96 KiB and its JSON-encoded data
+string fits 160 KiB; headers fit 4 KiB, unfolded lines 64 KiB, parameter occurrences
+32 per property, physical lines 2048 and interior properties 512. Existing native
+field/collection bounds still apply. A native merge that would exceed an object
+budget fails atomically and retains the previous card, rather than discarding
+opaque extensions. No external parser, network lookup or charset conversion runs.
+
 ## Persistence and events
 
 Create/replace/delete and book rename commit domain data, audit, command replay
@@ -138,8 +229,14 @@ go run ./cmd/arc-contacts -config /absolute/contacts.json
 
 Use [the config example](../deploy/contacts/config.example.json), private owner DB,
 service account/signing seed/NATS credentials and Core's public trust root. Startup
-never runs migrations. Install and approve the exact artifact digest, all required
-operation subjects, resource types/actions and downstream bindings. Gate needs
+never runs migrations. Migration `000002_contacts_vcard` adds opaque storage without
+rewriting existing contacts, UIDs, revisions or tombstones. Existing rows export
+deterministic native vCard 4.0 until the next write materializes their card. Install and approve the exact artifact digest, all required
+operation subjects, resource types/actions and downstream bindings. Version 0.2.0
+requires operator reapproval of the new digest and four `contacts.objects.*` plus
+four `contacts.personal.objects.*` operations (get/create/update/delete), each
+with its exact existing read/create/write/delete action and Access check binding.
+Gate needs
 explicit Contacts RPC publication. The Contacts broker role needs only its own
 RPC subscriptions, identity/access/Fabric control subjects and
 `evt.contacts.catalog.changed.v1` publication; provision the JetStream stream
@@ -147,7 +244,8 @@ separately. The isolated live fixture is an example, not production installation
 or authorization to widen deployed credentials.
 
 Focused tests cover CRUD/CAS/replay/rollback, bounded normalized input, Unicode
-search, serialized list budgets, root/claim/personal denial and migration replay
+search, serialized list budgets, vCard unknown-property/native round-trip, ETag
+conditions, UID/tombstones, root/claim/personal denial and migration replay
 on reopened SQLite. `scripts/test-files-live.sh` additionally exercises the real
 signed Gate/Core/Access/NATS/JetStream path with separate service credentials,
 two workspaces and personal books. Record actual runs in the delivery Issue.

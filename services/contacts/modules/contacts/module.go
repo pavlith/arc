@@ -251,5 +251,25 @@ func (s *Module) Register(r *module.Registry) error {
 			return err
 		}
 	}
+	for _, op := range []module.Query[v1.ContactRef, v1.VCardObject]{v1.GetObject, v1.PersonalGetObject} {
+		if err := module.BindQuery(r, op, p, s.getObject); err != nil {
+			return err
+		}
+	}
+	for _, op := range []module.Command[v1.ObjectCreate, v1.VCardObject]{v1.CreateObject, v1.PersonalCreateObject} {
+		if err := module.BindCommand(r, op, p, store, s.createObject); err != nil {
+			return err
+		}
+	}
+	for _, op := range []module.Command[v1.ObjectUpdate, v1.VCardObject]{v1.UpdateObject, v1.PersonalUpdateObject} {
+		if err := module.BindCommand(r, op, p, store, s.updateObject); err != nil {
+			return err
+		}
+	}
+	for _, op := range []module.Command[v1.ObjectDelete, v1.Mutation]{v1.DeleteObject, v1.PersonalDeleteObject} {
+		if err := module.BindCommand(r, op, p, store, s.deleteObject); err != nil {
+			return err
+		}
+	}
 	return nil
 }

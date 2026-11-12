@@ -792,6 +792,28 @@ authorization {users: [
 			return out
 		}
 		ea, eb, epa, epb := create(cwa, ta), create(cwb, tb), create(cpa, ta), create(cpb, tb)
+		cardData := "BEGIN:VCARD\r\nVERSION:4.0\r\nUID:urn:uuid:external-live-contact\r\nFN:External contact\r\nN:Contact;External;;;\r\nX-VENDOR;X-PARAM=keep:opaque\r\nEND:VCARD\r\n"
+		importObject := func(scope contactsv1.Scope, token string) contactsv1.VCardObject {
+			raw, _ := json.Marshal(map[string]any{"if_none_match": true, "data": cardData})
+			status, b := request("POST", base(scope)+"/objects/"+folders.NewID(), string(raw), token, "application/json")
+			if status != 201 {
+				t.Fatalf("vCard import: %d %s", status, b)
+			}
+			var out contactsv1.VCardObject
+			must(json.Unmarshal(b, &out))
+			return out
+		}
+		imported, personalObject := importObject(cwa, ta), importObject(cpa, ta)
+		for _, tc := range []struct {
+			scope     contactsv1.Scope
+			id, token string
+		}{{cwb, imported.ContactID, tb}, {cpa, personalObject.ContactID, tb}} {
+			status, b := request("GET", base(tc.scope)+"/objects/"+tc.id, "", tc.token, "")
+			if !isDenied(status) {
+				t.Fatalf("vCard known-ID isolation: %d %s", status, b)
+			}
+		}
+
 		for _, tc := range []struct {
 			scope     contactsv1.Scope
 			id, token string
@@ -818,6 +840,38 @@ authorization {users: [
 		if status != 200 || !bytes.Contains(b, []byte(input.Notes)) {
 			t.Fatalf("shared contact read: %d %s", status, b)
 		}
+		objectPath := base(cwa) + "/objects/" + imported.ContactID
+		status, b = request("GET", objectPath, "", tb, "")
+		if status != 200 {
+			t.Fatalf("shared vCard read: %d %s", status, b)
+		}
+		objectUpdate, _ := json.Marshal(map[string]string{"if_match": imported.ETag, "data": imported.Data})
+		status, b = request("PUT", objectPath, string(objectUpdate), tb, "application/json")
+		if !isDenied(status) {
+			t.Fatalf("read-only vCard write: %d %s", status, b)
+		}
+		status, b = request("PUT", base(cwa)+"/contacts/"+imported.ContactID, `{"display_name":"Native vCard edit","revision":1}`, ta, "application/json")
+		if status != 200 {
+			t.Fatalf("native imported contact edit: %d %s", status, b)
+		}
+		status, b = request("GET", objectPath, "", ta, "")
+		var nativeObject contactsv1.VCardObject
+		must(json.Unmarshal(b, &nativeObject))
+		if status != 200 || nativeObject.UID != imported.UID || nativeObject.ETag == imported.ETag || !strings.Contains(nativeObject.Data, "FN:Native vCard edit") || !strings.Contains(nativeObject.Data, "X-VENDOR;X-PARAM=keep:opaque") {
+			t.Fatalf("native/vCard coherence: %d %s", status, b)
+		}
+		status, b = request("PUT", objectPath, string(objectUpdate), ta, "application/json")
+		if status != 409 {
+			t.Fatalf("stale vCard ETag: %d %s", status, b)
+		}
+		objectUpdate, _ = json.Marshal(map[string]string{"if_match": nativeObject.ETag, "data": strings.Replace(nativeObject.Data, "Native vCard edit", "Conditional edit", 1)})
+		status, b = request("PUT", objectPath, string(objectUpdate), ta, "application/json")
+		var savedObject contactsv1.VCardObject
+		must(json.Unmarshal(b, &savedObject))
+		if status != 200 || savedObject.Revision != 3 || savedObject.ETag == nativeObject.ETag {
+			t.Fatalf("conditional vCard write: %d %s", status, b)
+		}
+
 		update, _ := json.Marshal(map[string]any{"display_name": "Renamed contact", "revision": 1})
 		status, b = request("PUT", base(cwa)+"/contacts/"+ea.ID, string(update), tb, "application/json")
 		if !isDenied(status) {
@@ -842,6 +896,21 @@ authorization {users: [
 		if !isDenied(status) {
 			t.Fatalf("revoked contact read: %d %s", status, b)
 		}
+		status, b = request("GET", objectPath, "", tb, "")
+		if !isDenied(status) {
+			t.Fatalf("revoked vCard read: %d %s", status, b)
+		}
+		staleDelete, _ := json.Marshal(map[string]string{"if_match": nativeObject.ETag})
+		status, b = request("DELETE", objectPath, string(staleDelete), ta, "application/json")
+		if status != 409 {
+			t.Fatalf("stale vCard delete: %d %s", status, b)
+		}
+		deleteObject, _ := json.Marshal(map[string]string{"if_match": savedObject.ETag})
+		status, b = request("DELETE", objectPath, string(deleteObject), ta, "application/json")
+		if status != 200 {
+			t.Fatalf("conditional vCard delete: %d %s", status, b)
+		}
+
 		// Core owns group membership; revoking membership invalidates the next read.
 		group, e := id.CreateGroup(ctx, sa, wa, "Contacts readers")
 		must(e)
@@ -894,10 +963,10 @@ authorization {users: [
 		}
 		info, e := js.StreamInfo("CONTACTS")
 		must(e)
-		if info.State.Msgs != 6 {
+		if info.State.Msgs != 11 {
 			t.Fatalf("Contacts events: %d", info.State.Msgs)
 		}
-		t.Log("PASS: Contacts signed Gate/Core/Access path, independent DB, two workspaces + personal books, known-ID denial, Unicode search, full replacement/CAS, read-only/user+group revoke and JetStream outbox")
+		t.Log("PASS: Contacts signed Gate/Core/Access path, independent DB, two workspaces + personal books, known-ID denial, Unicode search, full replacement/CAS, vCard unknown-property/native round-trip and conditional ETags, read-only/user+group revoke and JetStream outbox")
 	}
 
 	// Calendar: real signed Gate -> owner -> Access path and independent outbox.

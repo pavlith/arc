@@ -378,7 +378,7 @@ M6: integrated single-node Docker lifecycle, approved templates, desired/observe
 | Files | Owner-local file/folder metadata, quotas, resumable bytes and private signed mTLS stream; [Files](FILES.md) |
 | Pages | Personal/workspace Tiptap tree, versions, restore and referenced resources; [Pages](PAGES.md) |
 | Notify | Per-user Inbox, approved subscriptions, transactional hints and optional signed HTTPS webhook; [Notify](NOTIFY.md) |
-| Calendars / Contacts | Planned CalDAV, CardDAV and free/busy under the same ACL |
+| Calendars / Contacts | Independent calendar/address-book owners and iCalendar/vCard objects under the same ACL; DAV adapters planned; [Calendar](CALENDAR.md), [Contacts](CONTACTS.md) |
 | Agents / Workflows / Connectors | Bounded approved tools, durable events, delegation and external credentials; [Requirements](REQUIREMENTS.md) |
 
 Each domain process owns its SQLite schema and transactional replay/outbox; no cross-owner SQL or implicit grants. A task attachment, avatar or page reference is an opaque pointer **not** a permission; target title/preview/bytes require a fresh actor-scoped target read and exact signed invocation edge. Cross-root moves are rejected, archives deny content at the next check, and failure to resolve policy fails closed. [Resource references](RESOURCE-REFERENCES.md) define those checks.

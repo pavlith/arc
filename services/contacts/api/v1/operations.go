@@ -19,4 +19,12 @@ var (
 	PersonalDeleteContact = module.Command[Delete, Mutation]{ID: "contacts.personal.contacts.delete"}
 	PersonalListContacts  = module.Query[List, ContactList]{ID: "contacts.personal.contacts.list"}
 	PersonalRootGrants    = module.Command[Grant, GrantResult]{ID: "contacts.personal.roots.grants"}
+	GetObject             = module.Query[ContactRef, VCardObject]{ID: "contacts.objects.get"}
+	CreateObject          = module.Command[ObjectCreate, VCardObject]{ID: "contacts.objects.create"}
+	UpdateObject          = module.Command[ObjectUpdate, VCardObject]{ID: "contacts.objects.update"}
+	DeleteObject          = module.Command[ObjectDelete, Mutation]{ID: "contacts.objects.delete"}
+	PersonalGetObject     = module.Query[ContactRef, VCardObject]{ID: "contacts.personal.objects.get"}
+	PersonalCreateObject  = module.Command[ObjectCreate, VCardObject]{ID: "contacts.personal.objects.create"}
+	PersonalUpdateObject  = module.Command[ObjectUpdate, VCardObject]{ID: "contacts.personal.objects.update"}
+	PersonalDeleteObject  = module.Command[ObjectDelete, Mutation]{ID: "contacts.personal.objects.delete"}
 )

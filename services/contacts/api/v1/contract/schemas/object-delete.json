@@ -1,0 +1,28 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "contact_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "if_match": {
+      "type": "string",
+      "pattern": "^\"[0-9a-f]{64}\"$"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "acl_root_id",
+    "contact_id",
+    "if_match"
+  ],
+  "additionalProperties": false
+}

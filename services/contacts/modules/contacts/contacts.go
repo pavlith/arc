@@ -147,6 +147,10 @@ func (s *Module) row(ctx context.Context, db *gorm.DB, q v1.ContactRef) (models.
 	return row, dbError(err)
 }
 func (s *Module) create(ctx context.Context, tx *gorm.DB, q v1.Create) (v1.Contact, error) {
+	id := newID()
+	return s.createStored(ctx, tx, q, id, id+"@arc", "")
+}
+func (s *Module) createStored(ctx context.Context, tx *gorm.DB, q v1.Create, id, uid, raw string) (v1.Contact, error) {
 	in, fields, err := validate(q.Input)
 	if err != nil {
 		return v1.Contact{}, err
@@ -159,9 +163,16 @@ func (s *Module) create(ctx context.Context, tx *gorm.DB, q v1.Create) (v1.Conta
 	if count >= 10000 {
 		return v1.Contact{}, invalid()
 	}
-	id := newID()
 	now := time.Now().UTC()
-	row := models.Contact{ID: id, UID: id + "@arc", WorkspaceID: q.WorkspaceID, RootID: q.RootID, DisplayName: in.DisplayName, Organization: in.Organization, Role: in.Role, Fields: fields, SearchText: searchText(in), Revision: 1, CreatedAt: now, UpdatedAt: now}
+	row := models.Contact{ID: id, UID: uid, WorkspaceID: q.WorkspaceID, RootID: q.RootID, DisplayName: in.DisplayName, Organization: in.Organization, Role: in.Role, Fields: fields, SearchText: searchText(in), Revision: 1, CreatedAt: now, UpdatedAt: now}
+	if raw == "" {
+		raw, err = renderVCard(in, uid, "")
+		if err != nil {
+			return v1.Contact{}, err
+		}
+	}
+	row.VCardRaw = raw
+
 	if err := tx.Create(&row).Error; err != nil {
 		return v1.Contact{}, dbError(err)
 	}
@@ -178,6 +189,9 @@ func (s *Module) get(ctx context.Context, q v1.ContactRef) (v1.Contact, error) {
 	return dto(row)
 }
 func (s *Module) update(ctx context.Context, tx *gorm.DB, q v1.Update) (v1.Contact, error) {
+	return s.updateStored(ctx, tx, q, nil)
+}
+func (s *Module) updateStored(ctx context.Context, tx *gorm.DB, q v1.Update, raw *string) (v1.Contact, error) {
 	row, err := s.row(ctx, tx, q.ContactRef)
 	if err != nil {
 		return v1.Contact{}, err
@@ -189,11 +203,21 @@ func (s *Module) update(ctx context.Context, tx *gorm.DB, q v1.Update) (v1.Conta
 	if err != nil {
 		return v1.Contact{}, err
 	}
+	nextRaw := ""
+	if raw != nil {
+		nextRaw = *raw
+	} else {
+		nextRaw, err = renderVCard(in, row.UID, row.VCardRaw)
+		if err != nil {
+			return v1.Contact{}, err
+		}
+	}
+
 	now := time.Now().UTC()
 	if !now.After(row.UpdatedAt) {
 		now = row.UpdatedAt.Add(time.Nanosecond)
 	}
-	res := tx.Model(&models.Contact{}).Where("id=? AND workspace_id=? AND acl_root_id=? AND revision=? AND deleted_at IS NULL", row.ID, q.WorkspaceID, q.RootID, q.Revision).Updates(map[string]any{"display_name": in.DisplayName, "organization": in.Organization, "role": in.Role, "fields": fields, "search_text": searchText(in), "revision": q.Revision + 1, "updated_at": now})
+	res := tx.Model(&models.Contact{}).Where("id=? AND workspace_id=? AND acl_root_id=? AND revision=? AND deleted_at IS NULL", row.ID, q.WorkspaceID, q.RootID, q.Revision).Updates(map[string]any{"v_card_raw": nextRaw, "display_name": in.DisplayName, "organization": in.Organization, "role": in.Role, "fields": fields, "search_text": searchText(in), "revision": q.Revision + 1, "updated_at": now})
 	if res.Error != nil {
 		return v1.Contact{}, dbError(res.Error)
 	}
@@ -203,6 +227,7 @@ func (s *Module) update(ctx context.Context, tx *gorm.DB, q v1.Update) (v1.Conta
 	row.DisplayName = in.DisplayName
 	row.Organization = in.Organization
 	row.Role = in.Role
+	row.VCardRaw = nextRaw
 	row.Fields = fields
 	row.Revision++
 	row.UpdatedAt = now

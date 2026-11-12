@@ -9,7 +9,7 @@
 | Files | `arc-files` | Personal/workspace metadata, bounded uploads/bytes and safe image delivery | [Files](../docs/FILES.md), [contract](files/api/v1/contract/manifest.json) |
 | Pages | `arc-pages` | Scoped Tiptap tree, versions, templates, ACL-checked references | [Pages](../docs/PAGES.md), [contract](pages/api/v1/contract/manifest.json) |
 | Calendar | `arc-calendar` | Personal/workspace calendars, bounded multiget/sync, iCalendar/UID/ETag, recurrence and free/busy | [Calendar](../docs/CALENDAR.md), [contract](calendar/api/v1/contract/manifest.json) |
-| Contacts | `arc-contacts` | Personal/workspace address books, structured contact CRUD/CAS, bounded search and grants | [Contacts](../docs/CONTACTS.md), [contract](contacts/api/v1/contract/manifest.json) |
+| Contacts | `arc-contacts` | Personal/workspace address books, structured CRUD/search, vCard/UID/ETag, conditional writes and grants | [Contacts](../docs/CONTACTS.md), [contract](contacts/api/v1/contract/manifest.json) |
 | Agent | `arc-agent` | Trusted node runtime, journal and restricted host drivers | [Agent](agent/README.md) |
 
 These are code surfaces, **not production acceptance**. Progress, unfinished UI and verification live in [GitHub Issues](https://github.com/pavlith/arc/issues), not this catalog. `main` is authoritative; historical delivery notes are in Git.

@@ -119,3 +119,27 @@ type Changed struct {
 
 const ChangedSubject = "evt.contacts.catalog.changed.v1"
 const ChangedName = "contacts.catalog.changed"
+
+// VCardObject is owner JSON for a later CardDAV adapter, with no DAV credential.
+type VCardObject struct {
+	Scope
+	ContactID string `json:"contact_id"`
+	UID       string `json:"uid"`
+	ETag      string `json:"etag"`
+	Revision  int64  `json:"revision"`
+	Data      string `json:"data"`
+}
+type ObjectCreate struct {
+	ContactRef
+	IfNoneMatch bool   `json:"if_none_match"`
+	Data        string `json:"data"`
+}
+type ObjectUpdate struct {
+	ContactRef
+	IfMatch string `json:"if_match"`
+	Data    string `json:"data"`
+}
+type ObjectDelete struct {
+	ContactRef
+	IfMatch string `json:"if_match"`
+}

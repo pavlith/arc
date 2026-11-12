@@ -15,6 +15,7 @@ type Root struct {
 func (Root) TableName() string { return "roots" }
 
 type Contact struct {
+	VCardRaw     string
 	ID           string `gorm:"primaryKey"`
 	UID          string
 	WorkspaceID  string

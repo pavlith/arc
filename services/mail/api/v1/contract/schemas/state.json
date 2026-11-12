@@ -1,0 +1,29 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "const": ""
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "state": {
+      "enum": [
+        "enabled",
+        "paused",
+        "disconnected"
+      ]
+    }
+  },
+  "required": [
+    "acl_root_id",
+    "revision",
+    "state"
+  ],
+  "additionalProperties": false
+}

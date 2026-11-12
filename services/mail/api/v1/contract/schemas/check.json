@@ -1,0 +1,59 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "const": ""
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "authentication_failed",
+        "tls_failed",
+        "destination_denied",
+        "unavailable",
+        "protocol_error",
+        "credentials_missing",
+        "paused",
+        "disconnected"
+      ]
+    },
+    "capabilities": {
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "IMAP4REV1",
+          "IMAP4REV2",
+          "AUTH=PLAIN",
+          "SASL-IR",
+          "LOGINDISABLED",
+          "IDLE",
+          "CONDSTORE",
+          "QRESYNC"
+        ]
+      }
+    }
+  },
+  "required": [
+    "workspace_id",
+    "acl_root_id",
+    "revision",
+    "generation",
+    "status",
+    "capabilities"
+  ],
+  "additionalProperties": false
+}

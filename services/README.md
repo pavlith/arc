@@ -10,18 +10,10 @@
 | Pages | `arc-pages` | Scoped Tiptap tree, versions, templates, ACL-checked references | [Pages](../docs/PAGES.md), [contract](pages/api/v1/contract/manifest.json) |
 | Calendar | `arc-calendar` | Personal/workspace calendars, bounded multiget/sync, iCalendar/UID/ETag, recurrence and free/busy | [Calendar](../docs/CALENDAR.md), [contract](calendar/api/v1/contract/manifest.json) |
 | Contacts | `arc-contacts` | Personal/workspace address books, structured CRUD/search, vCard/UID/ETag, conditional writes and grants | [Contacts](../docs/CONTACTS.md), [contract](contacts/api/v1/contract/manifest.json) |
+| Mail | `arc-mail` | Personal IMAP settings, sealed credentials and bounded TLS checks; synchronization planned | [Mail](../docs/MAIL.md), [contract](mail/api/v1/contract/manifest.json) |
 | Agent | `arc-agent` | Trusted node runtime, journal and restricted host drivers | [Agent](agent/README.md) |
 
 These are code surfaces, **not production acceptance**. Progress, unfinished UI and verification live in [GitHub Issues](https://github.com/pavlith/arc/issues), not this catalog. `main` is authoritative; historical delivery notes are in Git.
-
-## Planned Mail owner
-
-[Mail](../docs/MAIL.md) defines a future `services/mail` / `arc-mail` owner for
-multiple external IMAP accounts, personal read-only synchronization, encrypted
-credentials and a private content cache. No Mail package, executable, migrator,
-manifest or deployment configuration exists yet. Workspace/shared accounts,
-remote mutations, Notify/Files integration and SMTP submission follow separate
-approved delivery boundaries. See [MAIL-01–MAIL-10](../docs/REQUIREMENTS.md#214-mail--imap-p1).
 
 ## Shared rules
 Each SQL owner has its own explicit migrations, models, idempotency/replay and transactional outbox; no cross-owner database joins. Domain services compose typed modules with `sdk/service`, private NATS and signed installation contracts. Core alone owns Identity/Access/Fabric authority; Gate does not store or infer ACL. Never trust a browser, a known UUID, a source resource reference or a previous grant to authorize a target read. Revocation and unavailable Core fail closed; NATS carries metadata, not file bytes.
@@ -29,7 +21,7 @@ Each SQL owner has its own explicit migrations, models, idempotency/replay and t
 All operations/paths/schemas are authoritative in each owner's `api/v1/contract/` and code. Public routes and service-to-service downstream calls require **exact operator-approved Fabric manifests, signed routes, scopes, NATS subjects and pinned digests**. Updating an artifact on disk does not update an installed policy. Reapprove consumers when producer digests change. Do not replace specific approvals with wildcard permissions.
 
 ## Startup
-Run each owner's migrator before startup and use separate SQLite paths, private keys and NATS credentials. Service seeds are private 32-byte Ed25519 material (0600); give domain services only Core's public trust root, never operator/Core signing secrets. Disk stores are private and outside public static roots. See [database](../sdk/database/README.md), [Core config](core/README.md) and examples in `deploy/{task,notify,files,pages,calendar,contacts,gate,core}/`.
+Run each owner's migrator before startup and use separate SQLite paths, private keys and NATS credentials. Service seeds are private 32-byte Ed25519 material (0600); give domain services only Core's public trust root, never operator/Core signing secrets. Disk stores are private and outside public static roots. See [database](../sdk/database/README.md), [Core config](core/README.md) and examples in `deploy/{task,notify,files,pages,calendar,contacts,mail,gate,core}/`.
 
 ```sh
 bash scripts/migrate.sh files /absolute/files.sqlite

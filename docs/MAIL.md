@@ -1,17 +1,124 @@
 # Mail service design
 
-Mail is a planned Arc domain service for connecting multiple external IMAP
-accounts, synchronizing folders/messages and exposing an ACL-controlled local
-view. The first delivery is personal, read-only IMAP access. Workspace accounts,
-remote mutations and sending are later capabilities. This document defines the
-approved direction, not implemented APIs, deployment instructions or acceptance
-evidence. Requirements: [MAIL-01–MAIL-10](REQUIREMENTS.md#214-mail--imap-p1).
+Mail 0.1.0 implements personal IMAP connection settings, sealed password
+submission, pause/resume/disconnect and a bounded user-requested TLS IMAP check.
+Folder/message synchronization, content caching/streaming, OAuth provider flows,
+workspace accounts and sending remain planned. Requirements:
+[MAIL-01–MAIL-10](REQUIREMENTS.md#214-mail--imap-p1). This connection foundation does
+not satisfy full MAIL-10 or establish Gmail/Microsoft compatibility.
+
+## Implemented connection API (0.1.0)
+
+The [signed contract](../services/mail/api/v1/contract/manifest.json) exposes six
+operations under `/api/v1/mail/personal/accounts/{acl_root_id}`. Each account is
+one `mail.personal` root, owner-bound with an empty workspace. Account provisioning
+is an explicit operator reserve → `Accounts.PrepareRoot` → Access activation →
+`Accounts.ActivateRoot` workflow. Public root creation, account discovery and
+sharing APIs are deferred. Separate roots support multiple accounts per user.
+
+| Method / suffix | Operation / required action |
+|---|---|
+| GET base | `mail.personal.accounts.get`; `mail.read` |
+| PUT base | Full settings replacement with expected `revision`; `mail.connection.manage` |
+| GET `/credentials/key` | Current scoped sealing public key/binding; `mail.connection.manage` |
+| PUT `/credentials` | Write-only sealed password replacement with expected `revision`; `mail.connection.manage` |
+| POST `/state` | Set enabled/paused/disconnected with expected `revision`; `mail.connection.manage` |
+| POST `/check` | Current-user TLS authentication/capability check; `mail.connection.manage` |
+
+Settings are `name` (1–256 Unicode characters), ASCII DNS/IP `host` (≤253), `port`
+(1–65535), `login` (1–320) and bare display `email` (≤254). Text is UTF-8,
+trimmed and control-free; hostnames normalize to lowercase. Only implicit TLS and
+password/application-password authentication are implemented. Checks negotiate
+AUTHENTICATE PLAIN (with/without SASL-IR), or TLS LOGIN when permitted by the server.
+Only CAPABILITY, authentication and LOGOUT are sent; no folder/message command is
+available. Query deadlines remain 5 s; network policy defaults to 2 s and permits
+100–3000 ms, bounded by the caller deadline. Server input is capped at 64 KiB,
+4096 bytes per line, 128 total lines and 32 response lines per command. Only eight
+recognized capability names can appear in the safe result.
+
+Commands require `Idempotency-Key`. Current authorization precedes replay; retry
+the exact sealed request, since resealing changes its ciphertext/fingerprint.
+Replay is a historical result, not a fresh account snapshot. State changes commit
+account data, audit, command result and `evt.mail.accounts.changed.v1` outbox in one
+transaction. Events contain scope/revision/generation/action, without settings or
+credentials. The ordinary outbox worker performs no autonomous IMAP work.
+
+Account revision advances on every command. Remote host/port/login/display-email
+changes also advance the binding generation and remove the stored password;
+name-only edits retain it. Pause blocks checks but retains credentials. Disconnect
+advances generation, deletes the current encrypted credential and blocks key
+submission/checks until explicitly enabled; enabling does not restore a password.
+Older ciphertext/results may remain in WAL/backups/replay retention, but replay
+cannot recreate a disconnected credential. No remote side effect is made by
+settings/state commands. Checks hold no SQL write transaction and recheck current
+Access and account revision after network I/O. Concurrent changes/revocation deny
+or invalidate the result. In-flight sockets close on cancellation/network deadline.
+
+A check returns only a safe status and recognized capabilities: ok,
+authentication_failed, tls_failed, destination_denied, unavailable, protocol_error,
+credentials_missing, paused or disconnected. It does not persist a last-check
+snapshot or continue after the current user request. Core outage denies access.
+
+Credential ingress uses randomized anonymous NaCl boxes. `credentials/key` binds
+its public information to account ID, owner, generation and current revision.
+The sealed plaintext contains that binding and password bytes; server-side
+comparison rejects cross-account/owner/generation/revision reuse. Only sealed
+ciphertext enters signed RPC payloads and generic replay hashes. Passwords are
+UTF-8, 1–4096 bytes and control-free; line terminators are rejected, not trimmed.
+
+At rest, AES-256-GCM uses random nonces and associated data binding the personal
+account/owner/generation/credential version. A private 32-byte nonzero master key
+is provisioned separately from service signing keys; HMAC-SHA256 domain separation
+derives independent sealing/storage keys. The public-key fingerprint is the key
+ID. Wrong keys/tampering fail closed. GET never returns ciphertext/passwords.
+Hot key rotation and credential export are deferred: preserve the exact master
+key securely with backups; changing/losing it makes old credentials unavailable
+and requires restoration or explicit credential replacement. Deletion is not a
+promise of physical erasure from historical WAL/backups.
+
+Backend clients can use the Go sealing helper or the standalone CLI. Obtain
+`key-info.json` through authenticated, certificate-verified Gate HTTPS and protect
+its integrity; it selects the recipient of the submitted secret. For example:
+
+```sh
+go run ./cmd/arc-mail-credential -key-info /private/key-info.json < /private/password > /private/sealed-request.json
+```
+
+HTTP path bindings supply `acl_root_id`; omit it from JSON request bodies.
+The password file/pipe must contain the exact bytes without a trailing newline.
+Submit the output to PUT `/credentials` with a fresh idempotency key. Preserve the
+same output/key for retries. The CLI emits ciphertext only; no TS/Svelte client is
+added in this delivery.
+
+Startup uses the [configuration example](../deploy/mail/config.example.json):
+
+```sh
+bash scripts/migrate.sh mail /absolute/mail.sqlite
+go run ./cmd/arc-mail -config /absolute/mail.json
+```
+
+Provision private service/NATS keys, Core's public trust root and a distinct
+absolute `master_key_file` containing exactly 32 bytes with owner-only permissions.
+Startup never migrates. `imap.endpoints` defaults empty (deny all). Each operator
+entry requires an exact host/port and nonempty CIDR allowlist; every resolved
+address must match, and the dial pins the validated IP while TLS verifies the
+original host. Internal/private addresses work only through explicit policy.
+Optional `imap_ca_file` adds a private CA without disabling system trust or
+hostname checks. Approve the exact artifact, personal root/action bindings, Access
+check/provisioning edges and broker subjects; provision the Mail JetStream event
+stream separately. No production permissions or external credentials are installed
+by the example.
+
+Focused verification is `scripts/test-mail-live.sh`: isolated Core/Gate/Access,
+TLS+NKey NATS/JetStream and a real local TLS IMAP fixture. Record actual results
+in the owning Issue. Extended tests/provider matrices remain deferred. The design
+below describes the wider service and pending synchronization/integration scope.
 
 ## Ownership and boundaries
 
-The proposed owner is `services/mail`, with a future `arc-mail` process, its own
-SQLite migrations/models and private content cache. These paths and executable
-do not exist yet. Core retains Identity/Access/Fabric authority; Gate owns public
+The owner is `services/mail`, with a standalone `arc-mail` process and its own
+SQLite migrations/models. A private content cache is planned.
+Core retains Identity/Access/Fabric authority; Gate owns public
 HTTPS and authentication. Mail owns connection configuration, encrypted external
 credentials, remote bindings, synchronization state and cached message content.
 Notify may later consume approved minimal Mail events for notifications.
@@ -44,8 +151,9 @@ workspace and may grant access to its users/groups. Personal connections are not
 shared implicitly with a workspace. Provisioning must follow the existing
 reserve/prepare/activate lifecycle under the approved Mail provider.
 
-Proposed actions distinguish `mail.read`, `mail.connection.manage`, `mail.sync`
-and `access.grants.manage`. Managing a root alone does not confer message read;
+Current resource actions are `mail.read`, `mail.connection.manage`, `mail.share`
+and `access.grants.manage`; no public sharing operation is installed. `mail.sync`
+belongs to the future synchronization contract. Managing a root alone does not confer message read;
 reading messages does not expose credentials or permit connection changes.
 `mail.modify` and `mail.send` belong to later explicitly approved contracts.
 Final operation IDs, schemas, limits and action bindings require an implementation

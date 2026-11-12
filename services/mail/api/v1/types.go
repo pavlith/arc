@@ -1,0 +1,61 @@
+package v1
+
+import "github.com/pavlith/arc/services/mail/credentials"
+
+type Scope struct {
+	WorkspaceID string `json:"workspace_id"`
+	RootID      string `json:"acl_root_id"`
+}
+type AccountInput struct {
+	Name  string `json:"name"`
+	Host  string `json:"host"`
+	Port  int    `json:"port"`
+	Login string `json:"login"`
+	Email string `json:"email"`
+}
+type Account struct {
+	Scope
+	AccountInput
+	OwnerID           string `json:"owner_id"`
+	Revision          int64  `json:"revision"`
+	Generation        int64  `json:"generation"`
+	CredentialVersion int64  `json:"credential_version"`
+	CredentialReady   bool   `json:"credential_ready"`
+	State             string `json:"state"`
+}
+type Update struct {
+	Scope
+	AccountInput
+	Revision int64 `json:"revision"`
+}
+type SetCredential struct {
+	Scope
+	Revision int64  `json:"revision"`
+	KeyID    string `json:"key_id"`
+	Sealed   string `json:"sealed"`
+}
+type SetState struct {
+	Scope
+	Revision int64  `json:"revision"`
+	State    string `json:"state"`
+}
+type KeyInfo struct {
+	Scope
+	credentials.PublicInfo
+}
+type CheckResult struct {
+	Scope
+	Revision     int64    `json:"revision"`
+	Generation   int64    `json:"generation"`
+	Status       string   `json:"status"`
+	Capabilities []string `json:"capabilities"`
+}
+type Changed struct {
+	Scope
+	Revision   int64  `json:"revision"`
+	Generation int64  `json:"generation"`
+	Action     string `json:"action"`
+}
+
+const ChangedSubject = "evt.mail.accounts.changed.v1"
+const ChangedName = "mail.accounts.changed"

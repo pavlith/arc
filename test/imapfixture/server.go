@@ -1,0 +1,214 @@
+// Package imapfixture supplies an isolated TLS server for focused Mail checks.
+// It records command names only and never logs authentication material.
+package imapfixture
+
+import (
+	"bufio"
+	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/base64"
+	"encoding/pem"
+	"fmt"
+	"math/big"
+	"net"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+)
+
+type Server struct {
+	Host                      string
+	Port                      int
+	CertFile, KeyFile, CAFile string
+	Roots                     *x509.CertPool
+	listener                  net.Listener
+	cancel                    context.CancelFunc
+	mu                        sync.Mutex
+	conns                     map[net.Conn]bool
+	commands                  []string
+	wg                        sync.WaitGroup
+}
+
+// mode is login, plain, continuation, oversized or stall.
+func New(t *testing.T, mode string, users map[string]string) *Server {
+	t.Helper()
+	public, key, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	cert := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "isolated Mail fixture"}, DNSNames: []string{"localhost"}, IPAddresses: []net.IP{net.ParseIP("127.0.0.1")}, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+	der, err := x509.CreateCertificate(rand.Reader, cert, cert, public, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
+	pair, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{Certificates: []tls.Certificate{pair}, MinVersion: tls.VersionTLS12})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s := &Server{Host: "127.0.0.1", Port: listener.Addr().(*net.TCPAddr).Port, listener: listener, cancel: cancel, conns: map[net.Conn]bool{}, Roots: x509.NewCertPool()}
+	s.Roots.AppendCertsFromPEM(certPEM)
+	dir := t.TempDir()
+	s.CertFile = filepath.Join(dir, "tls.crt")
+	s.KeyFile = filepath.Join(dir, "tls.key")
+	s.CAFile = s.CertFile
+	if err = os.WriteFile(s.CertFile, certPEM, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(s.KeyFile, keyPEM, 0600); err != nil {
+		t.Fatal(err)
+	}
+	copyUsers := map[string]string{}
+	for k, v := range users {
+		copyUsers[k] = v
+	}
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			s.mu.Lock()
+			s.conns[conn] = true
+			s.wg.Add(1)
+			s.mu.Unlock()
+			go func() {
+				defer s.wg.Done()
+				defer func() { conn.Close(); s.mu.Lock(); delete(s.conns, conn); s.mu.Unlock() }()
+				s.serve(ctx, conn, mode, copyUsers)
+			}()
+		}
+	}()
+	t.Cleanup(s.Close)
+	return s
+}
+func (s *Server) Close() {
+	s.cancel()
+	s.listener.Close()
+	s.mu.Lock()
+	for conn := range s.conns {
+		conn.Close()
+	}
+	s.mu.Unlock()
+	s.wg.Wait()
+}
+func (s *Server) Commands() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.commands...)
+}
+func unquote(s string) (string, string, bool) {
+	if len(s) == 0 || s[0] != '"' {
+		return "", "", false
+	}
+	var out strings.Builder
+	for i := 1; i < len(s); i++ {
+		if s[i] == '"' {
+			return out.String(), strings.TrimSpace(s[i+1:]), true
+		}
+		if s[i] == '\\' {
+			i++
+			if i == len(s) {
+				return "", "", false
+			}
+		}
+		out.WriteByte(s[i])
+	}
+	return "", "", false
+}
+func (s *Server) serve(ctx context.Context, conn net.Conn, mode string, users map[string]string) {
+	_ = conn.SetDeadline(time.Now().Add(15 * time.Second))
+	write := func(v string) { fmt.Fprint(conn, v+"\r\n") }
+	write("* OK Mail fixture")
+	scanner := bufio.NewScanner(conn)
+	scanner.Buffer(make([]byte, 4096), 16384)
+	for scanner.Scan() {
+		line := scanner.Text()
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			return
+		}
+		tag, command := fields[0], strings.ToUpper(fields[1])
+		s.mu.Lock()
+		s.commands = append(s.commands, command)
+		s.mu.Unlock()
+		switch command {
+		case "CAPABILITY":
+			if mode == "stall" {
+				<-ctx.Done()
+				return
+			}
+			if mode == "oversized" {
+				write("* CAPABILITY " + strings.Repeat("x", 5000))
+				return
+			}
+			caps := "* CAPABILITY IMAP4rev1 IDLE CONDSTORE"
+			if mode == "plain" {
+				caps += " AUTH=PLAIN SASL-IR"
+			}
+			if mode == "continuation" {
+				caps += " AUTH=PLAIN"
+			}
+			write(caps)
+			write(tag + " OK capabilities")
+		case "AUTHENTICATE":
+			encoded := ""
+			if len(fields) == 4 {
+				encoded = fields[3]
+			} else {
+				write("+ ")
+				if !scanner.Scan() {
+					return
+				}
+				encoded = scanner.Text()
+			}
+			raw, err := base64.StdEncoding.DecodeString(encoded)
+			parts := strings.Split(string(raw), "\x00")
+			clear(raw)
+			if err != nil || len(parts) != 3 || parts[1] == "" || users[parts[1]] != parts[2] {
+				write(tag + " NO authentication denied")
+			} else {
+				write(tag + " OK authenticated")
+			}
+		case "LOGIN":
+			rest := strings.TrimSpace(strings.TrimPrefix(line, tag+" "+fields[1]))
+			login, rest, ok := unquote(rest)
+			if !ok {
+				return
+			}
+			password, _, ok := unquote(rest)
+			if !ok || login == "" || users[login] != password {
+				write(tag + " NO authentication denied")
+			} else {
+				write(tag + " OK authenticated")
+			}
+		case "LOGOUT":
+			write("* BYE")
+			write(tag + " OK logout")
+			return
+		default:
+			write(tag + " BAD command not allowed")
+			return
+		}
+	}
+}

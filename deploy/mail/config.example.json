@@ -1,0 +1,19 @@
+{
+  "nats": {
+    "URL": "tls://nats:4222",
+    "Name": "mail",
+    "NKeySeedFile": "/run/arc/nats.seed",
+    "TLSCAFile": "/run/arc/ca.crt"
+  },
+  "sqlite_path": "/var/lib/arc/mail/mail.sqlite",
+  "service_id": "<registered service account uuid>",
+  "kid": "mail-key-v1",
+  "key_file": "/run/arc/service.seed",
+  "core_key_file": "/run/arc/core-public.json",
+  "instance": "mail-1",
+  "master_key_file": "/run/arc/mail-master.key",
+  "imap": {
+    "timeout_ms": 2000,
+    "endpoints": []
+  }
+}

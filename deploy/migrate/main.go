@@ -15,6 +15,7 @@ import (
 	contactsmigrations "github.com/pavlith/arc/services/contacts/migrations"
 	coremigrations "github.com/pavlith/arc/services/core/migrations"
 	filesmigrations "github.com/pavlith/arc/services/files/migrations"
+	mailmigrations "github.com/pavlith/arc/services/mail/migrations"
 	notifymigrations "github.com/pavlith/arc/services/notify/migrations"
 	pagesmigrations "github.com/pavlith/arc/services/pages/migrations"
 	taskmigrations "github.com/pavlith/arc/services/task/migrations"
@@ -22,6 +23,8 @@ import (
 
 func ownerMigrations(owner string) ([]*gormigrate.Migration, error) {
 	switch owner {
+	case "mail":
+		return mailmigrations.SQLite(), nil
 	case "contacts":
 		return contactsmigrations.SQLite(), nil
 	case "calendar":
@@ -37,7 +40,7 @@ func ownerMigrations(owner string) ([]*gormigrate.Migration, error) {
 	case "notify":
 		return notifymigrations.SQLite(), nil
 	default:
-		return nil, fmt.Errorf("unsupported SQLite owner %q (core, task, notify, files, pages, calendar, contacts)", owner)
+		return nil, fmt.Errorf("unsupported SQLite owner %q (core, task, notify, files, pages, calendar, contacts, mail)", owner)
 	}
 }
 
@@ -58,7 +61,7 @@ func run(ctx context.Context, owner, path string) error {
 }
 
 func main() {
-	owner := flag.String("service", "", "SQLite service owner: core, task, notify, files, pages, calendar or contacts")
+	owner := flag.String("service", "", "SQLite service owner: core, task, notify, files, pages, calendar, contacts or mail")
 	path := flag.String("db", "", "absolute path to the service-owned SQLite file")
 	flag.Parse()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

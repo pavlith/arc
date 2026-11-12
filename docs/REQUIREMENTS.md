@@ -302,8 +302,9 @@ Management requires explicit trusted policy/signing keys and node-scoped authori
 
 ### 2.14 Mail / IMAP (P1)
 
-Mail is planned, with personal read-only accounts as the first delivery. Its
-presence here does not establish a service binary, routes or provider acceptance.
+The personal connection foundation is implemented; read-only folder/message
+synchronization and provider OAuth flows remain planned. Requirements define the
+full target, not completion or provider acceptance.
 See [Mail design](MAIL.md) for ownership, authentication and delivery boundaries.
 
 - **MAIL-01:** Connect multiple independent external IMAP accounts per user.
@@ -372,7 +373,7 @@ Other SLOs, p95/RTO/RPO and capacity require measurements.
 ### 3.1 SQL storage
 
 Core, Task, Files, Pages, Notify, Calendar and Contacts own separate local SQLite
-files and GORM models/migrations; planned Mail follows the same ownership rule.
+files and GORM models/migrations; Mail owns a separate SQLite as well.
 Core modules share its file and Gate has no DB. Explicit Gormigrate before traffic,
 immutable IDs, safe replay and denial of unknown history. WAL/foreign keys/busy
 timeout on every connection. Owner mounts/OS permissions and RPC/events isolate

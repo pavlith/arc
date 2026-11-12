@@ -1,0 +1,206 @@
+{
+  "manifest_version": 1,
+  "service": {
+    "name": "mail",
+    "build_version": "0.1.0",
+    "api_major": 1
+  },
+  "resources": [
+    {
+      "type": "mail.personal",
+      "actions": [
+        "mail.read",
+        "mail.connection.manage",
+        "mail.share",
+        "access.grants.manage"
+      ],
+      "share_action": "mail.share",
+      "create_action": "mail.connection.manage",
+      "delete_action": "mail.connection.manage",
+      "allow_inheritance": false
+    }
+  ],
+  "operations": [
+    {
+      "id": "mail.personal.accounts.get",
+      "subject": "rpc.mail.v1.personal.accounts.get",
+      "kind": "query",
+      "request_schema": "schemas/scope.json",
+      "response_schema": "schemas/account.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "mail.personal",
+        "action": "mail.read",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/mail/personal/accounts/{acl_root_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "mail.personal.accounts.update",
+      "subject": "rpc.mail.v1.personal.accounts.update",
+      "kind": "command",
+      "request_schema": "schemas/update.json",
+      "response_schema": "schemas/account.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "mail.personal",
+        "action": "mail.connection.manage",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "PUT",
+        "path": "/api/v1/mail/personal/accounts/{acl_root_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "mail.personal.credentials.key",
+      "subject": "rpc.mail.v1.personal.credentials.key",
+      "kind": "query",
+      "request_schema": "schemas/scope.json",
+      "response_schema": "schemas/key.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "mail.personal",
+        "action": "mail.connection.manage",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/mail/personal/accounts/{acl_root_id}/credentials/key",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "mail.personal.credentials.set",
+      "subject": "rpc.mail.v1.personal.credentials.set",
+      "kind": "command",
+      "request_schema": "schemas/credential-set.json",
+      "response_schema": "schemas/account.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "mail.personal",
+        "action": "mail.connection.manage",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "PUT",
+        "path": "/api/v1/mail/personal/accounts/{acl_root_id}/credentials",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "mail.personal.accounts.state",
+      "subject": "rpc.mail.v1.personal.accounts.state",
+      "kind": "command",
+      "request_schema": "schemas/state.json",
+      "response_schema": "schemas/account.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "mail.personal",
+        "action": "mail.connection.manage",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/mail/personal/accounts/{acl_root_id}/state",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "mail.personal.accounts.check",
+      "subject": "rpc.mail.v1.personal.accounts.check",
+      "kind": "query",
+      "request_schema": "schemas/scope.json",
+      "response_schema": "schemas/check.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "mail.personal",
+        "action": "mail.connection.manage",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/mail/personal/accounts/{acl_root_id}/check",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    }
+  ],
+  "events": [
+    {
+      "name": "mail.accounts.changed",
+      "subject": "evt.mail.accounts.changed.v1",
+      "schema": "schemas/changed.json"
+    }
+  ]
+}

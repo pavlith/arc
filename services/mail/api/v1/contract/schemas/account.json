@@ -1,0 +1,79 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "const": ""
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "host": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "login": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 320
+    },
+    "email": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 254
+    },
+    "owner_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "credential_version": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "credential_ready": {
+      "type": "boolean"
+    },
+    "state": {
+      "enum": [
+        "enabled",
+        "paused",
+        "disconnected"
+      ]
+    }
+  },
+  "required": [
+    "workspace_id",
+    "acl_root_id",
+    "name",
+    "host",
+    "port",
+    "login",
+    "email",
+    "owner_id",
+    "revision",
+    "generation",
+    "credential_version",
+    "credential_ready",
+    "state"
+  ],
+  "additionalProperties": false
+}

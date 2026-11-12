@@ -1,0 +1,35 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "const": ""
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "action": {
+      "enum": [
+        "account.updated",
+        "credentials.set",
+        "account.state"
+      ]
+    }
+  },
+  "required": [
+    "workspace_id",
+    "acl_root_id",
+    "revision",
+    "generation",
+    "action"
+  ],
+  "additionalProperties": false
+}

@@ -1,4 +1,5 @@
 export interface User {
+	revision?: number;
 	id: string;
 	email: string;
 	name: string;
@@ -20,6 +21,7 @@ export interface RegisterRequest {
 }
 
 export interface UpdateProfileRequest {
+	revision?: number;
 	name?: string;
 	display_name?: string;
 	avatar_url?: string | null;

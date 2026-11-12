@@ -21,22 +21,29 @@ except (OSError, ValueError, tomllib.TOMLDecodeError) as exc:
     fail(f"invalid config.toml: {exc}")
     config = {}
 
-if not 0 < config.get("project_doc_max_bytes", 0) <= 4096:
+def bounded_integer(value: object, maximum: int) -> bool:
+    return type(value) is int and 0 < value <= maximum
+
+
+if not bounded_integer(config.get("project_doc_max_bytes"), 4096):
     fail("project_doc_max_bytes must be between 1 and 4096")
-if not 0 < config.get("tool_output_token_limit", 0) <= 3000:
-    fail("tool_output_token_limit must be between 1 and 6000")
-if config.get("skills", {}).get("max_context_tokens", 0) > 1600:
-    fail("skill catalog budget too high")
+if not bounded_integer(config.get("tool_output_token_limit"), 3000):
+    fail("tool_output_token_limit must be between 1 and 3000")
+if not bounded_integer(config.get("skills", {}).get("max_context_tokens"), 1600):
+    fail("skill catalog budget must be between 1 and 1600")
 for name in ("github", "openaiDeveloperDocs"):
     server = config.get("mcp_servers", {}).get(name)
     if not server or server.get("enabled") is not False:
         fail(f"{name} MCP must default to disabled")
 
-for profile in (ROOT / ".codex/profiles").glob("*.toml"):
+for name, effort, output_limit in (("fast", "low", 2000), ("deep", "high", 6000)):
+    profile = ROOT / f".codex/profiles/{name}.config.toml"
     try:
         parsed = tomllib.loads(profile.read_text(encoding="utf-8"))
-        if parsed.get("model_reasoning_effort") not in ("low", "medium", "high"):
+        if parsed.get("model_reasoning_effort") != effort:
             fail(f"invalid reasoning profile: {profile.name}")
+        if parsed.get("tool_output_token_limit") != output_limit or parsed.get("model_verbosity") != "low":
+            fail(f"invalid output budget: {profile.name}")
     except (OSError, ValueError, tomllib.TOMLDecodeError) as exc:
         fail(f"invalid profile {profile.name}: {exc}")
 
@@ -78,7 +85,8 @@ for relative in ("cli.md", "customization.md", "rules/forms.md", "rules/composit
     if not (vendor / relative).is_file():
         fail(f"shadcn-svelte reference missing: {relative}")
 
-if (ROOT / "AGENTS.md").stat().st_size > config.get("project_doc_max_bytes", 4096):
+doc_limit = config.get("project_doc_max_bytes")
+if bounded_integer(doc_limit, 4096) and (ROOT / "AGENTS.md").stat().st_size > doc_limit:
     fail("AGENTS.md exceeds project_doc_max_bytes")
 for filename, headings in {
     "ARCHITECTURE.md": ["## 3.", "## 4.", "## 5.", "## 6.", "## 7.", "## 10."],
@@ -88,6 +96,19 @@ for filename, headings in {
     for heading in headings:
         if heading not in document:
             fail(f"missing routed heading {heading} in {filename}")
+
+# Actionable documentation must name migrations that exist in this checkout.
+# Numeric migration identifiers are distinct from UUIDs and generic baseline patterns.
+registered = set()
+for registry in (ROOT / "services").glob("*/migrations/sqlite.go"):
+    registered.update(re.findall(r'ID:\s*"([0-9]{6}_[a-z0-9_]+)"', registry.read_text()))
+documents = [ROOT / "README.md", ROOT / "AGENTS.md", *ROOT.glob("docs/*.md"),
+             *ROOT.glob("services/**/README.md"), *ROOT.glob("sdk/**/README.md"),
+             *ROOT.glob("client/*/README.md")]
+for document in documents:
+    for migration in set(re.findall(r"\b[0-9]{6}_[a-z][a-z0-9_]*\b", document.read_text())):
+        if migration not in registered:
+            fail(f"unknown migration {migration} in {document.relative_to(ROOT)}")
 
 if errors:
     for error in errors:

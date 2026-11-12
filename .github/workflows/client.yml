@@ -5,6 +5,7 @@ on:
     paths:
       - "client/**"
       - "!client/**/*.md"
+      - "services/*/api/v1/contract/**"
       - ".github/actions/install-ui/**"
       - ".github/workflows/client.yml"
   pull_request:
@@ -12,13 +13,14 @@ on:
     paths:
       - "client/**"
       - "!client/**/*.md"
+      - "services/*/api/v1/contract/**"
       - ".github/actions/install-ui/**"
       - ".github/workflows/client.yml"
 permissions:
   contents: read
 jobs:
   client:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
@@ -27,5 +29,11 @@ jobs:
         run: npm --prefix client run check --workspace @arc/client
       - name: Check Svelte
         run: npm --prefix client run check --workspace ui
+      - name: Test browser helpers
+        run: npm --prefix client run test:unit --workspace ui
       - name: Build Svelte
         run: npm --prefix client run build --workspace ui
+      - name: Install pinned browser
+        run: client/node_modules/.bin/playwright install --with-deps chromium
+      - name: Check Arc browser integration
+        run: npm --prefix client run test:arc --workspace ui

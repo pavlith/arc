@@ -10,7 +10,7 @@
 | Pages | `arc-pages` | Scoped Tiptap tree, versions, templates, ACL-checked references | [Pages](../docs/PAGES.md), [contract](pages/api/v1/contract/manifest.json) |
 | Agent | `arc-agent` | Trusted node runtime, journal and restricted host drivers | [Agent](agent/README.md) |
 
-These are code surfaces, **not production acceptance**. Progress, unfinished UI and verification live in [GitHub Issues](https://github.com/pavlith/arc/issues), not this catalog. `main` is authoritative; historical delivery notes are in Git. Product UI expansion is paused pending authorization.
+These are code surfaces, **not production acceptance**. Progress, unfinished UI and verification live in [GitHub Issues](https://github.com/pavlith/arc/issues), not this catalog. `main` is authoritative; historical delivery notes are in Git.
 
 ## Shared rules
 Each SQL owner has its own explicit migrations, models, idempotency/replay and transactional outbox; no cross-owner database joins. Domain services compose typed modules with `sdk/service`, private NATS and signed installation contracts. Core alone owns Identity/Access/Fabric authority; Gate does not store or infer ACL. Never trust a browser, a known UUID, a source resource reference or a previous grant to authorize a target read. Revocation and unavailable Core fail closed; NATS carries metadata, not file bytes.

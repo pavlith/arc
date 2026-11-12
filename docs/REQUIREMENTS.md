@@ -133,11 +133,7 @@ Calendar/Files fixtures may stand in for absent endpoints.
   identity and ACL. HTTP/tool/workflow exposure independently defaults off.
   Direct RPC never bypasses ACL or trusts identity headers.
 
-Current Fabric uses operator-signed installations, SQLite catalog, online
-ContractSource, signed control replies and instance leases. One active digest per
-service/API major; replacement requires revoke and conservative compatibility.
-M0 covers digest/action/schema/proof, major isolation, replay and duplicate event;
-full replicas/reconnect/recovery remain M7.
+M0 acceptance covers digest/action/schema/proof, major isolation, replay and duplicate events. Full replicas/reconnect/recovery belong to M7. See [Fabric architecture](ARCHITECTURE.md#5-service-fabric-and-sdk).
 
 ### 2.4 Gate (P0)
 
@@ -155,15 +151,9 @@ full replicas/reconnect/recovery remain M7.
 - **G-05:** Resource-authorized WebSockets, DAV and large-file streaming without
   sending file bodies through NATS.
 
-Current Gate is a separate process without a DB. It verifies a root-signed,
-request-bound routes/JWKS bundle and preserves request/trace/deadline/idempotency.
-Browser login and refresh use cookie/CSRF sessions. Explicit CLI endpoints
-issue and rotate Bearer credentials for their own session channel. Gate can
-serve the first workspace and Task UI on the same HTTPS origin. DAV/WS are
-planned. M0 covers approved route, bad signature, reserved/colliding route and
-Core outage. Full recovery is M7.
+Gate has no database. Browser cookie/CSRF and CLI Bearer sessions remain distinct. Task/Inbox WebSocket semantics are defined in [Realtime](REALTIME.md); DAV adapters require their own acceptance. M0 covers approved routes, bad signatures, reserved/colliding routes and Core outage. Full recovery is M7.
 
-### 2.5 Task / Projects / Notify (P1; proof services in P0)
+### 2.5 Task / Projects / Notify (P1; signed vertical baseline in P0)
 
 - **T-01:** Task ID, title, rich text, status, priority, due dates, multiple
   assignees, labels, files, comments and history.
@@ -175,7 +165,7 @@ Core outage. Full recovery is M7.
   contact links.
 - **T-05:** Tasks work without GitHub; integration is an optional connector.
 
-Acceptance: UI/API share product `task.work.*` CRUD, with signed Task approval, root ACL, mutation replay/outbox and Notify delivery. The former proof-only Task CRUD routes are retired. Search, links and assignee visibility remain ACL-scoped.
+Acceptance: UI/API share product `task.work.*` CRUD, with signed Task approval, root ACL, mutation replay/outbox and Notify delivery. Search, links and assignee visibility remain ACL-scoped.
 Root/workspace/ACL are checked online before mutation and replay. Recipients come
 from verified user or operator subscriptions, not event input; typed Task/Pages/Files
 Inbox entries require current target read access. Notify provides an explicitly
@@ -210,13 +200,15 @@ CardDAV enforce identical address-book permissions.
 
 - **L-01:** Personal/workspace folders, upload/download/search/move/delete and metadata.
 - **L-02:** Local/S3-compatible bytes, DB metadata/ETag and streaming;
-  resumable/large-file policy requires definition.
+  bounded resumable uploads. Initial local-store limits are defined in [Files](FILES.md);
+  additional storage adapters require separate acceptance.
 - **L-03:** WebDAV with ACL, file operations and conflict control.
 - **L-04:** Public read links with expiry/revoke and password if approved;
   upload-to-folder later.
 - **L-05:** Task/page attachments use Files rather than independent byte stores.
-- **L-06 (later):** Restore/history, recycle bin, quotas, thumbnails and more
-  connectors; initial schema accommodates versions.
+- **L-06 (later):** Restore/history, recycle bin, expanded quota administration,
+  thumbnails and more connectors. Initial byte/file capacity enforcement follows
+  [Files](FILES.md#workspace-capacity).
 
 Acceptance: UI upload and authorized WebDAV access; outsiders denied by known ID;
 share revoke stops access; large uploads do not overflow NATS.
@@ -231,7 +223,7 @@ share revoke stops access; large uploads do not overflow NATS.
 - **P-04 (later):** Yjs collaboration; Notion databases excluded from MVP.
 
 Acceptance: create/move pages with correct section permissions; forbidden embeds
-reveal neither content nor preview. The Pages backend is implemented under #11; UI remains paused.
+reveal neither content nor preview. See [Pages](PAGES.md) for domain semantics; #11 owns acceptance.
 
 ### 2.10 Connectors (P2)
 
@@ -272,7 +264,7 @@ actor/on_behalf_of provenance and bounded traced runs.
 
 ### 2.13 Runtime Control and Infrastructure Agent (P3; safe baseline in P0)
 
-- **R-01 (M0):** Node/template/deployment, immutable revision, operation and
+- **R-01 (M0):** Node/template/resource, immutable revision, operation and
   observation schemas plus RuntimeProvider; separate desired, observed and Fabric readiness.
 - **R-02 (M0):** Independent Compose/systemd bootstrap for NATS, Core, Gate and
   owner storage. M0 requires fake-Agent contracts, not a live host executor.
@@ -305,13 +297,7 @@ actor/on_behalf_of provenance and bounded traced runs.
   desired/observed and bounded health/logs, including loading/empty/error/offline.
   UI grants no rights and never calls host/Agent APIs directly.
 
-Current Control, private Node RPC, Linux Agent/journal and restricted systemd and
-Docker drivers are partial #13 delivery; see [services](../services/README.md) and
-[Agent](../services/agent/README.md) for exact limits. Management stays disabled
-without explicit trusted policy/signing key. Admin authorization adapter, Gate/UI,
-LXD, Core reconcile/outbox publisher and complete health/logs are missing.
-Host effects use test adapters; live systemd and Docker lifecycle checks are pending.
-M6 is not integrated as a whole; M7 covers full crash/offline/replica/recovery.
+Management requires explicit trusted policy/signing keys and node-scoped authority. See [Runtime architecture](ARCHITECTURE.md#7-runtime-control-and-infrastructure-agent) and [Agent configuration](../services/agent/README.md); #13 owns remaining integration and driver acceptance. M7 covers full crash/offline/replica/recovery.
 
 ## 3. Non-functional requirements
 
@@ -376,11 +362,7 @@ No whole-milestone readiness follows from a historical issue closure or one test
 
 ## 6. Readiness and verification policy
 
-Implemented: builds, empty migration and principal path executed.
-Integrated: connected path, diagnostics, focused smoke and mandatory guardrails.
-Verified: full relevant M7 matrix executed. M0–M6 require Integrated for accepted
-scope; production requires Verified. See [architecture §10](ARCHITECTURE.md#10-verification-policy)
-for the single verification policy. Missing code has no current readiness claim.
+Use the single [readiness and verification policy](ARCHITECTURE.md#10-verification-policy). M0–M6 require Integrated for accepted scope; production requires Verified. GitHub Issues record revision-bound evidence, never an inferred whole-platform readiness.
 
 ## 7. Deferred design decisions
 

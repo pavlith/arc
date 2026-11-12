@@ -22,11 +22,12 @@ For standalone owner migrations: `bash scripts/migrate.sh task /absolute/task.sq
 
 CI has three tiers: **per push**—Go format/vet/build, affected owner unit tests, docs/UI checks and signed boundary smokes when security code changes; **weekly**—full Go race regression; **stable-release tag `v*` or manual**—full Go race regression plus Core/Runtime/bootstrap, Files/Pages live and M0 signed vertical smokes. A green push is not a release acceptance.
 
-Use `bash scripts/verify-changed.sh --base HEAD` (or `make verify`) after local code edits. It checks setup, Go formatting, changed Go service/package groups and relevant client workspaces. Shared SDK, test or Go dependency changes expand to `go test ./...`. The default comparison base is `origin/main`, then `HEAD^`/`HEAD`. This is **not** a complete security/CI check.
+Use `bash scripts/verify-changed.sh --base HEAD` (or `make verify`) after local code edits. It checks setup, current migration references, links, Go formatting and affected service/package groups. Shared SDK, test or Go dependency changes expand to `go test ./...`. Domain manifests/schemas trigger generated TypeScript and UI checks; client source changes select type checks, browser unit tests and the relevant build. Markdown alone runs no language build/tests. Verifier/profile edits also run the isolated DevEx regression suite. The default comparison base is `origin/main`, then `HEAD^`/`HEAD`; explicit `--base HEAD` checks local staged/unstaged/untracked edits. This is **not** a complete security/CI check.
 
 | Boundary | Additional check |
 |---|---|
 | Codex/config/docs only | `python3 scripts/check-agent-setup.py`, `python3 scripts/check-doc-links.py`, commands and claims |
+| Verifier / profile installation | `python3 scripts/test-devex.py`; fixtures cover scope routing, migration/profile drift and preservation of personal files |
 | Bootstrap and migrations | `make m0-01-smoke`; fresh DB and replay |
 | Identity / session / delegation | `make m0-02-smoke` |
 | Access / ACL | `make m0-03-smoke` |
@@ -36,13 +37,13 @@ Use `bash scripts/verify-changed.sh --base HEAD` (or `make verify`) after local 
 | Core startup | `make core-smoke` |
 | Agent / Runtime | `make runtime-smoke` |
 | Files / Pages owner-local acceptance | `bash scripts/test-files-live.sh` |
-| Client types and UI | `npm --prefix client ci`, `npm --prefix client run check --workspace @arc/client`, `npm --prefix client run check --workspace ui` |
+| Client types and UI | `npm --prefix client ci`, then workspace `check` for `@arc/client` and `ui`, `test:unit` / `build` for `ui` |
 
 Run the security-relevant smoke whenever changing that boundary; never replace it with compilation alone. Use `go vet`, race checks and integration tests when relevant. The scheduled/manual `Arc full Go regression` runs `go test -race ./...`. Network/process smoke requires fixtures; ordinary `go test ./...` does not prove it. Full M7 fault/recovery, browser, load and compatibility matrices remain separate acceptance criteria. Log exact passed/failed/skipped checks, not aspirational coverage; avoid rerunning known passing unrelated checks.
 
 ## Pre-stable API rollout
 
-The current release has **one owner-specific SQLite baseline** for each of Core, Task, Notify, Files and Pages. Old incremental migration chains are deleted. These baselines initialize **empty** databases only; unknown migration IDs fail closed. No old database, sessions, membership or stored task content is automatically upgraded. Core requires explicit browser/CLI sessions, Notify requires `resource_kind` without `task_id`, and Task exposes only `task.work.*`. Run the owner migrators and install new exact signed Fabric/Gate/Notify contracts before enabling traffic.
+Each of Core, Task, Notify, Files and Pages has **one owner-specific SQLite baseline**, named `000001_<owner>_baseline`. Baselines initialize **empty** databases only; unknown migration IDs fail closed. Existing databases are not automatically converted. Core requires explicit browser/CLI sessions; Notify references use `resource_kind` / `resource_id`; Task work-item CRUD uses `task.work.*`. Run the owner migrators and install exact signed Fabric/Gate/Notify contracts before enabling traffic.
 
 A previously approved Fabric v1 contract **cannot** be upgraded in place to incompatible schemas under the same major, and the old SQLite history is intentionally unsupported. Use a separately provisioned **fresh development installation**. To retain data, stop deployment, take verified owner SQLite/WAL/object/journal backups and design an explicit **offline export/import** with a new API major and operator approvals; this conversion is not implemented. Never delete live Core accounts/ACL, erase databases, rewrite migration history, or disable signed checks to bypass the refusal; see [#35](https://github.com/pavlith/arc/issues/35).
 

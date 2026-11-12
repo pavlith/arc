@@ -1,6 +1,6 @@
 # Files integration and resource references
 
-Tracking: [#31](https://github.com/pavlith/arc/issues/31). UI remains paused.
+Cross-owner reference semantics; product acceptance is tracked in [#31](https://github.com/pavlith/arc/issues/31).
 
 ## Read authority
 
@@ -47,7 +47,6 @@ its next normal authorization check. Replacing/clearing an avatar retains Files
 bytes. Receipt issuance/profile commit are separate owner transactions: a race
 may leave a stale reference, which cannot expose inaccessible bytes.
 
-Migrations: Task `000009_attachments`; Core `000014_avatar_assets`. Approve the
-new producer digests and exact signed read edges before deployment. No automatic
+Initialize empty owner databases with their migrators; see [installation policy](DEVELOPMENT.md#pre-stable-api-rollout). Approve current producer digests and exact signed read edges before deployment. No automatic
 production approval, external HTTP fetch, broad service grant or UI change is
 implied.

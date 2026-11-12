@@ -44,3 +44,4 @@ jobs:
       - run: python3 scripts/check-agent-setup.py
       - run: python3 scripts/check-doc-links.py
       - run: bash -n scripts/verify-changed.sh
+      - run: python3 scripts/test-devex.py

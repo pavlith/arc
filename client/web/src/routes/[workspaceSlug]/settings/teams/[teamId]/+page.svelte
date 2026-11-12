@@ -101,7 +101,7 @@
 		...Object.entries(lucideExports)
 			.filter(([name, value]) => /^[A-Z]/.test(name) && !excludedLucideExports.has(name) && typeof value === 'function')
 			.map(([name]) => name),
-		...Object.keys(legacyTeamIconNodes)
+		...Object.keys(teamBrandIconNodes)
 	])]
 		.map((name) => ({ value: name, label: formatIconLabel(name) }))
 		.sort((a, b) => a.label.localeCompare(b.label));

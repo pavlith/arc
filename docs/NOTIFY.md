@@ -52,4 +52,4 @@ resource kind explicitly (`task`, `page` or `file`); there is no implicit Task
 default. Inbox responses use `resource_kind` + `resource_id`, never a second
 `task_id`. Replacement contracts/policies require operator-signed Fabric approval.
 Tests use a local TLS receiver; production outbound messages require separate
-user authorization. Product UI and the full M7 matrix remain deferred.
+user authorization. Browser and full M7 acceptance require separate checks.

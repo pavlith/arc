@@ -44,7 +44,7 @@ subscribers must reacquire permission to fetch content.
 
 ## Work-item projection
 
-`tasks` stores immutable identities/timestamps; `task_details` and `task_assignees` hold workflow fields. The Work API returns the Team, status/category, stable identifier, description, priority, due date, card order and assignees. Previously stored unassigned tasks remain readable with status `open` until moved into a Team; no old CRUD route can create them.
+`tasks` stores immutable identities/timestamps; `task_details` and `task_assignees` hold workflow fields. The Work API returns the Team, status/category, stable identifier, description, priority, due date, card order and assignees. Work items without a Team remain readable with status `open`; product creation requires a Team.
 Identifiers allocated from a Team key/counter remain stable if the task moves
 between Teams inside the same root. Cross-root moves are not supported.
 
@@ -134,7 +134,7 @@ most 100 incident links. Link mutation advances both work revisions and emits
 metadata-only invalidations in the same transaction. Archived endpoints retain
 links, are hidden from link lists and may be removed from an active source.
 
-### Shared work templates (Task 0.8.0)
+### Shared work templates
 
 Templates live inside one Task root and one immutable business Team. They do
 not create another permission boundary and are visible to current root readers.
@@ -152,7 +152,7 @@ template revalidates all references and rights, allocates a new task identifier
 and uses ordinary work-item creation; archived Teams/templates cannot be used.
 An optional title override changes only the new task, never the template.
 
-### Triage semantics (Task 0.8.1)
+### Triage semantics
 
 Each newly created Team has a default `backlog` workflow status.
 `task.work.triage` is an explicit decision operation for a Team-owned item

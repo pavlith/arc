@@ -52,6 +52,10 @@ client_lock=false
 migrations_changed=false
 for file in "${changed[@]}"; do
   case "$file" in
+    *.md) continue ;;
+  esac
+  case "$file" in
+    services/*/api/v1/contract/*) client_ts=true ;;
     client/ts/*) client_ts=true ;;
     client/web/*) client_web=true ;;
     client/package*.json) client_lock=true ;;
@@ -95,8 +99,9 @@ fi
 if $client_ts || $client_web || $client_lock; then
   [[ -d client/node_modules ]] || { echo "Client dependencies missing: npm --prefix client ci" >&2; exit 1; }
   if $client_ts || $client_lock; then npm --prefix client run check --workspace @arc/client; fi
-  if $client_web || $client_lock; then
+  if $client_ts || $client_web || $client_lock; then
     npm --prefix client run check --workspace ui
+    npm --prefix client run test:unit --workspace ui
     if $client_web; then npm --prefix client run build --workspace ui; fi
   fi
 else
@@ -104,5 +109,8 @@ else
 fi
 if $migrations_changed; then
   echo "NOTICE: migration changes require empty-DB/restart smoke: bash scripts/test-m0-01.sh"
+fi
+if [[ " ${changed[*]} " == *" scripts/"* || " ${changed[*]} " == *" .codex/"* ]]; then
+  python3 scripts/test-devex.py
 fi
 echo "Changed-scope checks complete; M7 full regression not implied."

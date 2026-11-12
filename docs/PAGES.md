@@ -1,6 +1,6 @@
 # Pages / Wiki backend
 
-Tracking: [#11](https://github.com/pavlith/arc/issues/11). UI remains paused.
+Page semantics and limits; product acceptance is tracked in [#11](https://github.com/pavlith/arc/issues/11).
 
 Pages is a separate signed Go service, SQLite owner and metadata outbox. Its
 personal/workspace roots follow reserve/domain receipt/activate and the Files
@@ -58,9 +58,9 @@ are private and metadata-only. Personal routes use `/api/v1/pages/personal/roots
 and workspace routes `/api/v1/pages/workspaces/{workspace_id}/roots`.
 No production signing material, migration or external deployment is automatic.
 
-## Verification evidence
+## Verification
 
-The isolated office live fixture in `scripts/test-files-live.sh` now installs
+Run `bash scripts/test-files-live.sh`. The isolated office fixture installs
 Pages as a third independent database/service composition with a distinct NKey,
 real signed approvals, current Identity/Access and HTTPS Gate routes. It covers
 personal/workspace roots for two users/two workspaces, known-ID isolation,
@@ -68,4 +68,4 @@ cycle rejection, editor update, parent-preserving version restore, scoped
 snapshot templates and a denied Files embed. Native tests additionally cover
 read revocation before cached restore/template use, stale CAS, rollback on
 outbox failure, archived visibility, JSON grammar/depth/node/escaped-size limits.
-UI, production rollout and the full M7/load matrix remain deferred.
+Record executed results in the Issue. Browser, production rollout and full M7/load acceptance require their own checks.

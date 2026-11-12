@@ -1,0 +1,24 @@
+{
+  "allowed_classes": ["editor-attachment", "mention", "mention-issue", "mention-wiki", "registry-ref", "text-[var(--app-accent-light)]", "underline"],
+  "allowed_class_prefixes": ["language-"],
+  "class_cases": [
+    {"input": "mention mention-issue", "output": "mention mention-issue"},
+    {"input": "fixed inset-0 z-50 mention", "output": "mention"},
+    {"input": "\tmention\n underline\r", "output": "mention underline"},
+    {"input": "language-typescript language-c++ language-c#", "output": "language-typescript language-c++ language-c#"},
+    {"input": "language- language-<script> language-javascript:alert(1)", "output": ""},
+    {"input": "language-abcdefghijklmnopqrstuvwxyzabcdefghijklmno", "output": ""},
+    {"input": "hover:fixed [position:fixed] editor-attachment", "output": "editor-attachment"},
+    {"input": "text-[var(--app-accent-light)] underline", "output": "text-[var(--app-accent-light)] underline"}
+  ],
+  "documents": [
+    {"name": "mention", "html": "<p><span class=\"mention mention-issue\">ENG-1</span></p>"},
+    {"name": "code", "html": "<pre><code class=\"language-typescript\">const count = 1;</code></pre>"},
+    {"name": "attachment", "html": "<a class=\"editor-attachment\" href=\"/api/v1/files/personal/roots/root/files/file/content\">file</a>"},
+    {"name": "image", "html": "<p><img src=\"/api/v1/files/personal/roots/root/files/file/image\" alt=\"Diagram\"></p>"}
+  ],
+  "stripped": [
+    {"name": "overlay", "html": "<a class=\"fixed inset-0 z-50 underline\">link</a>", "want": "<a class=\"underline\">link</a>"},
+    {"name": "arbitrary utility", "html": "<p class=\"bg-red-500 mention\">text</p>", "want": "<p class=\"mention\">text</p>"}
+  ]
+}

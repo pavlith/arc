@@ -77,7 +77,7 @@ performs an authorized refetch of the subscribed collection; it never applies
 payload content as a document patch. Out-of-order revisions trigger refetch;
 a dropped invalidation cannot silently advance a local data version.
 
-Proposed limits for initial implementation (server-enforced):
+Initial server-enforced limits:
 - At most 8 subscriptions/socket (including Inbox), 1,024 concurrent sockets
   per Gate instance and 20 connection attempts/minute/client IP.
 - Incoming JSON frame at most 8 KiB, outgoing invalidation at most 1 KiB.

@@ -13,14 +13,10 @@ GitHub Issues are the only task/status tracker. This file records *dependencies*
 | 7 | English Gate/Svelte product UI | [#9](https://github.com/pavlith/arc/issues/9), [#10](https://github.com/pavlith/arc/issues/10) | Account/workspace → Task → Inbox → Files/Pages flows |
 | 8 | Standalone product acceptance, then optional GitHub connector | [#9](https://github.com/pavlith/arc/issues/9), [Requirements](REQUIREMENTS.md) | Two users/workspaces; deny/revoke, restart, migration replay and end-to-end flows |
 
-Backend implementations of Task, Files, Pages, references and Notify already exist, but Issue acceptance remains authoritative. UI work remains paused pending explicit authorization. Do not infer production readiness from code or migration compilation; document verified results in the owning Issue.
+Issue scope and labels determine remaining work and any temporary pause. No dependency row establishes completion or authorizes production rollout.
 
-## Invariants
-- Core owns Identity/Access/Fabric; Gate owns the public HTTP/WebSocket edge without a DB; Task/Notify/Files/Pages own separate SQLite/outbox data. Domain-to-domain references are opaque, never cross-owner SQL.
-- NATS transports approved metadata and events, **not file bytes**. Private byte streaming is mTLS and signed through Gate; browser sessions and CLI Bearer identities stay distinct.
-- Every step uses exact approved routes/downstream permissions, current ACL/session, revocation, idempotency and replay-safe transactions. Unverified target links convey no authority or content.
-- New migrations/producer digests require explicit operator deployment. No automatic signing, production rollout or outbound delivery.
-- UI uses the existing Svelte 5 package, Gate API and validated Tiptap documents; do not restore upstream Kuayle trust assumptions.
-- M7, broad WebDAV/public sharing, Calendars/Contacts, new agent drivers and full provider connectors are separate deliverables.
+## Contracts
+
+[Architecture](ARCHITECTURE.md) defines ownership, approved transport and authorization. [Development](DEVELOPMENT.md) defines installation and verification. Task stores plain text/Markdown; Pages uses validated Tiptap. M7 and later product domains retain their own requirement scope.
 
 Component details: [Task](TASK-MODEL.md), [Realtime](REALTIME.md), [Files](FILES.md), [References](RESOURCE-REFERENCES.md), [Pages](PAGES.md), [Notify](NOTIFY.md).

@@ -13,9 +13,9 @@ import {
 
 const origin = 'https://app.example';
 
-// Shared with the Go sanitizer's tests: the documents the editor stores.
+// Browser rendering examples; server content validation has its own contract.
 const contract = JSON.parse(
-	readFileSync(new URL('../../../BE/pkg/sanitize/testdata/editor_html_contract.json', import.meta.url), 'utf8')
+	readFileSync(new URL('../fixtures/editor-html.json', import.meta.url), 'utf8')
 );
 
 // The sanitizer hook only reads and writes attributes, so a map stands in for the element.

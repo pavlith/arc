@@ -1,6 +1,5 @@
 # Arc Architecture
 
-> Reviewed against the checkout on 2026-11-10 under [#14](https://github.com/pavlith/arc/issues/14).
 > Requirements: [REQUIREMENTS.md](REQUIREMENTS.md). Setup and checks: [DEVELOPMENT.md](DEVELOPMENT.md).
 > This document defines contracts; a planned contract does not establish implementation or verification.
 
@@ -324,7 +323,7 @@ Core owns nodes, approved templates, typed resources/deployments, immutable revi
 
 `RegisterNode` binds a node permanently to one active `arc-agent` service account and capabilities; disabled nodes cannot be resurrected. Template revisions are immutable and revocation irreversible. Core approval does not install the node's independent local allowlist.
 
-`Apply` accepts revision zero/empty template digest, expected revision and idempotency key. Core assigns current template digest and next revision, committing resource/operation/revision/audit/outbox together. Resource node/kind binding is immutable; deletion leaves a tombstone. Actor-scoped replay rechecks authorization; changed payload conflicts. New revision cancels prior pending/running operations and preserves terminal history. The untyped desired-deployment API and its table have been removed; only approved typed Runtime resources can produce host execution snapshots.
+`Apply` accepts revision zero/empty template digest, expected revision and idempotency key. Core assigns current template digest and next revision, committing resource/operation/revision/audit/outbox together. Resource node/kind binding is immutable; deletion leaves a tombstone. Actor-scoped replay rechecks authorization; changed payload conflicts. New revision cancels prior pending/running operations and preserves terminal history. Only approved typed Runtime resources can produce host execution snapshots.
 
 ### 7.2. Node protocol and snapshot execution
 
@@ -348,7 +347,7 @@ Reports bind node/service, event/operation/revision/spec digest and approved tem
 
 ### 7.3. Reconciliation and failures
 
-Agent runs serial online inventory/pull rounds with bounded backoff. Missing inventory IDs do not request deletion. No new effects occur from cached commands when Core/NATS is unavailable; existing workloads survive. Pending report retries preserve event ID in process memory; after crash a new receipt is possible while host effects remain idempotent. New successful observations refresh liveness. Failed operations are terminal and require explicit new desired revision; a complete health channel after terminal operations is still absent.
+Agent runs serial online inventory/pull rounds with bounded backoff. Missing inventory IDs do not request deletion. No new effects occur from cached commands when Core/NATS is unavailable; existing workloads survive. Reports are persisted before their first send; pending retries preserve event ID across reconnect and process restart, and host effects remain idempotent. New successful observations refresh liveness. Failed operations are terminal and require explicit new desired revision; a complete health channel after terminal operations is still absent.
 
 The standalone Linux Agent owns a private durable, exclusively locked journal. SIGTERM/SIGINT close connections/journal without stopping workloads. Its current systemd driver operates only root-owned, preinstalled `arc-managed-<resource-id>.service` with matching template ID. Fixed show/start/stop calls reject aliases, drop-ins, unsafe dependencies and noncanonical ownership/path. Delete stops while retaining unit/data. Installation, enable/restart and unit edits remain operator work. The Docker driver manages approved, locally available images on the node's Unix socket and persists container ownership before effects. Current restrictions and verification limits are in the [Agent README](../services/agent/README.md). LXD is not implemented.
 

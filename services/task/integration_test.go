@@ -652,7 +652,7 @@ func TestM006(t *testing.T) {
 	t.Run("correlated_diagnostics", func(t *testing.T) {
 		const trace = "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
 		var eventID string
-		must(tdb.QueryRow("SELECT event_id FROM outbox LIMIT 1").Scan(&eventID))
+		must(tdb.QueryRow("SELECT event_id FROM outbox WHERE subject=? AND envelope->>'aggregate_id'=?", taskv1.CreatedSubject, task.ID).Scan(&eventID))
 		coreOps := map[string]bool{}
 		for _, entry := range logs.Entries() {
 			if entry["msg"] == "arc rpc" && entry["request_id"] == "m006-request" && entry["traceparent"] == trace && entry["duration_ms"] != nil && entry["error_code"] == "" {

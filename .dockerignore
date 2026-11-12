@@ -1,2 +1,10 @@
 .git/
 .secrets/
+**/node_modules/
+**/.svelte-kit/
+**/.vite/
+**/build/
+**/coverage/
+**/.env
+**/.env.*
+**/npm-debug.log*

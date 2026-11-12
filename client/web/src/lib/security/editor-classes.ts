@@ -3,9 +3,8 @@
 // on stored content can restyle the page around it (for example a link
 // stretched invisibly over the whole viewport).
 //
-// The backend sanitizer keeps the same list in BE/pkg/sanitize/editor_classes.go.
-// BE/pkg/sanitize/testdata/editor_html_contract.json is read by both test
-// suites; change all three together.
+// Browser regression examples live in tests/fixtures/editor-html.json.
+// This rendering filter does not replace Arc's server-side content validation.
 
 /** Classes the editor puts on links. */
 export const EDITOR_LINK_CLASS = 'text-[var(--app-accent-light)] underline';

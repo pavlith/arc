@@ -5,12 +5,12 @@
 
 	let { name, ...props }: LucideProps & { name: string } = $props();
 	const iconMap = LucideIcons as unknown as Record<string, LucideIcon>;
-	const brandNode = $derived(Object.hasOwn(legacyTeamIconNodes, name) ? legacyTeamIconNodes[name] : undefined);
+	const brandNode = $derived(Object.hasOwn(teamBrandIconNodes, name) ? teamBrandIconNodes[name] : undefined);
 	const Icon = $derived(typeof iconMap[name] === 'function' ? iconMap[name] : LucideIcons.SquareUser);
 </script>
 
-{#if legacyNode}
-	<LucideIcons.Icon iconNode={legacyNode} {...props} />
+{#if brandNode}
+	<LucideIcons.Icon iconNode={brandNode} {...props} />
 {:else}
 	<Icon {...props} />
 {/if}

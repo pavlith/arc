@@ -1,7 +1,7 @@
 <script lang="ts">
 	import PageTitle from '$lib/components/shared/PageTitle.svelte';
 	import { Input } from '$lib/components/ui/input/index.js';
-	import packageLock from '../../../../../package-lock.json';
+	import packageLock from '../../../../../../package-lock.json';
 	import { Search } from '@lucide/svelte';
 	import { m, getLocale, setLocale } from '$lib/features/i18n/messages';
 

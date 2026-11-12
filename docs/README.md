@@ -1,10 +1,18 @@
-# Arc docs
+# Arc documentation
 
-- [Requirements](REQUIREMENTS.md): requirement IDs, scope, acceptance.
-- [Architecture](ARCHITECTURE.md): security invariants, ownership and protocols.
-- [Development](DEVELOPMENT.md): environment, verification and delivery.
-- [Codex](CODEX.md) and [AGENTS](../AGENTS.md): selective agent context.
-- [Product sequence](shortplan.md): integration dependencies; GitHub Issues own actual status.
-- Domain contracts: [Task](TASK-MODEL.md), [Realtime](REALTIME.md), [Files](FILES.md), [References](RESOURCE-REFERENCES.md), [Pages](PAGES.md), [Notify](NOTIFY.md), [Agent roadmap](AGENT-HOST-ROADMAP.md).
+| Question | Read |
+|---|---|
+| Product scope and acceptance IDs | [Requirements](REQUIREMENTS.md) |
+| Shared trust, ownership and protocols | [Architecture](ARCHITECTURE.md) |
+| Setup, migrations, checks and delivery | [Development](DEVELOPMENT.md) |
+| Agent rules / Codex profiles and diagnostics | [AGENTS](../AGENTS.md) / [Codex](CODEX.md) |
+| Task workflow, projects, templates and editor data | [Task](TASK-MODEL.md) |
+| WebSocket handshake, authorization and invalidations | [Realtime](REALTIME.md) |
+| Files roots, bytes, quotas and streaming | [Files](FILES.md) |
+| Attachments, avatars and cross-owner references | [References](RESOURCE-REFERENCES.md) |
+| Page hierarchy, Tiptap validation and versions | [Pages](PAGES.md) |
+| Inbox sources and outbound webhook | [Notify](NOTIFY.md) |
+| Product dependencies / infrastructure rollout | [Product sequence](shortplan.md) / [Agent roadmap](AGENT-HOST-ROADMAP.md) |
+| Executables / SDK / clients | [Services](../services/README.md) / [SDK](../sdk/README.md) / [Web](../client/web/README.md), [TypeScript](../client/ts/README.md) |
 
-Execution-specific instructions remain next to `sdk/`, `services/`, `client/`, `test/` and `deploy/`. Read only the section required by the active Issue. No secondary Markdown backlog or historical delivery transcript.
+Requirements define the target; architecture and domain contracts define semantics; component README files locate implementation and configuration. GitHub Issues own status, pauses and revision-bound verification. Read the smallest relevant section; do not maintain another backlog or copy delivery history into normative documents.

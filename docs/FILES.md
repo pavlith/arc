@@ -1,6 +1,6 @@
 # Files service
 
-Tracking: [#29](https://github.com/pavlith/arc/issues/29). The `main` tree contains a signed Files service with 35 public and four hidden private operations, owner SQLite, scoped personal/workspace roots, resumable uploads, private mTLS byte transport, cleanup, quotas and safe image routing. Code delivery is not production acceptance. See [resource references](RESOURCE-REFERENCES.md) for Task attachments and avatars.
+Files owns metadata, scoped personal/workspace roots, resumable uploads, private mTLS byte transport, cleanup, quotas and safe image routing. Exact operations live in its [signed manifest](../services/files/api/v1/contract/manifest.json). Acceptance is tracked in [#29](https://github.com/pavlith/arc/issues/29). See [resource references](RESOURCE-REFERENCES.md) for Task attachments and avatars.
 
 ## Ownership and authorization
 
@@ -137,12 +137,7 @@ Do not publish Files' private HTTPS port to the public internet. Provision
 client/server certificates, private NATS permissions and signed Fabric/Access
 installation before enabling these example settings.
 
-**Acceptance remaining:** test the full live Core → Gate → private mTLS → Files
-pipeline with two users and two workspaces, validate actual certificate trust,
-network loss/retry under load, process failures, Access revocation during a
-long download and upload, operator install/uninstall, and cleanup of promoted
-blobs that fail metadata commit. The domain unit tests use a local fixture
-identity authority and do **not** replace live Core cryptographic acceptance.
+Use the [isolated live fixture](#reproducible-isolated-live-acceptance) for the signed Core/Gate/mTLS/Files path. Production certificates, separate-process installation, crash/load and operator recovery require additional release acceptance; fixture authority is not a production approval.
 
 ## Workspace capacity
 
@@ -184,8 +179,8 @@ Workspace routes retain their required UUID and `files.workspace` type.
 An operator/provider provisions a personal root through Core reserve with
 `owner_kind=user`, the active user's UUID and no workspace, followed by
 `PreparePersonalRoot`, signed domain receipt, Access activation and Files
-activation. Migration `000003_personal_roots` records the immutable user owner
-alongside each personal root. Existing workspace roots retain empty owner IDs.
+activation. The Files baseline records an immutable user owner for personal
+roots; workspace roots have empty owner IDs.
 The Files policy checks root kind and exact scope before live Access; it does
 not infer ownership or trust a browser-supplied user ID. Individual-user sharing
 uses Core grants. It does not add workspace membership or implicit group rights.
@@ -232,9 +227,9 @@ Root provisioning may exchange the corresponding folder-create invocation for
 Grant sources `files/v1:files.roots.grants` and
 `files/v1:files.personal.roots.grants` may exchange only for grant add/revoke,
 with the declared type actions. No bootstrap Access wildcard is needed.
-Apply `000003_personal_roots` explicitly before restart, approve the new signed
-artifact, then reconcile Gate. Prior installations do not automatically approve unregistered
-operations. No production signing key or credential is included in the repo.
+Initialize an empty Files database with its owner migrator, approve the exact
+artifact, then reconcile Gate; see [installation policy](DEVELOPMENT.md#pre-stable-api-rollout).
+No production signing key or credential is included in the repo.
 
 ## Reproducible isolated live acceptance
 
@@ -261,11 +256,7 @@ acceptance, a separate-process Core/Files rollout or full M7 verification.
 The 1 GiB memory/load matrix and production certificate/operator rollout remain
 separate acceptance work.
 
-Full-network `-race` instrumentation can exceed the unchanged 5-second metadata
-budgets because each request verifies/exchanges multiple Ed25519 invocations.
-The current full-network instrumented run hit a metadata deadline; it is not
-reported as a passing live guardrail. Focused Files/Gate package race checks
-and the ordinary live network scenario are recorded independently.
+Full-network race instrumentation adds cryptographic overhead but does not relax metadata deadlines. Record its result separately from ordinary live acceptance and focused package race checks in the owning Issue.
 
 ## Attachments and avatar assets
 

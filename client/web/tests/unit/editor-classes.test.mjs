@@ -11,14 +11,14 @@ import { Attachment } from '../../src/lib/components/shared/attachment.extension
 import { MentionNode } from '../../src/lib/components/shared/mention/mention.extension.ts';
 import { linkIssueKeys } from '../../src/lib/features/wiki/wiki-content.ts';
 
-// The Go sanitizer's tests read the same file, so neither allowlist can change alone.
+// Browser-only regression examples; no server HTML sanitizer is implied.
 const contract = JSON.parse(
-	readFileSync(new URL('../../../BE/pkg/sanitize/testdata/editor_html_contract.json', import.meta.url), 'utf8')
+	readFileSync(new URL('../fixtures/editor-html.json', import.meta.url), 'utf8')
 );
 
 const classAttributes = (html) => [...html.matchAll(/\sclass="([^"]*)"/g)].map((match) => match[1]);
 
-test('the class allowlist is the one the backend sanitizer uses', () => {
+test('the browser class allowlist matches the regression examples', () => {
 	assert.deepEqual([...EDITOR_CLASS_NAMES].sort(), [...contract.allowed_classes].sort());
 	assert.deepEqual([...EDITOR_CLASS_PREFIXES], contract.allowed_class_prefixes);
 });

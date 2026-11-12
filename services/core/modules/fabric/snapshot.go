@@ -85,11 +85,14 @@ func SignSnapshot(s RouteSnapshot, kid string, key ed25519.PrivateKey) (SignedSn
 // and same-revision content through VerifySnapshotJWKS and its atomic table.
 func VerifySnapshot(key ed25519.PublicKey, s SignedSnapshot, minRevision int64) (RouteSnapshot, error) {
 	var snap RouteSnapshot
+	if len(s.Payload) > maxExpandedSnapshot {
+		return snap, security.ErrDenied
+	}
 	raw, e := security.CanonicalJSON(s.Payload)
 	if len(key) != 32 || e != nil || !ed25519.Verify(key, snapshotMessage(raw), s.Signature) {
 		return snap, security.ErrUnauthenticated
 	}
-	if contract.Strict(raw, &snap) != nil || snap.Kid == "" || snap.Revision < minRevision {
+	if strictSnapshotJSON(raw, &snap) != nil || snap.Kid == "" || snap.Revision < minRevision {
 		return RouteSnapshot{}, security.ErrDenied
 	}
 	digest, e := ContentDigest(snap)
@@ -99,6 +102,9 @@ func VerifySnapshot(key ed25519.PublicKey, s SignedSnapshot, minRevision int64) 
 	return snap, nil
 }
 func VerifySnapshotJWKS(keys security.JWKS, s SignedSnapshot, minRevision int64) (RouteSnapshot, error) {
+	if len(s.Payload) > maxExpandedSnapshot {
+		return RouteSnapshot{}, security.ErrDenied
+	}
 	var untrusted struct {
 		Kid string `json:"kid"`
 	}

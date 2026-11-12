@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/pavlith/arc/sdk"
-	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/rpc"
 	"github.com/pavlith/arc/sdk/security"
 	"github.com/pavlith/arc/services/core/modules/identity"
@@ -124,7 +123,7 @@ func BundleSnapshot(b RouteBundle) (SignedSnapshot, error) {
 		return SignedSnapshot{}, security.ErrDenied
 	}
 	var out SignedSnapshot
-	if contract.Strict(raw, &out) != nil || len(out.Payload) == 0 || len(out.Signature) != ed25519.SignatureSize {
+	if strictSnapshotJSON(raw, &out) != nil || len(out.Payload) == 0 || len(out.Signature) != ed25519.SignatureSize {
 		return SignedSnapshot{}, security.ErrDenied
 	}
 	return out, nil

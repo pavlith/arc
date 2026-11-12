@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 
 	"encoding/json"
+	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/sdk/security"
 	"strings"
 	"testing"
@@ -82,7 +83,7 @@ func TestRouteBundleBindsNonceKeysAndExpiry(t *testing.T) {
 
 func TestCompressedBundlePreservesSignedSnapshotAndBounds(t *testing.T) {
 	k := key(94)
-	snapshot, e := SignSnapshot(RouteSnapshot{Revision: 1, Routes: []Route{{Path: strings.Repeat("x", 180<<10)}}}, "snapshot", k)
+	snapshot, e := SignSnapshot(RouteSnapshot{Revision: 1, Routes: []Route{{Path: strings.Repeat("x", 300<<10)}}}, "snapshot", k)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -105,6 +106,9 @@ func TestCompressedBundlePreservesSignedSnapshotAndBounds(t *testing.T) {
 	if _, e = VerifySnapshot(k.Public().(ed25519.PublicKey), got, 0); e != nil {
 		t.Fatal(e)
 	}
+	if len(got.Payload) <= 256<<10 || contract.Strict(got.Payload, &RouteSnapshot{}) == nil {
+		t.Fatal("ordinary RPC JSON limit was widened")
+	}
 	bad := b
 	bad.CompressedSnapshot = append([]byte(nil), b.CompressedSnapshot...)
 	bad.CompressedSnapshot[0] ^= 1
@@ -118,6 +122,26 @@ func TestCompressedBundlePreservesSignedSnapshotAndBounds(t *testing.T) {
 	bad.Snapshot = snapshot
 	if _, e = BundleSnapshot(bad); e == nil {
 		t.Fatal("ambiguous encoding accepted")
+	}
+	// Expansion keeps strict JSON checks after transport authentication.
+	for _, raw := range [][]byte{
+		bytes.Replace(wireSnapshot(t, snapshot), []byte(`"signature":`), []byte(`"unknown":true,"signature":`), 1),
+		append(wireSnapshot(t, snapshot), []byte(` {}`)...),
+		bytes.Replace(wireSnapshot(t, snapshot), []byte(`"signature":`), []byte(`"signature":null,"signature":`), 1),
+	} {
+		var encoded bytes.Buffer
+		writer := gzip.NewWriter(&encoded)
+		_, _ = writer.Write(raw)
+		_ = writer.Close()
+		malformed := b
+		malformed.CompressedSnapshot = encoded.Bytes()
+		malformed.Signature = ed25519.Sign(k, bundleMessage(malformed))
+		if VerifyBundle(k.Public().(ed25519.PublicKey), malformed, "request") != nil {
+			t.Fatal("fixture bundle signature")
+		}
+		if _, e = BundleSnapshot(malformed); e == nil {
+			t.Fatal("malformed expanded snapshot accepted")
+		}
 	}
 	var out bytes.Buffer
 	w := gzip.NewWriter(&out)
@@ -137,4 +161,13 @@ func TestCompressedBundlePreservesSignedSnapshotAndBounds(t *testing.T) {
 	if compressBundle(&oversized) == nil {
 		t.Fatal("oversized signed snapshot accepted")
 	}
+}
+
+func wireSnapshot(t *testing.T, snapshot SignedSnapshot) []byte {
+	t.Helper()
+	raw, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
 }

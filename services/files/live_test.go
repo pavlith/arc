@@ -43,6 +43,9 @@ import (
 	calendarservice "github.com/pavlith/arc/services/calendar"
 	calendarv1 "github.com/pavlith/arc/services/calendar/api/v1"
 	calendarmigrations "github.com/pavlith/arc/services/calendar/migrations"
+	contactsservice "github.com/pavlith/arc/services/contacts"
+	contactsv1 "github.com/pavlith/arc/services/contacts/api/v1"
+	contactsmigrations "github.com/pavlith/arc/services/contacts/migrations"
 	"github.com/pavlith/arc/services/core/modules/access"
 	"github.com/pavlith/arc/services/core/modules/fabric"
 	"github.com/pavlith/arc/services/core/modules/identity"
@@ -141,7 +144,7 @@ func TestFilesLive(t *testing.T) {
 	pools.AppendCertsFromPEM(caPEM)
 	seedFiles := map[string]string{}
 	pubs := map[string]string{}
-	for _, role := range []string{"core", "gate", "files", "task", "pages", "notify", "calendar", "admin"} {
+	for _, role := range []string{"core", "gate", "files", "task", "pages", "notify", "calendar", "contacts", "admin"} {
 		kp, e := nkeys.CreateUser()
 		must(e)
 		seed, e := kp.Seed()
@@ -162,14 +165,15 @@ jetstream {store_dir: %q}
 tls {cert_file: %q, key_file: %q}
 authorization {users: [
  {nkey: %q, permissions: {publish: ["_INBOX.>","evt.arc.fabric.routes.changed","ctl.arc.fabric.probe.>","$SRV.>"], subscribe: ["rpc.identity.v1.>","rpc.access.v1.>","ctl.arc.fabric.>","$SRV.>","_INBOX.>"]}},
- {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","rpc.files.v1.>","rpc.task.v1.>","rpc.pages.v1.>","rpc.notify.v1.>","rpc.calendar.v1.>","ctl.arc.fabric.routes"], subscribe: ["_INBOX.>","evt.task.catalog.changed.v1","evt.task.task.created.v1","evt.notify.inbox.changed.v1"]}},
+ {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","rpc.files.v1.>","rpc.task.v1.>","rpc.pages.v1.>","rpc.notify.v1.>","rpc.calendar.v1.>","rpc.contacts.v1.>","ctl.arc.fabric.routes"], subscribe: ["_INBOX.>","evt.task.catalog.changed.v1","evt.task.task.created.v1","evt.notify.inbox.changed.v1"]}},
  {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","ctl.arc.fabric.>","evt.files.catalog.changed.v1","_INBOX.>","$SRV.>"], subscribe: ["rpc.files.v1.>","ctl.arc.fabric.probe.>","_INBOX.>","$SRV.>"]}},
  {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","rpc.files.v1.files.get","ctl.arc.fabric.>","evt.task.>","_INBOX.>","$SRV.>"], subscribe: ["rpc.task.v1.>","ctl.arc.fabric.probe.>","_INBOX.>","$SRV.>"]}},
  {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","rpc.files.v1.files.get","rpc.files.v1.personal.files.get","rpc.task.v1.work.get","ctl.arc.fabric.>","evt.pages.catalog.changed.v1","_INBOX.>","$SRV.>"], subscribe: ["rpc.pages.v1.>","ctl.arc.fabric.probe.>","_INBOX.>","$SRV.>"]}},
  {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","ctl.arc.fabric.>","evt.notify.inbox.changed.v1","$JS.API.>","$JS.ACK.>","_INBOX.>","$SRV.>"], subscribe: ["rpc.notify.v1.>","ctl.arc.fabric.probe.>","_INBOX.>","$SRV.>"]}},
  {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","ctl.arc.fabric.>","evt.calendar.catalog.changed.v1","_INBOX.>","$SRV.>"], subscribe: ["rpc.calendar.v1.>","ctl.arc.fabric.probe.>","_INBOX.>","$SRV.>"]}},
+ {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","ctl.arc.fabric.>","evt.contacts.catalog.changed.v1","_INBOX.>","$SRV.>"], subscribe: ["rpc.contacts.v1.>","ctl.arc.fabric.probe.>","_INBOX.>","$SRV.>"]}},
  {nkey: %q}
-]}`, port, filepath.Join(dir, "js"), certFile, keyFile, pubs["core"], pubs["gate"], pubs["files"], pubs["task"], pubs["pages"], pubs["notify"], pubs["calendar"], pubs["admin"])
+]}`, port, filepath.Join(dir, "js"), certFile, keyFile, pubs["core"], pubs["gate"], pubs["files"], pubs["task"], pubs["pages"], pubs["notify"], pubs["calendar"], pubs["contacts"], pubs["admin"])
 	confFile := write("nats.conf", []byte(conf))
 	logFile, e := os.Create(filepath.Join(dir, "nats.log"))
 	must(e)
@@ -221,7 +225,8 @@ authorization {users: [
 	pagesKey := liveKey()
 	notifyKey := liveKey()
 	calendarKey := liveKey()
-	baseline.Deployments = append(baseline.Deployments, access.Deployment{Definition: "task", Instance: "live-task"}, access.Deployment{Definition: "pages", Instance: "live-pages"}, access.Deployment{Definition: "notify", Instance: "live-notify"}, access.Deployment{Definition: "calendar", Instance: "live-calendar"})
+	contactsKey := liveKey()
+	baseline.Deployments = append(baseline.Deployments, access.Deployment{Definition: "task", Instance: "live-task"}, access.Deployment{Definition: "pages", Instance: "live-pages"}, access.Deployment{Definition: "notify", Instance: "live-notify"}, access.Deployment{Definition: "calendar", Instance: "live-calendar"}, access.Deployment{Definition: "contacts", Instance: "live-contacts"})
 	static, e := access.NewContracts(operator.Public().(ed25519.PublicKey), []access.Approved{liveApproval(operator, baseline)})
 	must(e)
 	acl := &access.Core{GormDB: coreDB, Identity: id, Contracts: static, Domain: access.ReceiptVerifier{Keys: id.Verifier().Keys}}
@@ -239,6 +244,9 @@ authorization {users: [
 	calendarAccount, e := id.RegisterService(ctx, sa, "calendar", "live-calendar")
 	must(e)
 	must(id.AddServiceKey(ctx, sa, calendarAccount, "live-calendar", calendarKey.Public().(ed25519.PublicKey), "mount:live", time.Now().Add(time.Hour)))
+	contactsAccount, e := id.RegisterService(ctx, sa, "contacts", "live-contacts")
+	must(e)
+	must(id.AddServiceKey(ctx, sa, contactsAccount, "live-contacts", contactsKey.Public().(ed25519.PublicKey), "mount:live", time.Now().Add(time.Hour)))
 	notifyAccount, e := id.RegisterService(ctx, sa, "notify", "live-notify")
 	must(e)
 	must(id.AddServiceKey(ctx, sa, notifyAccount, "live-notify", notifyKey.Public().(ed25519.PublicKey), "mount:live", time.Now().Add(time.Hour)))
@@ -267,6 +275,9 @@ authorization {users: [
 	}
 	for _, op := range []string{"invocations.verify", "invocations.exchange_service"} {
 		baseline.Rules = append(baseline.Rules, access.Rule{Caller: calendarAccount, Audience: "identity/v1", Operation: "identity.v1." + op, ActorKinds: []string{"bootstrap"}})
+	}
+	for _, op := range []string{"invocations.verify", "invocations.exchange_service"} {
+		baseline.Rules = append(baseline.Rules, access.Rule{Caller: contactsAccount, Audience: "identity/v1", Operation: "identity.v1." + op, ActorKinds: []string{"bootstrap"}})
 	}
 	f := &fabric.Core{GormDB: coreDB, Identity: id, ApprovalKey: operator.Public().(ed25519.PublicKey), Bootstrap: []access.Approved{liveApproval(operator, baseline)}, SnapshotKey: coreKey, SnapshotKid: id.SigningKid, RouteTrustKey: trust}
 	acl.ContractSource = f
@@ -671,6 +682,223 @@ authorization {users: [
 	avatarEnv, e := resource.ParseAvatar(avatar.Receipt)
 	must(e)
 	must(resource.VerifyAvatar(filesKey.Public().(ed25519.PublicKey), avatarEnv, time.Now()))
+
+	// Contacts: real signed Gate -> owner -> Access path and independent outbox.
+	{
+		contactsDB, e := database.Open(ctx, filepath.Join(dir, "contacts.sqlite"))
+		must(e)
+		defer database.Close(contactsDB)
+		must(database.Migrate(ctx, contactsDB, contactsmigrations.SQLite()))
+		must(database.Migrate(ctx, contactsDB, contactsmigrations.SQLite()))
+		cc, e := contract.Compile(contactsv1.Artifact())
+		must(e)
+		cp := access.Approval{ContractDigests: map[string]string{}}
+		for _, r := range cc.Manifest.Resources {
+			cp.ContractDigests[r.Type] = cc.Digest
+			cp.Types = append(cp.Types, access.TypeSpec{Type: r.Type, Provider: contactsAccount, Actions: r.Actions, ShareAction: r.ShareAction, CreateAction: r.CreateAction, DeleteAction: r.DeleteAction})
+		}
+		subjects, sources := []string{}, []string{}
+		down := map[string][]string{}
+		for _, op := range cc.Manifest.Operations {
+			subjects = append(subjects, op.Subject)
+			cp.Rules = append(cp.Rules, access.Rule{Caller: gateID, Audience: "contacts/v1", Operation: op.ID, ActorKinds: []string{"user"}, Actions: []string{op.Auth.Action}})
+			src := "contacts/v1:" + op.ID
+			sources = append(sources, src)
+			down[src] = []string{op.Auth.Action}
+		}
+		cp.Rules = append(cp.Rules, access.Rule{Caller: contactsAccount, Audience: "access/v1", Operation: "access.v1.check", ActorKinds: []string{"user"}, Actions: cc.Manifest.Resources[0].Actions, DownstreamFrom: sources, DownstreamActions: down})
+		for _, op := range []string{"resources.reserve", "resources.activate", "grants.add", "grants.revoke"} {
+			sources := []string{"contacts/v1:contacts.contacts.create", "contacts/v1:contacts.personal.contacts.create"}
+			acts := []string{"contacts.create"}
+			if strings.HasPrefix(op, "grants.") {
+				sources = []string{"contacts/v1:contacts.roots.grants", "contacts/v1:contacts.personal.roots.grants"}
+				acts = cc.Manifest.Resources[0].Actions
+			}
+			bindings := map[string][]string{}
+			for _, src := range sources {
+				bindings[src] = acts
+			}
+			cp.Rules = append(cp.Rules, access.Rule{Caller: contactsAccount, Audience: "access/v1", Operation: "access.v1." + op, ActorKinds: []string{"user"}, Actions: acts, DownstreamFrom: sources, DownstreamActions: bindings})
+		}
+		ci := fabric.Installation{Publisher: "office-live-fixture", Account: contactsAccount, Deployment: "live-contacts", Artifact: contactsv1.Artifact(), Subjects: subjects, Policy: liveApproval(operator, cp)}
+		payload, sig := liveSigned(operator, ci)
+		_, e = f.Approve(ctx, fabric.SignedInstallation{Payload: payload, Signature: sig})
+		must(e)
+		_, e = js.AddStream(&nats.StreamConfig{Name: "CONTACTS", Subjects: []string{contactsv1.ChangedSubject}, Storage: nats.FileStorage})
+		must(e)
+		nc, e := sdk.Connect(ctx, cfg("contacts"))
+		must(e)
+		defer nc.Close()
+		rpcClient, e := rpc.NewClient(nc)
+		must(e)
+		contactClient := identity.Client{RPC: rpcClient, ServiceID: contactsAccount, Kid: "live-contacts", PrivateKey: contactsKey}
+		reg := &fabric.Client{Account: contactsAccount, Kid: "live-contacts", Key: contactsKey, CoreKey: coreKey.Public().(ed25519.PublicKey)}
+		contactsApp, e := contactsservice.New(contactsservice.Config{GormDB: contactsDB, Identity: contactClient, CoreTrust: coreKey.Public().(ed25519.PublicKey), Runtime: sdk.AppConfig{Connection: cfg("contacts"), Instance: "live-contacts", Registry: reg}})
+		must(e)
+		must(contactsApp.Start(ctx))
+		defer contactsApp.Stop()
+		provision := func(user string, session identity.UserSession, workspace string) contactsv1.Scope {
+			prefix, kind, typ, owner := "contacts.", "workspace", "contacts.workspace", workspace
+			if workspace == "" {
+				prefix, kind, typ, owner = "contacts.personal.", "user", "contacts.personal", user
+			}
+			accessCtx := func(op string) context.Context {
+				source := prefix + "contacts.create"
+				if strings.HasPrefix(op, "grants.") {
+					source = prefix + "roots.grants"
+				}
+				return liveDomainAccess(t, ctx, gateClient, contactClient, session, workspace, source, op)
+			}
+			reserved, e := ac.Reserve(accessCtx("resources.reserve"), access.ReserveRequest{Type: typ, OwnerKind: kind, OwnerID: owner, WorkspaceID: workspace})
+			must(e)
+			scope := contactsv1.Scope{WorkspaceID: workspace, RootID: reserved.ResourceID}
+			domainOwner := ""
+			if workspace == "" {
+				domainOwner = user
+			}
+			receipt, e := contactsApp.Contacts.PrepareRoot(ctx, scope, domainOwner, contactsv1.BookInput{Name: "Contacts"}, contactsKey, "live-contacts", contactsAccount)
+			must(e)
+			_, e = ac.Activate(accessCtx("resources.activate"), access.LifecycleRequest{ResourceID: scope.RootID, Receipt: receipt})
+			must(e)
+			must(contactsApp.Contacts.ActivateRoot(ctx, scope))
+			if workspace != "" {
+				for _, action := range []string{"contacts.create", "contacts.read", "contacts.write", "contacts.delete"} {
+					_, e = ac.AddGrant(accessCtx("grants.add"), access.GrantRequest{ResourceID: scope.RootID, PrincipalKind: "user", PrincipalID: user, Action: action})
+					must(e)
+				}
+			}
+			return scope
+		}
+		cwa, cwb, cpa, cpb := provision(alice, sa, wa), provision(bob, sb, wb), provision(alice, sa, ""), provision(bob, sb, "")
+		must(g.Reconcile(ctx))
+		base := func(scope contactsv1.Scope) string {
+			if scope.WorkspaceID == "" {
+				return "/api/v1/contacts/personal/roots/" + scope.RootID
+			}
+			return "/api/v1/contacts/workspaces/" + scope.WorkspaceID + "/roots/" + scope.RootID
+		}
+		input := contactsv1.Input{DisplayName: "Иван Петров", Organization: "Arc", Emails: []contactsv1.LabelledValue{{Label: "work", Value: "ivan@example.test"}}, Notes: "Private notes", CustomFields: map[string]string{"external_id": "local-1"}}
+		create := func(scope contactsv1.Scope, token string) contactsv1.Contact {
+			raw, _ := json.Marshal(input)
+			status, b := request("POST", base(scope)+"/contacts", string(raw), token, "application/json")
+			if status != 201 {
+				t.Fatalf("contacts create: %d %s", status, b)
+			}
+			var out contactsv1.Contact
+			must(json.Unmarshal(b, &out))
+			if out.UID != out.ID+"@arc" {
+				t.Fatal("unstable UID")
+			}
+			return out
+		}
+		ea, eb, epa, epb := create(cwa, ta), create(cwb, tb), create(cpa, ta), create(cpb, tb)
+		for _, tc := range []struct {
+			scope     contactsv1.Scope
+			id, token string
+		}{{cwa, ea.ID, tb}, {cwb, eb.ID, ta}, {cpa, epa.ID, tb}, {cpb, epb.ID, ta}, {cwa, eb.ID, ta}} {
+			status, b := request("GET", base(tc.scope)+"/contacts/"+tc.id, "", tc.token, "")
+			if !isDenied(status) {
+				t.Fatalf("contact known-ID isolation: %d %s", status, b)
+			}
+		}
+		status, b := request("GET", base(cwa)+"/contacts?limit=10&query=%D0%9F%D0%95%D0%A2%D0%A0%D0%9E%D0%92", "", ta, "")
+		var listed contactsv1.ContactList
+		must(json.Unmarshal(b, &listed))
+		if status != 200 || len(listed.Contacts) != 1 || listed.Contacts[0].ID != ea.ID || bytes.Contains(b, []byte(input.Notes)) {
+			t.Fatalf("contacts Unicode search/summary: %d %s", status, b)
+		}
+		grantBody, _ := json.Marshal(map[string]string{"principal_kind": "user", "principal_id": bob, "action": "contacts.read"})
+		status, b = request("POST", base(cwa)+"/grants", string(grantBody), ta, "application/json")
+		if status != 200 {
+			t.Fatalf("contacts grant: %d %s", status, b)
+		}
+		var grant contactsv1.GrantResult
+		must(json.Unmarshal(b, &grant))
+		status, b = request("GET", base(cwa)+"/contacts/"+ea.ID, "", tb, "")
+		if status != 200 || !bytes.Contains(b, []byte(input.Notes)) {
+			t.Fatalf("shared contact read: %d %s", status, b)
+		}
+		update, _ := json.Marshal(map[string]any{"display_name": "Renamed contact", "revision": 1})
+		status, b = request("PUT", base(cwa)+"/contacts/"+ea.ID, string(update), tb, "application/json")
+		if !isDenied(status) {
+			t.Fatalf("contact read-only write: %d %s", status, b)
+		}
+		status, b = request("PUT", base(cwa)+"/contacts/"+ea.ID, string(update), ta, "application/json")
+		var updated contactsv1.Contact
+		must(json.Unmarshal(b, &updated))
+		if status != 200 || updated.UID != ea.UID || updated.Revision != 2 || len(updated.Emails) != 0 || len(updated.CustomFields) != 0 {
+			t.Fatalf("contact full replacement: %d %s", status, b)
+		}
+		status, b = request("PUT", base(cwa)+"/contacts/"+ea.ID, string(update), ta, "application/json")
+		if status != 409 {
+			t.Fatalf("contact CAS: %d %s", status, b)
+		}
+		revoke, _ := json.Marshal(map[string]string{"grant_id": grant.GrantID})
+		status, b = request("POST", base(cwa)+"/grants", string(revoke), ta, "application/json")
+		if status != 200 {
+			t.Fatalf("contact revoke: %d %s", status, b)
+		}
+		status, b = request("GET", base(cwa)+"/contacts/"+ea.ID, "", tb, "")
+		if !isDenied(status) {
+			t.Fatalf("revoked contact read: %d %s", status, b)
+		}
+		// Core owns group membership; revoking membership invalidates the next read.
+		group, e := id.CreateGroup(ctx, sa, wa, "Contacts readers")
+		must(e)
+		must(id.SetGroupMember(ctx, sa, wa, group, bob, false))
+		groupBody, _ := json.Marshal(map[string]string{"principal_kind": "group", "principal_id": group, "action": "contacts.read"})
+		status, b = request("POST", base(cwa)+"/grants", string(groupBody), ta, "application/json")
+		if status != 200 {
+			t.Fatalf("contacts group grant: %d %s", status, b)
+		}
+		status, b = request("GET", base(cwa)+"/contacts/"+ea.ID, "", tb, "")
+		if status != 200 {
+			t.Fatalf("contacts group read: %d %s", status, b)
+		}
+		must(id.SetGroupMember(ctx, sa, wa, group, bob, true))
+		status, b = request("GET", base(cwa)+"/contacts/"+ea.ID, "", tb, "")
+		if !isDenied(status) {
+			t.Fatalf("removed group member read: %d %s", status, b)
+		}
+		status, b = request("POST", base(cpa)+"/grants", string(groupBody), ta, "application/json")
+		if status != 400 {
+			t.Fatalf("personal group grant accepted: %d %s", status, b)
+		}
+		foreignGroup, e := id.CreateGroup(ctx, sb, wb, "Foreign readers")
+		must(e)
+		groupBody, _ = json.Marshal(map[string]string{"principal_kind": "group", "principal_id": foreignGroup, "action": "contacts.read"})
+		status, b = request("POST", base(cwa)+"/grants", string(groupBody), ta, "application/json")
+		if status != 400 && !isDenied(status) {
+			t.Fatalf("foreign group grant accepted: %d %s", status, b)
+		}
+
+		status, b = request("DELETE", base(cwa)+"/contacts/"+ea.ID, `{"revision":2}`, ta, "application/json")
+		if status != 200 {
+			t.Fatalf("contact delete: %d %s", status, b)
+		}
+		status, b = request("GET", base(cwa)+"/contacts/"+ea.ID, "", ta, "")
+		if status != 404 {
+			t.Fatalf("deleted contact readable: %d %s", status, b)
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			var pending int64
+			must(contactsDB.Table("outbox").Where("published_at IS NULL").Count(&pending).Error)
+			if pending == 0 {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("Contacts outbox did not drain")
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		info, e := js.StreamInfo("CONTACTS")
+		must(e)
+		if info.State.Msgs != 6 {
+			t.Fatalf("Contacts events: %d", info.State.Msgs)
+		}
+		t.Log("PASS: Contacts signed Gate/Core/Access path, independent DB, two workspaces + personal books, known-ID denial, Unicode search, full replacement/CAS, read-only/user+group revoke and JetStream outbox")
+	}
 
 	// Calendar: real signed Gate -> owner -> Access path and independent outbox.
 	{

@@ -9,6 +9,7 @@
 | Files | `arc-files` | Personal/workspace metadata, bounded uploads/bytes and safe image delivery | [Files](../docs/FILES.md), [contract](files/api/v1/contract/manifest.json) |
 | Pages | `arc-pages` | Scoped Tiptap tree, versions, templates, ACL-checked references | [Pages](../docs/PAGES.md), [contract](pages/api/v1/contract/manifest.json) |
 | Calendar | `arc-calendar` | Personal/workspace calendars, bounded multiget/sync, iCalendar/UID/ETag, recurrence and free/busy | [Calendar](../docs/CALENDAR.md), [contract](calendar/api/v1/contract/manifest.json) |
+| Contacts | `arc-contacts` | Personal/workspace address books, structured contact CRUD/CAS, bounded search and grants | [Contacts](../docs/CONTACTS.md), [contract](contacts/api/v1/contract/manifest.json) |
 | Agent | `arc-agent` | Trusted node runtime, journal and restricted host drivers | [Agent](agent/README.md) |
 
 These are code surfaces, **not production acceptance**. Progress, unfinished UI and verification live in [GitHub Issues](https://github.com/pavlith/arc/issues), not this catalog. `main` is authoritative; historical delivery notes are in Git.
@@ -19,7 +20,7 @@ Each SQL owner has its own explicit migrations, models, idempotency/replay and t
 All operations/paths/schemas are authoritative in each owner's `api/v1/contract/` and code. Public routes and service-to-service downstream calls require **exact operator-approved Fabric manifests, signed routes, scopes, NATS subjects and pinned digests**. Updating an artifact on disk does not update an installed policy. Reapprove consumers when producer digests change. Do not replace specific approvals with wildcard permissions.
 
 ## Startup
-Run each owner's migrator before startup and use separate SQLite paths, private keys and NATS credentials. Service seeds are private 32-byte Ed25519 material (0600); give domain services only Core's public trust root, never operator/Core signing secrets. Disk stores are private and outside public static roots. See [database](../sdk/database/README.md), [Core config](core/README.md) and examples in `deploy/{task,notify,files,pages,gate,core}/`.
+Run each owner's migrator before startup and use separate SQLite paths, private keys and NATS credentials. Service seeds are private 32-byte Ed25519 material (0600); give domain services only Core's public trust root, never operator/Core signing secrets. Disk stores are private and outside public static roots. See [database](../sdk/database/README.md), [Core config](core/README.md) and examples in `deploy/{task,notify,files,pages,calendar,contacts,gate,core}/`.
 
 ```sh
 bash scripts/migrate.sh files /absolute/files.sqlite

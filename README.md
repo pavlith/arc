@@ -1,6 +1,6 @@
 # Arc
 
-Self-hosted collaboration platform: Core Identity/Access/Fabric, HTTPS Gate, Task, Notify, Files, Pages and infrastructure Agent, with a SvelteKit browser client. Go code is one root module; SQLite databases and migrations are owned independently by each service.
+Self-hosted collaboration platform: Core Identity/Access/Fabric, HTTPS Gate, Task, Notify, Files, Pages, Calendar, Contacts and infrastructure Agent, with a SvelteKit browser client. Go code is one root module; SQLite databases and migrations are owned independently by each service.
 
 - [Docs](docs/README.md) · [Architecture](docs/ARCHITECTURE.md) · [Development](docs/DEVELOPMENT.md) · [Issues](https://github.com/pavlith/arc/issues)
 - `main` is the active source of truth; GitHub Issues track incomplete product acceptance.

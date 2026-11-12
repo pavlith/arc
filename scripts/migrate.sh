@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 if [[ $# != 2 ]]; then
-  echo "Usage: $0 {core|task|notify|files|pages|calendar} /absolute/path/to/owner.sqlite" >&2
+  echo "Usage: $0 {core|task|notify|files|pages|calendar|contacts} /absolute/path/to/owner.sqlite" >&2
   exit 2
 fi
 exec go run ./deploy/migrate -service "$1" -db "$2"

@@ -1,0 +1,174 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "display_name": {
+      "type": "string",
+      "maxLength": 256,
+      "minLength": 1
+    },
+    "given_name": {
+      "type": "string",
+      "maxLength": 128
+    },
+    "family_name": {
+      "type": "string",
+      "maxLength": 128
+    },
+    "additional_name": {
+      "type": "string",
+      "maxLength": 128
+    },
+    "prefix": {
+      "type": "string",
+      "maxLength": 128
+    },
+    "suffix": {
+      "type": "string",
+      "maxLength": 128
+    },
+    "role": {
+      "type": "string",
+      "maxLength": 128
+    },
+    "organization": {
+      "type": "string",
+      "maxLength": 256
+    },
+    "phones": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "emails": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 254,
+            "minLength": 1
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "addresses": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "street": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "locality": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "region": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "postal_code": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "country": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 8192
+    },
+    "custom_fields": {
+      "type": "object",
+      "maxProperties": 32,
+      "propertyNames": {
+        "type": "string",
+        "maxLength": 64,
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 512
+      }
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "uid": {
+      "type": "string",
+      "maxLength": 255,
+      "minLength": 1
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "acl_root_id",
+    "display_name",
+    "id",
+    "uid",
+    "revision",
+    "created_at",
+    "updated_at"
+  ],
+  "additionalProperties": false
+}

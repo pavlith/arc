@@ -1,0 +1,641 @@
+{
+  "manifest_version": 1,
+  "service": {
+    "name": "contacts",
+    "build_version": "0.1.0",
+    "api_major": 1
+  },
+  "resources": [
+    {
+      "type": "contacts.workspace",
+      "actions": [
+        "contacts.read",
+        "contacts.create",
+        "contacts.write",
+        "contacts.delete",
+        "contacts.share",
+        "access.grants.manage"
+      ],
+      "share_action": "contacts.share",
+      "create_action": "contacts.create",
+      "delete_action": "contacts.delete",
+      "allow_inheritance": false
+    },
+    {
+      "type": "contacts.personal",
+      "actions": [
+        "contacts.read",
+        "contacts.create",
+        "contacts.write",
+        "contacts.delete",
+        "contacts.share",
+        "access.grants.manage"
+      ],
+      "share_action": "contacts.share",
+      "create_action": "contacts.create",
+      "delete_action": "contacts.delete",
+      "allow_inheritance": false
+    }
+  ],
+  "operations": [
+    {
+      "id": "contacts.books.get",
+      "subject": "rpc.contacts.v1.books.get",
+      "kind": "query",
+      "request_schema": "schemas/scope.json",
+      "response_schema": "schemas/book.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "contacts.workspace",
+        "action": "contacts.read",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/contacts/workspaces/{workspace_id}/roots/{acl_root_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "contacts.books.update",
+      "subject": "rpc.contacts.v1.books.update",
+      "kind": "command",
+      "request_schema": "schemas/book-update.json",
+      "response_schema": "schemas/book.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "contacts.workspace",
+        "action": "contacts.write",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "PATCH",
+        "path": "/api/v1/contacts/workspaces/{workspace_id}/roots/{acl_root_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "contacts.contacts.create",
+      "subject": "rpc.contacts.v1.contacts.create",
+      "kind": "command",
+      "request_schema": "schemas/create.json",
+      "response_schema": "schemas/contact.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "contacts.workspace",
+        "action": "contacts.create",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/contacts/workspaces/{workspace_id}/roots/{acl_root_id}/contacts",
+        "success_status": 201,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "contacts.contacts.get",
+      "subject": "rpc.contacts.v1.contacts.get",
+      "kind": "query",
+      "request_schema": "schemas/ref.json",
+      "response_schema": "schemas/contact.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "contacts.workspace",
+        "action": "contacts.read",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/contacts/workspaces/{workspace_id}/roots/{acl_root_id}/contacts/{contact_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "contact_id",
+            "field": "contact_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "contacts.contacts.update",
+      "subject": "rpc.contacts.v1.contacts.update",
+      "kind": "command",
+      "request_schema": "schemas/update.json",
+      "response_schema": "schemas/contact.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "contacts.workspace",
+        "action": "contacts.write",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "PUT",
+        "path": "/api/v1/contacts/workspaces/{workspace_id}/roots/{acl_root_id}/contacts/{contact_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "contact_id",
+            "field": "contact_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "contacts.contacts.delete",
+      "subject": "rpc.contacts.v1.contacts.delete",
+      "kind": "command",
+      "request_schema": "schemas/delete.json",
+      "response_schema": "schemas/mutation.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "contacts.workspace",
+        "action": "contacts.delete",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "DELETE",
+        "path": "/api/v1/contacts/workspaces/{workspace_id}/roots/{acl_root_id}/contacts/{contact_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "contact_id",
+            "field": "contact_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "contacts.contacts.list",
+      "subject": "rpc.contacts.v1.contacts.list",
+      "kind": "query",
+      "request_schema": "schemas/list.json",
+      "response_schema": "schemas/contact-list.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "contacts.workspace",
+        "action": "contacts.read",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/contacts/workspaces/{workspace_id}/roots/{acl_root_id}/contacts",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "query",
+            "field": "query",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "cursor",
+            "field": "cursor",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "limit",
+            "field": "limit",
+            "type": "integer"
+          }
+        ]
+      }
+    },
+    {
+      "id": "contacts.roots.grants",
+      "subject": "rpc.contacts.v1.roots.grants",
+      "kind": "command",
+      "request_schema": "schemas/grant.json",
+      "response_schema": "schemas/grant-result.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "contacts.workspace",
+        "action": "access.grants.manage",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/contacts/workspaces/{workspace_id}/roots/{acl_root_id}/grants",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "contacts.personal.books.get",
+      "subject": "rpc.contacts.v1.personal.books.get",
+      "kind": "query",
+      "request_schema": "schemas/personal-scope.json",
+      "response_schema": "schemas/personal-book.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "contacts.personal",
+        "action": "contacts.read",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/contacts/personal/roots/{acl_root_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "contacts.personal.books.update",
+      "subject": "rpc.contacts.v1.personal.books.update",
+      "kind": "command",
+      "request_schema": "schemas/personal-book-update.json",
+      "response_schema": "schemas/personal-book.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "contacts.personal",
+        "action": "contacts.write",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "PATCH",
+        "path": "/api/v1/contacts/personal/roots/{acl_root_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "contacts.personal.contacts.create",
+      "subject": "rpc.contacts.v1.personal.contacts.create",
+      "kind": "command",
+      "request_schema": "schemas/personal-create.json",
+      "response_schema": "schemas/personal-contact.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "contacts.personal",
+        "action": "contacts.create",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/contacts/personal/roots/{acl_root_id}/contacts",
+        "success_status": 201,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "contacts.personal.contacts.get",
+      "subject": "rpc.contacts.v1.personal.contacts.get",
+      "kind": "query",
+      "request_schema": "schemas/personal-ref.json",
+      "response_schema": "schemas/personal-contact.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "contacts.personal",
+        "action": "contacts.read",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/contacts/personal/roots/{acl_root_id}/contacts/{contact_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "contact_id",
+            "field": "contact_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "contacts.personal.contacts.update",
+      "subject": "rpc.contacts.v1.personal.contacts.update",
+      "kind": "command",
+      "request_schema": "schemas/personal-update.json",
+      "response_schema": "schemas/personal-contact.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "contacts.personal",
+        "action": "contacts.write",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "PUT",
+        "path": "/api/v1/contacts/personal/roots/{acl_root_id}/contacts/{contact_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "contact_id",
+            "field": "contact_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "contacts.personal.contacts.delete",
+      "subject": "rpc.contacts.v1.personal.contacts.delete",
+      "kind": "command",
+      "request_schema": "schemas/personal-delete.json",
+      "response_schema": "schemas/mutation.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "contacts.personal",
+        "action": "contacts.delete",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "DELETE",
+        "path": "/api/v1/contacts/personal/roots/{acl_root_id}/contacts/{contact_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "contact_id",
+            "field": "contact_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "contacts.personal.contacts.list",
+      "subject": "rpc.contacts.v1.personal.contacts.list",
+      "kind": "query",
+      "request_schema": "schemas/personal-list.json",
+      "response_schema": "schemas/personal-contact-list.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "contacts.personal",
+        "action": "contacts.read",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/contacts/personal/roots/{acl_root_id}/contacts",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "query",
+            "field": "query",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "cursor",
+            "field": "cursor",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "limit",
+            "field": "limit",
+            "type": "integer"
+          }
+        ]
+      }
+    },
+    {
+      "id": "contacts.personal.roots.grants",
+      "subject": "rpc.contacts.v1.personal.roots.grants",
+      "kind": "command",
+      "request_schema": "schemas/personal-grant.json",
+      "response_schema": "schemas/grant-result.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "contacts.personal",
+        "action": "access.grants.manage",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/contacts/personal/roots/{acl_root_id}/grants",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    }
+  ],
+  "events": [
+    {
+      "name": "contacts.catalog.changed",
+      "subject": "evt.contacts.catalog.changed.v1",
+      "schema": "schemas/changed.json"
+    }
+  ]
+}

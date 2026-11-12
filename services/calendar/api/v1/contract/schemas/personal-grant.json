@@ -1,0 +1,41 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "const": ""
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "principal_kind": {
+      "enum": [
+        "user",
+        "group"
+      ]
+    },
+    "principal_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "action": {
+      "enum": [
+        "calendar.read",
+        "calendar.create",
+        "calendar.write",
+        "calendar.delete",
+        "calendar.free_busy",
+        "calendar.share",
+        "access.grants.manage"
+      ]
+    },
+    "grant_id": {
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "required": [
+    "acl_root_id"
+  ],
+  "additionalProperties": false
+}

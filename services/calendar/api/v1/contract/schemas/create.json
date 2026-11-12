@@ -1,0 +1,90 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 256,
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 8192
+    },
+    "timezone": {
+      "type": "string",
+      "maxLength": 128,
+      "minLength": 1
+    },
+    "all_day": {
+      "type": "boolean"
+    },
+    "start": {
+      "type": "string",
+      "maxLength": 40
+    },
+    "end": {
+      "type": "string",
+      "maxLength": 40
+    },
+    "busy": {
+      "type": "boolean"
+    },
+    "rrule": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "exceptions": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "properties": {
+          "recurrence_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "cancelled": {
+            "type": "boolean"
+          },
+          "start": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "end": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          }
+        },
+        "required": [
+          "recurrence_id",
+          "cancelled"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "workspace_id",
+    "acl_root_id",
+    "title",
+    "description",
+    "timezone",
+    "all_day",
+    "start",
+    "end",
+    "busy"
+  ],
+  "additionalProperties": false
+}

@@ -40,6 +40,9 @@ import (
 	"github.com/pavlith/arc/sdk/resource"
 	"github.com/pavlith/arc/sdk/rpc"
 	"github.com/pavlith/arc/sdk/security"
+	calendarservice "github.com/pavlith/arc/services/calendar"
+	calendarv1 "github.com/pavlith/arc/services/calendar/api/v1"
+	calendarmigrations "github.com/pavlith/arc/services/calendar/migrations"
 	"github.com/pavlith/arc/services/core/modules/access"
 	"github.com/pavlith/arc/services/core/modules/fabric"
 	"github.com/pavlith/arc/services/core/modules/identity"
@@ -138,7 +141,7 @@ func TestFilesLive(t *testing.T) {
 	pools.AppendCertsFromPEM(caPEM)
 	seedFiles := map[string]string{}
 	pubs := map[string]string{}
-	for _, role := range []string{"core", "gate", "files", "task", "pages", "notify", "admin"} {
+	for _, role := range []string{"core", "gate", "files", "task", "pages", "notify", "calendar", "admin"} {
 		kp, e := nkeys.CreateUser()
 		must(e)
 		seed, e := kp.Seed()
@@ -159,13 +162,14 @@ jetstream {store_dir: %q}
 tls {cert_file: %q, key_file: %q}
 authorization {users: [
  {nkey: %q, permissions: {publish: ["_INBOX.>","evt.arc.fabric.routes.changed","ctl.arc.fabric.probe.>","$SRV.>"], subscribe: ["rpc.identity.v1.>","rpc.access.v1.>","ctl.arc.fabric.>","$SRV.>","_INBOX.>"]}},
- {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","rpc.files.v1.>","rpc.task.v1.>","rpc.pages.v1.>","rpc.notify.v1.>","ctl.arc.fabric.routes"], subscribe: ["_INBOX.>","evt.task.catalog.changed.v1","evt.task.task.created.v1","evt.notify.inbox.changed.v1"]}},
+ {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","rpc.files.v1.>","rpc.task.v1.>","rpc.pages.v1.>","rpc.notify.v1.>","rpc.calendar.v1.>","ctl.arc.fabric.routes"], subscribe: ["_INBOX.>","evt.task.catalog.changed.v1","evt.task.task.created.v1","evt.notify.inbox.changed.v1"]}},
  {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","ctl.arc.fabric.>","evt.files.catalog.changed.v1","_INBOX.>","$SRV.>"], subscribe: ["rpc.files.v1.>","ctl.arc.fabric.probe.>","_INBOX.>","$SRV.>"]}},
  {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","rpc.files.v1.files.get","ctl.arc.fabric.>","evt.task.>","_INBOX.>","$SRV.>"], subscribe: ["rpc.task.v1.>","ctl.arc.fabric.probe.>","_INBOX.>","$SRV.>"]}},
  {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","rpc.files.v1.files.get","rpc.files.v1.personal.files.get","rpc.task.v1.work.get","ctl.arc.fabric.>","evt.pages.catalog.changed.v1","_INBOX.>","$SRV.>"], subscribe: ["rpc.pages.v1.>","ctl.arc.fabric.probe.>","_INBOX.>","$SRV.>"]}},
  {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","ctl.arc.fabric.>","evt.notify.inbox.changed.v1","$JS.API.>","$JS.ACK.>","_INBOX.>","$SRV.>"], subscribe: ["rpc.notify.v1.>","ctl.arc.fabric.probe.>","_INBOX.>","$SRV.>"]}},
+ {nkey: %q, permissions: {publish: ["rpc.identity.v1.>","rpc.access.v1.>","ctl.arc.fabric.>","evt.calendar.catalog.changed.v1","_INBOX.>","$SRV.>"], subscribe: ["rpc.calendar.v1.>","ctl.arc.fabric.probe.>","_INBOX.>","$SRV.>"]}},
  {nkey: %q}
-]}`, port, filepath.Join(dir, "js"), certFile, keyFile, pubs["core"], pubs["gate"], pubs["files"], pubs["task"], pubs["pages"], pubs["notify"], pubs["admin"])
+]}`, port, filepath.Join(dir, "js"), certFile, keyFile, pubs["core"], pubs["gate"], pubs["files"], pubs["task"], pubs["pages"], pubs["notify"], pubs["calendar"], pubs["admin"])
 	confFile := write("nats.conf", []byte(conf))
 	logFile, e := os.Create(filepath.Join(dir, "nats.log"))
 	must(e)
@@ -216,7 +220,8 @@ authorization {users: [
 	taskKey := liveKey()
 	pagesKey := liveKey()
 	notifyKey := liveKey()
-	baseline.Deployments = append(baseline.Deployments, access.Deployment{Definition: "task", Instance: "live-task"}, access.Deployment{Definition: "pages", Instance: "live-pages"}, access.Deployment{Definition: "notify", Instance: "live-notify"})
+	calendarKey := liveKey()
+	baseline.Deployments = append(baseline.Deployments, access.Deployment{Definition: "task", Instance: "live-task"}, access.Deployment{Definition: "pages", Instance: "live-pages"}, access.Deployment{Definition: "notify", Instance: "live-notify"}, access.Deployment{Definition: "calendar", Instance: "live-calendar"})
 	static, e := access.NewContracts(operator.Public().(ed25519.PublicKey), []access.Approved{liveApproval(operator, baseline)})
 	must(e)
 	acl := &access.Core{GormDB: coreDB, Identity: id, Contracts: static, Domain: access.ReceiptVerifier{Keys: id.Verifier().Keys}}
@@ -231,6 +236,9 @@ authorization {users: [
 	pagesAccount, e := id.RegisterService(ctx, sa, "pages", "live-pages")
 	must(e)
 	must(id.AddServiceKey(ctx, sa, pagesAccount, "live-pages", pagesKey.Public().(ed25519.PublicKey), "mount:live", time.Now().Add(time.Hour)))
+	calendarAccount, e := id.RegisterService(ctx, sa, "calendar", "live-calendar")
+	must(e)
+	must(id.AddServiceKey(ctx, sa, calendarAccount, "live-calendar", calendarKey.Public().(ed25519.PublicKey), "mount:live", time.Now().Add(time.Hour)))
 	notifyAccount, e := id.RegisterService(ctx, sa, "notify", "live-notify")
 	must(e)
 	must(id.AddServiceKey(ctx, sa, notifyAccount, "live-notify", notifyKey.Public().(ed25519.PublicKey), "mount:live", time.Now().Add(time.Hour)))
@@ -256,6 +264,9 @@ authorization {users: [
 	}
 	for _, op := range []string{"invocations.verify", "invocations.exchange_service"} {
 		baseline.Rules = append(baseline.Rules, access.Rule{Caller: notifyAccount, Audience: "identity/v1", Operation: "identity.v1." + op, ActorKinds: []string{"bootstrap"}})
+	}
+	for _, op := range []string{"invocations.verify", "invocations.exchange_service"} {
+		baseline.Rules = append(baseline.Rules, access.Rule{Caller: calendarAccount, Audience: "identity/v1", Operation: "identity.v1." + op, ActorKinds: []string{"bootstrap"}})
 	}
 	f := &fabric.Core{GormDB: coreDB, Identity: id, ApprovalKey: operator.Public().(ed25519.PublicKey), Bootstrap: []access.Approved{liveApproval(operator, baseline)}, SnapshotKey: coreKey, SnapshotKid: id.SigningKid, RouteTrustKey: trust}
 	acl.ContractSource = f
@@ -661,6 +672,395 @@ authorization {users: [
 	must(e)
 	must(resource.VerifyAvatar(filesKey.Public().(ed25519.PublicKey), avatarEnv, time.Now()))
 
+	// Calendar: real signed Gate -> owner -> Access path and independent outbox.
+	{
+		calendarDB, e := database.Open(ctx, filepath.Join(dir, "calendar.sqlite"))
+		must(e)
+		defer database.Close(calendarDB)
+		must(database.Migrate(ctx, calendarDB, calendarmigrations.SQLite()))
+		cc, e := contract.Compile(calendarv1.Artifact())
+		must(e)
+		cp := access.Approval{ContractDigests: map[string]string{}}
+		for _, r := range cc.Manifest.Resources {
+			cp.ContractDigests[r.Type] = cc.Digest
+			cp.Types = append(cp.Types, access.TypeSpec{Type: r.Type, Provider: calendarAccount, Actions: r.Actions, ShareAction: r.ShareAction, CreateAction: r.CreateAction, DeleteAction: r.DeleteAction})
+		}
+		subjects, sources := []string{}, []string{}
+		down := map[string][]string{}
+		for _, op := range cc.Manifest.Operations {
+			subjects = append(subjects, op.Subject)
+			cp.Rules = append(cp.Rules, access.Rule{Caller: gateID, Audience: "calendar/v1", Operation: op.ID, ActorKinds: []string{"user"}, Actions: []string{op.Auth.Action}})
+			src := "calendar/v1:" + op.ID
+			sources = append(sources, src)
+			down[src] = []string{op.Auth.Action}
+		}
+		cp.Rules = append(cp.Rules, access.Rule{Caller: calendarAccount, Audience: "access/v1", Operation: "access.v1.check", ActorKinds: []string{"user"}, Actions: cc.Manifest.Resources[0].Actions, DownstreamFrom: sources, DownstreamActions: down})
+		for _, op := range []string{"resources.reserve", "resources.activate", "grants.add", "grants.revoke"} {
+			sources := []string{"calendar/v1:calendar.events.create", "calendar/v1:calendar.personal.events.create"}
+			acts := []string{"calendar.create"}
+			if strings.HasPrefix(op, "grants.") {
+				sources = []string{"calendar/v1:calendar.roots.grants", "calendar/v1:calendar.personal.roots.grants"}
+				acts = cc.Manifest.Resources[0].Actions
+			}
+			bindings := map[string][]string{}
+			for _, src := range sources {
+				bindings[src] = acts
+			}
+			cp.Rules = append(cp.Rules, access.Rule{Caller: calendarAccount, Audience: "access/v1", Operation: "access.v1." + op, ActorKinds: []string{"user"}, Actions: acts, DownstreamFrom: sources, DownstreamActions: bindings})
+		}
+		ci := fabric.Installation{Publisher: "office-live-fixture", Account: calendarAccount, Deployment: "live-calendar", Artifact: calendarv1.Artifact(), Subjects: subjects, Policy: liveApproval(operator, cp)}
+		payload, sig := liveSigned(operator, ci)
+		_, e = f.Approve(ctx, fabric.SignedInstallation{Payload: payload, Signature: sig})
+		must(e)
+		_, e = js.AddStream(&nats.StreamConfig{Name: "CALENDAR", Subjects: []string{calendarv1.ChangedSubject}, Storage: nats.FileStorage})
+		must(e)
+		nc, e := sdk.Connect(ctx, cfg("calendar"))
+		must(e)
+		defer nc.Close()
+		rpcClient, e := rpc.NewClient(nc)
+		must(e)
+		calClient := identity.Client{RPC: rpcClient, ServiceID: calendarAccount, Kid: "live-calendar", PrivateKey: calendarKey}
+		reg := &fabric.Client{Account: calendarAccount, Kid: "live-calendar", Key: calendarKey, CoreKey: coreKey.Public().(ed25519.PublicKey)}
+		calApp, e := calendarservice.New(calendarservice.Config{GormDB: calendarDB, Identity: calClient, CoreTrust: coreKey.Public().(ed25519.PublicKey), Runtime: sdk.AppConfig{Connection: cfg("calendar"), Instance: "live-calendar", Registry: reg}})
+		must(e)
+		must(calApp.Start(ctx))
+		defer calApp.Stop()
+		provision := func(user string, session identity.UserSession, workspace string) calendarv1.Scope {
+			prefix, kind, typ, owner := "calendar.", "workspace", "calendar.workspace", workspace
+			if workspace == "" {
+				prefix, kind, typ, owner = "calendar.personal.", "user", "calendar.personal", user
+			}
+			accessCtx := func(op string) context.Context {
+				source := prefix + "events.create"
+				if strings.HasPrefix(op, "grants.") {
+					source = prefix + "roots.grants"
+				}
+				return liveDomainAccess(t, ctx, gateClient, calClient, session, workspace, source, op)
+			}
+			reserved, e := ac.Reserve(accessCtx("resources.reserve"), access.ReserveRequest{Type: typ, OwnerKind: kind, OwnerID: owner, WorkspaceID: workspace})
+			must(e)
+			scope := calendarv1.Scope{WorkspaceID: workspace, RootID: reserved.ResourceID}
+			domainOwner := ""
+			if workspace == "" {
+				domainOwner = user
+			}
+			receipt, e := calApp.Calendar.PrepareRoot(ctx, scope, domainOwner, calendarv1.CalendarInput{Name: "Calendar", Timezone: "Europe/Moscow"}, calendarKey, "live-calendar", calendarAccount)
+			must(e)
+			_, e = ac.Activate(accessCtx("resources.activate"), access.LifecycleRequest{ResourceID: scope.RootID, Receipt: receipt})
+			must(e)
+			must(calApp.Calendar.ActivateRoot(ctx, scope))
+			if workspace != "" {
+				for _, action := range []string{"calendar.create", "calendar.read", "calendar.write", "calendar.delete", "calendar.free_busy"} {
+					_, e = ac.AddGrant(accessCtx("grants.add"), access.GrantRequest{ResourceID: scope.RootID, PrincipalKind: "user", PrincipalID: user, Action: action})
+					must(e)
+				}
+			}
+			return scope
+		}
+		cwa, cwb, cpa, cpb := provision(alice, sa, wa), provision(bob, sb, wb), provision(alice, sa, ""), provision(bob, sb, "")
+		must(g.Reconcile(ctx))
+		base := func(scope calendarv1.Scope) string {
+			if scope.WorkspaceID == "" {
+				return "/api/v1/calendar/personal/roots/" + scope.RootID
+			}
+			return "/api/v1/calendar/workspaces/" + scope.WorkspaceID + "/roots/" + scope.RootID
+		}
+		input := calendarv1.Input{Title: "Private appointment", Description: "Confidential details", Timezone: "Europe/Moscow", Start: "2026-11-12T12:00:00+03:00", End: "2026-11-12T13:00:00+03:00", Busy: true}
+		input.RRule = "FREQ=DAILY;COUNT=3"
+		input.Exceptions = []calendarv1.Exception{
+			{RecurrenceID: "2026-11-13T09:00:00Z", Cancelled: true},
+			{RecurrenceID: "2026-11-14T09:00:00Z", Start: "2026-11-20T12:00:00+03:00", End: "2026-11-20T13:00:00+03:00"},
+		}
+		create := func(scope calendarv1.Scope, token string) calendarv1.Event {
+			raw, _ := json.Marshal(input)
+			status, b := request("POST", base(scope)+"/events", string(raw), token, "application/json")
+			if status != 201 {
+				t.Fatalf("calendar create: %d %s", status, b)
+			}
+			var out calendarv1.Event
+			must(json.Unmarshal(b, &out))
+			return out
+		}
+		ea, eb, epa, epb := create(cwa, ta), create(cwb, tb), create(cpa, ta), create(cpb, tb)
+		for _, tc := range []struct {
+			scope     calendarv1.Scope
+			id, token string
+		}{{cwa, ea.ID, tb}, {cwb, eb.ID, ta}, {cpa, epa.ID, tb}, {cpb, epb.ID, ta}, {cwa, eb.ID, ta}} {
+			status, b := request("GET", base(tc.scope)+"/events/"+tc.id, "", tc.token, "")
+			if !isDenied(status) {
+				t.Fatalf("calendar known-ID isolation: %d %s", status, b)
+			}
+		}
+		grantBody, _ := json.Marshal(map[string]string{"principal_kind": "user", "principal_id": bob, "action": "calendar.free_busy"})
+		status, b := request("POST", base(cwa)+"/grants", string(grantBody), ta, "application/json")
+		if status != 200 {
+			t.Fatalf("calendar grant: %d %s", status, b)
+		}
+		var grant calendarv1.GrantResult
+		must(json.Unmarshal(b, &grant))
+		window := "?from=2026-11-12T00:00:00Z&until=2026-11-13T00:00:00Z"
+		status, b = request("GET", base(cwa)+"/free_busy"+window, "", tb, "")
+		if status != 200 || bytes.Contains(b, []byte(input.Title)) || bytes.Contains(b, []byte(input.Description)) || bytes.Contains(b, []byte(ea.ID)) {
+			t.Fatalf("calendar free/busy leaked or failed: %d %s", status, b)
+		}
+		var busy calendarv1.BusyResult
+		must(json.Unmarshal(b, &busy))
+		if len(busy.Intervals) != 1 {
+			t.Fatalf("calendar busy: %s", b)
+		}
+		deniedBatch, _ := json.Marshal(map[string]any{"objects": []map[string]string{{"event_id": ea.ID}}})
+		status, b = request("POST", base(cwa)+"/multiget", string(deniedBatch), tb, "application/json")
+		if !isDenied(status) {
+			t.Fatalf("free_busy read batch object contents: %d %s", status, b)
+		}
+		status, b = request("GET", base(cwa)+"/sync?limit=1", "", tb, "")
+		if !isDenied(status) {
+			t.Fatalf("free_busy read sync metadata: %d %s", status, b)
+		}
+		status, b = request("GET", base(cwa)+"/events/"+ea.ID, "", tb, "")
+		if !isDenied(status) {
+			t.Fatalf("free_busy granted read: %d %s", status, b)
+		}
+		status, b = request("GET", base(cwa)+"/events"+window+"&limit=10", "", ta, "")
+		if status != 200 {
+			t.Fatalf("calendar list: %d %s", status, b)
+		}
+		occurrenceWindow := "?from=2026-11-12T00:00:00Z&until=2026-11-21T00:00:00Z&limit=1"
+		status, b = request("GET", base(cwa)+"/occurrences"+occurrenceWindow, "", ta, "")
+		if status != 200 {
+			t.Fatalf("calendar occurrences: %d %s", status, b)
+		}
+		var occurrencePage calendarv1.OccurrenceList
+		must(json.Unmarshal(b, &occurrencePage))
+		if len(occurrencePage.Occurrences) != 1 || occurrencePage.NextCursor == "" {
+			t.Fatalf("occurrence pagination: %s", b)
+		}
+		status, b = request("GET", base(cwa)+"/occurrences"+occurrenceWindow+"&cursor="+occurrencePage.NextCursor, "", ta, "")
+		if status != 200 {
+			t.Fatalf("calendar next occurrence: %d %s", status, b)
+		}
+		must(json.Unmarshal(b, &occurrencePage))
+		if len(occurrencePage.Occurrences) != 1 || occurrencePage.Occurrences[0].RecurrenceID != "2026-11-14T09:00:00Z" || occurrencePage.Occurrences[0].Start != "2026-11-20T09:00:00Z" {
+			t.Fatalf("moved occurrence identity: %s", b)
+		}
+		status, b = request("GET", base(cwa)+"/occurrences"+occurrenceWindow, "", tb, "")
+		if !isDenied(status) {
+			t.Fatalf("free_busy gained occurrence read: %d %s", status, b)
+		}
+		movedWindow := "?from=2026-11-20T00:00:00Z&until=2026-11-21T00:00:00Z"
+		status, b = request("GET", base(cwa)+"/events"+movedWindow+"&limit=10", "", ta, "")
+		var movedSeries calendarv1.EventList
+		must(json.Unmarshal(b, &movedSeries))
+		if status != 200 || len(movedSeries.Events) != 1 || movedSeries.Events[0].ID != ea.ID {
+			t.Fatalf("moved-in series list: %d %s", status, b)
+		}
+		status, b = request("GET", base(cwa)+"/free_busy"+movedWindow, "", tb, "")
+		must(json.Unmarshal(b, &busy))
+		if status != 200 || len(busy.Intervals) != 1 || bytes.Contains(b, []byte(ea.ID)) || bytes.Contains(b, []byte(input.Title)) {
+			t.Fatalf("moved free/busy: %d %s", status, b)
+		}
+		status, b = request("GET", base(cwa)+"/free_busy?from=2026-11-13T00:00:00Z&until=2026-11-14T00:00:00Z", "", tb, "")
+		must(json.Unmarshal(b, &busy))
+		if status != 200 || len(busy.Intervals) != 0 {
+			t.Fatalf("cancelled free/busy: %d %s", status, b)
+		}
+		update, _ := json.Marshal(map[string]any{"title": "Updated appointment", "description": "Changed", "timezone": "UTC", "start": "2026-11-12T09:00:00Z", "end": "2026-11-12T10:00:00Z", "all_day": false, "busy": true, "revision": 1})
+		status, b = request("PATCH", base(cwa)+"/events/"+ea.ID, string(update), ta, "application/json")
+		if status != 200 {
+			t.Fatalf("calendar update: %d %s", status, b)
+		}
+		status, b = request("GET", base(cwa)+"/free_busy"+movedWindow, "", tb, "")
+		must(json.Unmarshal(b, &busy))
+		if status != 200 || len(busy.Intervals) != 0 {
+			t.Fatalf("stale moved occurrence survived update: %d %s", status, b)
+		}
+		status, b = request("PATCH", base(cwa)+"/events/"+ea.ID, string(update), ta, "application/json")
+		if status != 409 {
+			t.Fatalf("calendar CAS: %d %s", status, b)
+		}
+		status, b = request("POST", base(cwa)+"/grants", fmt.Sprintf(`{"grant_id":%q}`, grant.GrantID), ta, "application/json")
+		if status != 200 {
+			t.Fatalf("calendar revoke: %d %s", status, b)
+		}
+		status, b = request("GET", base(cwa)+"/free_busy"+window, "", tb, "")
+		if !isDenied(status) {
+			t.Fatalf("revoked free/busy: %d %s", status, b)
+		}
+		status, b = request("DELETE", base(cwa)+"/events/"+ea.ID, `{"revision":2}`, ta, "application/json")
+		if status != 200 {
+			t.Fatalf("calendar delete: %d %s", status, b)
+		}
+		status, b = request("GET", base(cwa)+"/events/"+ea.ID, "", ta, "")
+		if !isDenied(status) {
+			t.Fatalf("deleted event: %d %s", status, b)
+		}
+		status, b = request("GET", base(cpa)+"/sync?limit=1", "", ta, "")
+		if status != 200 {
+			t.Fatalf("initial personal sync: %d %s", status, b)
+		}
+		var syncStart calendarv1.SyncResult
+		must(json.Unmarshal(b, &syncStart))
+		if !syncStart.Complete || syncStart.Token == "" || len(syncStart.Items) != 1 || syncStart.Items[0].EventID != epa.ID {
+			t.Fatalf("initial sync baseline: %s", b)
+		}
+		status, b = request("GET", base(cwb)+"/sync?limit=10&token="+syncStart.Token, "", tb, "")
+		if status != 409 {
+			t.Fatalf("cross-root/workspace sync token: %d %s", status, b)
+		}
+		// The object layer reuses the same live ACL, replay and atomic outbox.
+		objectID := folders.NewID()
+		objectPath := base(cpa) + "/objects/" + objectID
+		objectData := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Office fixture//EN\r\nBEGIN:VEVENT\r\nUID:office-uid@fixture.test\r\nDTSTAMP:20261112T000000Z\r\nDTSTART:20261112T090000Z\r\nDTEND:20261112T100000Z\r\nSUMMARY:Imported event\r\nRRULE:FREQ=DAILY;COUNT=3\r\nEXDATE:20261113T090000Z\r\nX-CLIENT:preserved\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+		createBody, _ := json.Marshal(map[string]any{"if_none_match": true, "data": objectData})
+		status, b = request("POST", objectPath, string(createBody), ta, "application/json")
+		if status != 201 {
+			t.Fatalf("iCalendar create: %d %s", status, b)
+		}
+		var imported calendarv1.ICalObject
+		must(json.Unmarshal(b, &imported))
+		status, b = request("GET", base(cpa)+"/sync?limit=1", "", ta, "")
+		if status != 200 {
+			t.Fatalf("paged full sync: %d %s", status, b)
+		}
+		var syncFull calendarv1.SyncResult
+		must(json.Unmarshal(b, &syncFull))
+		if syncFull.Complete || syncFull.Cursor == "" || syncFull.Token != "" || len(syncFull.Items) != 1 {
+			t.Fatalf("full sync continuation missing: %s", b)
+		}
+		status, b = request("GET", base(cpa)+"/sync?limit=10&token="+syncStart.Token, "", ta, "")
+		if status != 200 {
+			t.Fatalf("import delta sync: %d %s", status, b)
+		}
+		var syncImported calendarv1.SyncResult
+		must(json.Unmarshal(b, &syncImported))
+		if !syncImported.Complete || len(syncImported.Items) != 1 || syncImported.Items[0].ETag != imported.ETag || syncImported.Items[0].EventID != objectID {
+			t.Fatalf("import sync ETag mismatch: %s", b)
+		}
+		status, b = request("GET", objectPath, "", ta, "")
+		var exported calendarv1.ICalObject
+		must(json.Unmarshal(b, &exported))
+		if status != 200 || imported.UID != "office-uid@fixture.test" || imported.ETag != exported.ETag || imported.Data != exported.Data || !strings.Contains(exported.Data, "X-CLIENT:preserved") {
+			t.Fatalf("stable iCalendar export: %d %s", status, b)
+		}
+		batchBody, _ := json.Marshal(map[string]any{"objects": []map[string]string{{"event_id": objectID, "known_etag": exported.ETag}, {"event_id": epa.ID}, {"event_id": eb.ID}, {"event_id": folders.NewID()}}})
+		status, b = request("POST", base(cpa)+"/multiget", string(batchBody), ta, "application/json")
+		if status != 200 {
+			t.Fatalf("object multiget: %d %s", status, b)
+		}
+		var batchResult calendarv1.ObjectBatchResult
+		must(json.Unmarshal(b, &batchResult))
+		if !batchResult.Complete || len(batchResult.Items) != 4 || batchResult.Items[0].EventID != objectID || batchResult.Items[0].Status != "not_modified" || batchResult.Items[0].Data != "" || batchResult.Items[1].EventID != epa.ID || batchResult.Items[1].Status != "ok" || batchResult.Items[1].Data == "" {
+			t.Fatalf("ordered conditional batch: %s", b)
+		}
+		for _, item := range batchResult.Items[2:] {
+			if item.Status != "not_found" || item.UID != "" || item.Data != "" || item.ETag != "" {
+				t.Fatal("foreign/missing batch target disclosed metadata")
+			}
+		}
+		status, b = request("POST", base(cpa)+"/multiget", string(batchBody), tb, "application/json")
+		if !isDenied(status) {
+			t.Fatalf("known ETag bypassed batch read access: %d %s", status, b)
+		}
+		status, b = request("GET", objectPath, "", tb, "")
+		if !isDenied(status) {
+			t.Fatalf("foreign iCalendar read: %d %s", status, b)
+		}
+		// A free/busy-only actor cannot read iCalendar contents on a workspace root.
+		status, b = request("GET", base(cwa)+"/objects/"+ea.ID, "", tb, "")
+		if !isDenied(status) {
+			t.Fatalf("free_busy iCalendar read: %d %s", status, b)
+		}
+		status, b = request("POST", base(cpa)+"/objects/"+folders.NewID(), string(createBody), ta, "application/json")
+		if status != 409 {
+			t.Fatalf("duplicate iCalendar UID: %d %s", status, b)
+		}
+		replacement, _ := json.Marshal(map[string]any{"if_match": imported.ETag, "data": strings.Replace(objectData, "Imported event", "Updated import", 1)})
+		status, b = request("PUT", objectPath, string(replacement), ta, "application/json")
+		if status != 200 {
+			t.Fatalf("iCalendar update: %d %s", status, b)
+		}
+		var changed calendarv1.ICalObject
+		must(json.Unmarshal(b, &changed))
+		if changed.UID != imported.UID || changed.ETag == imported.ETag {
+			t.Fatal("object UID/ETag did not track CAS")
+		}
+		status, b = request("GET", base(cpa)+"/sync?limit=10&token="+syncImported.Token, "", ta, "")
+		if status != 200 {
+			t.Fatalf("updated object delta: %d %s", status, b)
+		}
+		var syncUpdated calendarv1.SyncResult
+		must(json.Unmarshal(b, &syncUpdated))
+		if len(syncUpdated.Items) != 1 || syncUpdated.Items[0].ETag != changed.ETag {
+			t.Fatalf("updated object sync captured stale data: %s", b)
+		}
+		status, b = request("PUT", objectPath, string(replacement), ta, "application/json")
+		if status != 409 {
+			t.Fatalf("stale iCalendar write: %d %s", status, b)
+		}
+		staleDelete, _ := json.Marshal(map[string]string{"if_match": imported.ETag})
+		status, b = request("DELETE", objectPath, string(staleDelete), ta, "application/json")
+		if status != 409 {
+			t.Fatalf("stale iCalendar delete: %d %s", status, b)
+		}
+		deleteBody, _ := json.Marshal(map[string]string{"if_match": changed.ETag})
+		status, b = request("DELETE", objectPath, string(deleteBody), ta, "application/json")
+		if status != 200 {
+			t.Fatalf("iCalendar delete: %d %s", status, b)
+		}
+		status, b = request("GET", objectPath, "", ta, "")
+		if !isDenied(status) {
+			t.Fatalf("deleted iCalendar readable: %d %s", status, b)
+		}
+		status, b = request("GET", base(cpa)+"/sync?limit=10&token="+syncImported.Token, "", ta, "")
+		if status != 200 {
+			t.Fatalf("delete delta: %d %s", status, b)
+		}
+		var syncDeleted calendarv1.SyncResult
+		must(json.Unmarshal(b, &syncDeleted))
+		if !syncDeleted.Complete || len(syncDeleted.Items) != 1 || syncDeleted.Items[0].EventID != objectID || syncDeleted.Items[0].State != "deleted" || syncDeleted.Items[0].ETag != "" {
+			t.Fatalf("delete/coalescing sync: %s", b)
+		}
+		status, b = request("GET", base(cpa)+"/sync?limit=1&cursor="+syncFull.Cursor, "", ta, "")
+		if status != 200 {
+			t.Fatalf("frozen full sync continuation: %d %s", status, b)
+		}
+		var syncLast calendarv1.SyncResult
+		must(json.Unmarshal(b, &syncLast))
+		if !syncLast.Complete || len(syncLast.Items) != 1 || syncLast.Items[0].EventID == syncFull.Items[0].EventID {
+			t.Fatalf("frozen full sync lost/repeated resource: %s", b)
+		}
+		for _, item := range []calendarv1.SyncItem{syncFull.Items[0], syncLast.Items[0]} {
+			if item.State != "active" {
+				t.Fatal("initial full snapshot moved beyond watermark")
+			}
+			if item.EventID == objectID && item.ETag != imported.ETag {
+				t.Fatal("frozen full sync captured newer ETag")
+			}
+		}
+		status, b = request("GET", base(cpa)+"/sync?limit=1&cursor="+syncFull.Cursor, "", tb, "")
+		if !isDenied(status) {
+			t.Fatalf("sync cursor bypassed current access: %d %s", status, b)
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			var n int64
+			must(calendarDB.Table("outbox").Where("published_at IS NULL").Count(&n).Error)
+			if n == 0 {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("Calendar outbox undelivered")
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+		info, e := js.StreamInfo("CALENDAR")
+		must(e)
+		if info.State.Msgs != 9 {
+			t.Fatalf("Calendar event count: %d", info.State.Msgs)
+		}
+		t.Log("PASS: Calendar signed Gate/Core/Access path, two workspaces + personal calendars, CRUD/CAS, recurrence/cancel/move/pagination, iCalendar UID/ETag/conditional writes, frozen full/delta sync/tombstones, ordered conditional multiget, free_busy isolation/revoke and JetStream outbox")
+	}
+
 	// Pages has its own database, signed installation, root lifecycle and event stream.
 	pageDB, e := database.Open(ctx, filepath.Join(dir, "pages.sqlite"))
 	must(e)
@@ -773,7 +1173,12 @@ authorization {users: [
 		return scope
 	}
 	pwa, pwb, ppa, ppb := provisionPage(alice, sa, wa), provisionPage(bob, sb, wb), provisionPage(alice, sa, ""), provisionPage(bob, sb, "")
-	must(g.Reconcile(ctx))
+	if err := g.Reconcile(ctx); err != nil {
+		wire, keys, fetchErr := remote.Fetch(ctx)
+		direct, directErr := f.Routes(ctx)
+		verified, verifyErr := fabric.VerifySnapshotJWKS(keys, wire, 0)
+		t.Fatalf("office route reconcile: %v; fetch=%v direct=%v verify=%v revision=%d digest=%s direct_bytes=%d wire_bytes=%d", err, fetchErr, directErr, verifyErr, verified.Revision, verified.Digest, len(direct.Payload), len(wire.Payload))
+	}
 	pageBase := func(scope pagesv1.Scope) string {
 		if scope.WorkspaceID == "" {
 			return "/api/v1/pages/personal/roots/" + scope.RootID
@@ -963,7 +1368,7 @@ authorization {users: [
 	}
 
 	dialer := websocket.Dialer{TLSClientConfig: client.Transport.(*http.Transport).TLSClientConfig, Subprotocols: []string{"arc.realtime.v1", "csrf." + base64.RawURLEncoding.EncodeToString([]byte(sa.CSRF))}}
-	wsHeaders := http.Header{"Origin": []string{"https://arc.files.test"}, "Cookie": []string{"__Host-arc_refresh=" + sa.Secret + "; __Host-arc_csrf=" + sa.CSRF}}
+	wsHeaders := http.Header{"Origin": []string{"https://arc.files.test"}, "Cookie": []string{"__Host-arc_session=" + sa.Secret + "; __Host-arc_csrf=" + sa.CSRF}}
 	ws, _, e := dialer.DialContext(ctx, "wss"+strings.TrimPrefix(server.URL, "https")+"/api/v1/arc/realtime", wsHeaders)
 	must(e)
 	defer ws.Close()

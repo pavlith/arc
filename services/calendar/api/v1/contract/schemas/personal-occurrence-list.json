@@ -1,0 +1,79 @@
+{
+  "type": "object",
+  "properties": {
+    "occurrences": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "const": ""
+          },
+          "acl_root_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1
+          },
+          "timezone": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "all_day": {
+            "type": "boolean"
+          },
+          "start": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "end": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "busy": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recurrence_id": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1
+          }
+        },
+        "required": [
+          "acl_root_id",
+          "title",
+          "timezone",
+          "all_day",
+          "start",
+          "end",
+          "busy",
+          "revision",
+          "event_id",
+          "recurrence_id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "next_cursor": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,18}$"
+    }
+  },
+  "required": [
+    "occurrences"
+  ],
+  "additionalProperties": false
+}

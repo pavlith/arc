@@ -1,0 +1,44 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "const": ""
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "objects": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "known_etag": {
+            "type": "string",
+            "pattern": "^\"[0-9a-f]{64}\"$"
+          }
+        },
+        "required": [
+          "event_id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "offset": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 99
+    }
+  },
+  "required": [
+    "acl_root_id",
+    "objects"
+  ],
+  "additionalProperties": false
+}

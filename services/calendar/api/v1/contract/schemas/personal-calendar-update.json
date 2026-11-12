@@ -1,0 +1,33 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "const": ""
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "name": {
+      "type": "string",
+      "maxLength": 256,
+      "minLength": 1
+    },
+    "timezone": {
+      "type": "string",
+      "maxLength": 128,
+      "minLength": 1
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "required": [
+    "acl_root_id",
+    "name",
+    "timezone",
+    "revision"
+  ],
+  "additionalProperties": false
+}

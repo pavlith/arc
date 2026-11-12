@@ -11,6 +11,7 @@
 | Files roots, bytes, quotas and streaming | [Files](FILES.md) |
 | Attachments, avatars and cross-owner references | [References](RESOURCE-REFERENCES.md) |
 | Page hierarchy, Tiptap validation and versions | [Pages](PAGES.md) |
+| Calendar roots, events and free/busy | [Calendar](CALENDAR.md) |
 | Inbox sources and outbound webhook | [Notify](NOTIFY.md) |
 | Product dependencies / infrastructure rollout | [Product sequence](shortplan.md) / [Agent roadmap](AGENT-HOST-ROADMAP.md) |
 | Executables / SDK / clients | [Services](../services/README.md) / [SDK](../sdk/README.md) / [Web](../client/web/README.md), [TypeScript](../client/ts/README.md) |

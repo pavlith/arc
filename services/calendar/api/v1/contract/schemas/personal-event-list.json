@@ -1,0 +1,83 @@
+{
+  "type": "object",
+  "properties": {
+    "events": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "const": ""
+          },
+          "acl_root_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1
+          },
+          "timezone": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "all_day": {
+            "type": "boolean"
+          },
+          "start": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "end": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "busy": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "acl_root_id",
+          "id",
+          "title",
+          "timezone",
+          "all_day",
+          "start",
+          "end",
+          "busy",
+          "revision",
+          "created_at",
+          "updated_at"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "next_cursor": {
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "required": [
+    "events"
+  ],
+  "additionalProperties": false
+}

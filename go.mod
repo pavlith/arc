@@ -4,6 +4,7 @@ go 1.27.0
 
 require (
 	github.com/cyberphone/json-canonicalization v0.0.0-20261011152517-32a48195b9b2
+	github.com/emersion/go-ical v0.0.0-20250609112844-439c63cef608
 	github.com/go-gormigrate/gormigrate/v2 v2.1.7
 	github.com/gorilla/websocket v1.5.3
 	github.com/mattn/go-sqlite3 v1.14.22
@@ -11,6 +12,7 @@ require (
 	github.com/nats-io/nkeys v0.4.16
 	github.com/nats-io/nuid v1.0.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
+	github.com/teambition/rrule-go v1.8.2
 	golang.org/x/crypto v0.57.0
 	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.2

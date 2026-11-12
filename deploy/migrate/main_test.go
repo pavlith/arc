@@ -9,7 +9,7 @@ import (
 )
 
 func TestOwnerMigrations(t *testing.T) {
-	for _, owner := range []string{"core", "task", "notify", "files"} {
+	for _, owner := range []string{"core", "task", "notify", "files", "calendar"} {
 		t.Run(owner, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), owner+".sqlite")
 			if err := run(context.Background(), owner, path); err != nil {
@@ -27,6 +27,9 @@ func TestOwnerMigrations(t *testing.T) {
 				t.Fatal("missing migration history")
 			}
 			table := "tasks"
+			if owner == "calendar" {
+				table = "calendar_events"
+			}
 			if owner == "notify" {
 				table = "notifications"
 			}

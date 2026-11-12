@@ -1,0 +1,32 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "const": ""
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "event_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "if_match": {
+      "type": "string",
+      "pattern": "^\"[0-9a-f]{64}\"$"
+    },
+    "data": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 98304
+    }
+  },
+  "required": [
+    "acl_root_id",
+    "event_id",
+    "if_match",
+    "data"
+  ],
+  "additionalProperties": false
+}

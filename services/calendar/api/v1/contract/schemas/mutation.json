@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "deleted": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "id",
+    "revision",
+    "deleted"
+  ],
+  "additionalProperties": false
+}

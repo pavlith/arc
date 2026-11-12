@@ -1,0 +1,1331 @@
+{
+  "manifest_version": 1,
+  "service": {
+    "name": "calendar",
+    "build_version": "0.5.0",
+    "api_major": 1
+  },
+  "resources": [
+    {
+      "type": "calendar.workspace",
+      "actions": [
+        "calendar.read",
+        "calendar.create",
+        "calendar.write",
+        "calendar.delete",
+        "calendar.free_busy",
+        "calendar.share",
+        "access.grants.manage"
+      ],
+      "share_action": "calendar.share",
+      "create_action": "calendar.create",
+      "delete_action": "calendar.delete",
+      "allow_inheritance": false
+    },
+    {
+      "type": "calendar.personal",
+      "actions": [
+        "calendar.read",
+        "calendar.create",
+        "calendar.write",
+        "calendar.delete",
+        "calendar.free_busy",
+        "calendar.share",
+        "access.grants.manage"
+      ],
+      "share_action": "calendar.share",
+      "create_action": "calendar.create",
+      "delete_action": "calendar.delete",
+      "allow_inheritance": false
+    }
+  ],
+  "operations": [
+    {
+      "id": "calendar.calendars.get",
+      "subject": "rpc.calendar.v1.calendars.get",
+      "kind": "query",
+      "request_schema": "schemas/scope.json",
+      "response_schema": "schemas/calendar.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.workspace",
+        "action": "calendar.read",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/calendar/workspaces/{workspace_id}/roots/{acl_root_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.calendars.update",
+      "subject": "rpc.calendar.v1.calendars.update",
+      "kind": "command",
+      "request_schema": "schemas/calendar-update.json",
+      "response_schema": "schemas/calendar.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.workspace",
+        "action": "calendar.write",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "PATCH",
+        "path": "/api/v1/calendar/workspaces/{workspace_id}/roots/{acl_root_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.events.create",
+      "subject": "rpc.calendar.v1.events.create",
+      "kind": "command",
+      "request_schema": "schemas/create.json",
+      "response_schema": "schemas/event.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.workspace",
+        "action": "calendar.create",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/calendar/workspaces/{workspace_id}/roots/{acl_root_id}/events",
+        "success_status": 201,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.events.get",
+      "subject": "rpc.calendar.v1.events.get",
+      "kind": "query",
+      "request_schema": "schemas/ref.json",
+      "response_schema": "schemas/event.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.workspace",
+        "action": "calendar.read",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/calendar/workspaces/{workspace_id}/roots/{acl_root_id}/events/{event_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "event_id",
+            "field": "event_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.events.update",
+      "subject": "rpc.calendar.v1.events.update",
+      "kind": "command",
+      "request_schema": "schemas/update.json",
+      "response_schema": "schemas/event.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.workspace",
+        "action": "calendar.write",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "PATCH",
+        "path": "/api/v1/calendar/workspaces/{workspace_id}/roots/{acl_root_id}/events/{event_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "event_id",
+            "field": "event_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.events.delete",
+      "subject": "rpc.calendar.v1.events.delete",
+      "kind": "command",
+      "request_schema": "schemas/delete.json",
+      "response_schema": "schemas/mutation.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.workspace",
+        "action": "calendar.delete",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "DELETE",
+        "path": "/api/v1/calendar/workspaces/{workspace_id}/roots/{acl_root_id}/events/{event_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "event_id",
+            "field": "event_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.events.list",
+      "subject": "rpc.calendar.v1.events.list",
+      "kind": "query",
+      "request_schema": "schemas/list.json",
+      "response_schema": "schemas/event-list.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.workspace",
+        "action": "calendar.read",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/calendar/workspaces/{workspace_id}/roots/{acl_root_id}/events",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "from",
+            "field": "from",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "until",
+            "field": "until",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "limit",
+            "field": "limit",
+            "type": "integer"
+          },
+          {
+            "source": "query",
+            "name": "cursor",
+            "field": "cursor",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.free_busy",
+      "subject": "rpc.calendar.v1.free_busy",
+      "kind": "query",
+      "request_schema": "schemas/range.json",
+      "response_schema": "schemas/busy-result.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.workspace",
+        "action": "calendar.free_busy",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/calendar/workspaces/{workspace_id}/roots/{acl_root_id}/free_busy",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "from",
+            "field": "from",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "until",
+            "field": "until",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.roots.grants",
+      "subject": "rpc.calendar.v1.roots.grants",
+      "kind": "command",
+      "request_schema": "schemas/grant.json",
+      "response_schema": "schemas/grant-result.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.workspace",
+        "action": "access.grants.manage",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/calendar/workspaces/{workspace_id}/roots/{acl_root_id}/grants",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.personal.calendars.get",
+      "subject": "rpc.calendar.v1.personal.calendars.get",
+      "kind": "query",
+      "request_schema": "schemas/personal-scope.json",
+      "response_schema": "schemas/personal-calendar.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.personal",
+        "action": "calendar.read",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/calendar/personal/roots/{acl_root_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.personal.calendars.update",
+      "subject": "rpc.calendar.v1.personal.calendars.update",
+      "kind": "command",
+      "request_schema": "schemas/personal-calendar-update.json",
+      "response_schema": "schemas/personal-calendar.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.personal",
+        "action": "calendar.write",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "PATCH",
+        "path": "/api/v1/calendar/personal/roots/{acl_root_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.personal.events.create",
+      "subject": "rpc.calendar.v1.personal.events.create",
+      "kind": "command",
+      "request_schema": "schemas/personal-create.json",
+      "response_schema": "schemas/personal-event.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.personal",
+        "action": "calendar.create",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/calendar/personal/roots/{acl_root_id}/events",
+        "success_status": 201,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.personal.events.get",
+      "subject": "rpc.calendar.v1.personal.events.get",
+      "kind": "query",
+      "request_schema": "schemas/personal-ref.json",
+      "response_schema": "schemas/personal-event.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.personal",
+        "action": "calendar.read",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/calendar/personal/roots/{acl_root_id}/events/{event_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "event_id",
+            "field": "event_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.personal.events.update",
+      "subject": "rpc.calendar.v1.personal.events.update",
+      "kind": "command",
+      "request_schema": "schemas/personal-update.json",
+      "response_schema": "schemas/personal-event.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.personal",
+        "action": "calendar.write",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "PATCH",
+        "path": "/api/v1/calendar/personal/roots/{acl_root_id}/events/{event_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "event_id",
+            "field": "event_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.personal.events.delete",
+      "subject": "rpc.calendar.v1.personal.events.delete",
+      "kind": "command",
+      "request_schema": "schemas/personal-delete.json",
+      "response_schema": "schemas/mutation.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.personal",
+        "action": "calendar.delete",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "DELETE",
+        "path": "/api/v1/calendar/personal/roots/{acl_root_id}/events/{event_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "event_id",
+            "field": "event_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.personal.events.list",
+      "subject": "rpc.calendar.v1.personal.events.list",
+      "kind": "query",
+      "request_schema": "schemas/personal-list.json",
+      "response_schema": "schemas/personal-event-list.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.personal",
+        "action": "calendar.read",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/calendar/personal/roots/{acl_root_id}/events",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "from",
+            "field": "from",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "until",
+            "field": "until",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "limit",
+            "field": "limit",
+            "type": "integer"
+          },
+          {
+            "source": "query",
+            "name": "cursor",
+            "field": "cursor",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.personal.free_busy",
+      "subject": "rpc.calendar.v1.personal.free_busy",
+      "kind": "query",
+      "request_schema": "schemas/personal-range.json",
+      "response_schema": "schemas/busy-result.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.personal",
+        "action": "calendar.free_busy",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/calendar/personal/roots/{acl_root_id}/free_busy",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "from",
+            "field": "from",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "until",
+            "field": "until",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.personal.roots.grants",
+      "subject": "rpc.calendar.v1.personal.roots.grants",
+      "kind": "command",
+      "request_schema": "schemas/personal-grant.json",
+      "response_schema": "schemas/grant-result.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.personal",
+        "action": "access.grants.manage",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/calendar/personal/roots/{acl_root_id}/grants",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.events.occurrences",
+      "subject": "rpc.calendar.v1.events.occurrences",
+      "kind": "query",
+      "request_schema": "schemas/occurrence-query.json",
+      "response_schema": "schemas/occurrence-list.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.workspace",
+        "action": "calendar.read",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/calendar/workspaces/{workspace_id}/roots/{acl_root_id}/occurrences",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "from",
+            "field": "from",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "until",
+            "field": "until",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "limit",
+            "field": "limit",
+            "type": "integer"
+          },
+          {
+            "source": "query",
+            "name": "cursor",
+            "field": "cursor",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.personal.events.occurrences",
+      "subject": "rpc.calendar.v1.personal.events.occurrences",
+      "kind": "query",
+      "request_schema": "schemas/personal-occurrence-query.json",
+      "response_schema": "schemas/personal-occurrence-list.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.personal",
+        "action": "calendar.read",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/calendar/personal/roots/{acl_root_id}/occurrences",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "from",
+            "field": "from",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "until",
+            "field": "until",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "limit",
+            "field": "limit",
+            "type": "integer"
+          },
+          {
+            "source": "query",
+            "name": "cursor",
+            "field": "cursor",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.objects.get",
+      "subject": "rpc.calendar.v1.objects.get",
+      "kind": "query",
+      "request_schema": "schemas/ref.json",
+      "response_schema": "schemas/object.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.workspace",
+        "action": "calendar.read",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/calendar/workspaces/{workspace_id}/roots/{acl_root_id}/objects/{event_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "event_id",
+            "field": "event_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.objects.create",
+      "subject": "rpc.calendar.v1.objects.create",
+      "kind": "command",
+      "request_schema": "schemas/object-create.json",
+      "response_schema": "schemas/object.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.workspace",
+        "action": "calendar.create",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/calendar/workspaces/{workspace_id}/roots/{acl_root_id}/objects/{event_id}",
+        "success_status": 201,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "event_id",
+            "field": "event_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.objects.update",
+      "subject": "rpc.calendar.v1.objects.update",
+      "kind": "command",
+      "request_schema": "schemas/object-update.json",
+      "response_schema": "schemas/object.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.workspace",
+        "action": "calendar.write",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "PUT",
+        "path": "/api/v1/calendar/workspaces/{workspace_id}/roots/{acl_root_id}/objects/{event_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "event_id",
+            "field": "event_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.objects.delete",
+      "subject": "rpc.calendar.v1.objects.delete",
+      "kind": "command",
+      "request_schema": "schemas/object-delete.json",
+      "response_schema": "schemas/mutation.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.workspace",
+        "action": "calendar.delete",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "DELETE",
+        "path": "/api/v1/calendar/workspaces/{workspace_id}/roots/{acl_root_id}/objects/{event_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "event_id",
+            "field": "event_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.personal.objects.get",
+      "subject": "rpc.calendar.v1.personal.objects.get",
+      "kind": "query",
+      "request_schema": "schemas/personal-ref.json",
+      "response_schema": "schemas/personal-object.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.personal",
+        "action": "calendar.read",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/calendar/personal/roots/{acl_root_id}/objects/{event_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "event_id",
+            "field": "event_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.personal.objects.create",
+      "subject": "rpc.calendar.v1.personal.objects.create",
+      "kind": "command",
+      "request_schema": "schemas/personal-object-create.json",
+      "response_schema": "schemas/personal-object.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.personal",
+        "action": "calendar.create",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/calendar/personal/roots/{acl_root_id}/objects/{event_id}",
+        "success_status": 201,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "event_id",
+            "field": "event_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.personal.objects.update",
+      "subject": "rpc.calendar.v1.personal.objects.update",
+      "kind": "command",
+      "request_schema": "schemas/personal-object-update.json",
+      "response_schema": "schemas/personal-object.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.personal",
+        "action": "calendar.write",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "PUT",
+        "path": "/api/v1/calendar/personal/roots/{acl_root_id}/objects/{event_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "event_id",
+            "field": "event_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.personal.objects.delete",
+      "subject": "rpc.calendar.v1.personal.objects.delete",
+      "kind": "command",
+      "request_schema": "schemas/personal-object-delete.json",
+      "response_schema": "schemas/mutation.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.personal",
+        "action": "calendar.delete",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "DELETE",
+        "path": "/api/v1/calendar/personal/roots/{acl_root_id}/objects/{event_id}",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "event_id",
+            "field": "event_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.objects.sync",
+      "subject": "rpc.calendar.v1.objects.sync",
+      "kind": "query",
+      "request_schema": "schemas/sync-query.json",
+      "response_schema": "schemas/sync-result.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.workspace",
+        "action": "calendar.read",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/calendar/workspaces/{workspace_id}/roots/{acl_root_id}/sync",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "limit",
+            "field": "limit",
+            "type": "integer"
+          },
+          {
+            "source": "query",
+            "name": "token",
+            "field": "token",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "cursor",
+            "field": "cursor",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.personal.objects.sync",
+      "subject": "rpc.calendar.v1.personal.objects.sync",
+      "kind": "query",
+      "request_schema": "schemas/personal-sync-query.json",
+      "response_schema": "schemas/personal-sync-result.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.personal",
+        "action": "calendar.read",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/calendar/personal/roots/{acl_root_id}/sync",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "limit",
+            "field": "limit",
+            "type": "integer"
+          },
+          {
+            "source": "query",
+            "name": "token",
+            "field": "token",
+            "type": "string"
+          },
+          {
+            "source": "query",
+            "name": "cursor",
+            "field": "cursor",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.objects.multiget",
+      "subject": "rpc.calendar.v1.objects.multiget",
+      "kind": "query",
+      "request_schema": "schemas/multiget-query.json",
+      "response_schema": "schemas/multiget-result.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.workspace",
+        "action": "calendar.read",
+        "resource_from": "payload.acl_root_id",
+        "workspace_from": "payload.workspace_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/calendar/workspaces/{workspace_id}/roots/{acl_root_id}/multiget",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "workspace_id",
+            "field": "workspace_id",
+            "type": "string"
+          },
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar.personal.objects.multiget",
+      "subject": "rpc.calendar.v1.personal.objects.multiget",
+      "kind": "query",
+      "request_schema": "schemas/personal-multiget-query.json",
+      "response_schema": "schemas/personal-multiget-result.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "calendar.personal",
+        "action": "calendar.read",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/calendar/personal/roots/{acl_root_id}/multiget",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    }
+  ],
+  "events": [
+    {
+      "name": "calendar.catalog.changed",
+      "subject": "evt.calendar.catalog.changed.v1",
+      "schema": "schemas/changed.json"
+    }
+  ]
+}

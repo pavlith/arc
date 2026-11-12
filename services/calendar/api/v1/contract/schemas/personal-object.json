@@ -1,0 +1,43 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "const": ""
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "event_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "uid": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "etag": {
+      "type": "string",
+      "pattern": "^\"[0-9a-f]{64}\"$"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "data": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 98304
+    }
+  },
+  "required": [
+    "acl_root_id",
+    "event_id",
+    "uid",
+    "etag",
+    "revision",
+    "data"
+  ],
+  "additionalProperties": false
+}

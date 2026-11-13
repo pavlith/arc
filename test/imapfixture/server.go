@@ -17,6 +17,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -209,6 +210,42 @@ func (s *Server) serve(ctx context.Context, conn net.Conn, mode string, users ma
 			write(`* LIST () "/" {7}`)
 			write("Reports")
 			write(tag + " OK folders")
+		case "EXAMINE":
+			write("* 2 EXISTS")
+			write("* 0 RECENT")
+			write(`* FLAGS (\Seen \Flagged)`)
+			write("* OK [UIDVALIDITY 77] current")
+			write("* OK [UIDNEXT 103] next")
+			write(tag + " OK [READ-ONLY] selected")
+		case "UID":
+			if len(fields) != 9 || strings.ToUpper(fields[2]) != "FETCH" {
+				write(tag + " BAD unsupported")
+				return
+			}
+			bounds := strings.Split(fields[3], ":")
+			if len(bounds) != 2 {
+				return
+			}
+			lo, e := strconv.ParseUint(bounds[0], 10, 32)
+			if e != nil {
+				return
+			}
+			hi, e := strconv.ParseUint(bounds[1], 10, 32)
+			if e != nil {
+				return
+			}
+			for _, id := range []uint64{101, 102} {
+				if id < lo || id > hi {
+					continue
+				}
+				subject := `"Hello world"`
+				if id == 102 {
+					subject = `"=?UTF-8?B?0J/RgNC40LLQtdGC?="`
+				}
+				write(fmt.Sprintf(`* %d FETCH (UID %d FLAGS (\Seen) INTERNALDATE "13-Nov-2026 10:00:00 +0000" RFC822.SIZE 123 ENVELOPE ("Fri, 13 Nov 2026 10:00:00 +0000" %s (("Alice" NIL "alice" "example.test")) NIL NIL ((NIL NIL "bob" "example.test")) NIL NIL NIL "<message-%d@example.test>"))`, id-100, id, subject, id))
+			}
+			write(tag + " OK fetched")
+
 		case "LOGOUT":
 			write("* BYE")
 			write(tag + " OK logout")

@@ -348,6 +348,34 @@ authorization {users: [
 		t.Fatalf("folders %d %s", statusFolders, dataFolders)
 	}
 
+	messageQuery := v1.MessageListQuery{Generation: 1, MessageQuery: imapclient.MessageQuery{WireName: folderList.Folders[0].WireName, UIDWindow: 1}}
+	statusMessages, dataMessages := request("POST", base(a)+"/messages/list", messageQuery, ta, "")
+	var messageList v1.MessageList
+	must(json.Unmarshal(dataMessages, &messageList))
+	if statusMessages != 200 || messageList.Status != "ok" || messageList.UIDValidity != 77 || len(messageList.Messages) != 1 || messageList.Messages[0].Subject != "Привет" || messageList.Messages[0].UID != 102 {
+		t.Fatalf("messages %d %s", statusMessages, dataMessages)
+	}
+	messageQuery.BeforeUID = messageList.NextBeforeUID
+	messageQuery.UIDValidity = messageList.UIDValidity
+	statusMessages, dataMessages = request("POST", base(a)+"/messages/list", messageQuery, ta, "")
+	must(json.Unmarshal(dataMessages, &messageList))
+	if statusMessages != 200 || messageList.Status != "ok" || len(messageList.Messages) != 1 || messageList.Messages[0].UID != 101 {
+		t.Fatalf("message continuation %d %s", statusMessages, dataMessages)
+	}
+	staleQuery := messageQuery
+	staleQuery.UIDValidity = 78
+	statusMessages, dataMessages = request("POST", base(a)+"/messages/list", staleQuery, ta, "")
+	must(json.Unmarshal(dataMessages, &messageList))
+	if statusMessages != 200 || messageList.Status != "uidvalidity_changed" || len(messageList.Messages) != 0 {
+		t.Fatalf("UIDVALIDITY guard %d %s", statusMessages, dataMessages)
+	}
+	staleQuery = messageQuery
+	staleQuery.Generation = 2
+	statusMessages, dataMessages = request("POST", base(a)+"/messages/list", staleQuery, ta, "")
+	if statusMessages != 409 {
+		t.Fatalf("binding generation guard %d %s", statusMessages, dataMessages)
+	}
+
 	// Trusted Core fixture seed: Mail 0.1 has no grant-management endpoint or
 	// downstream grant permission. All reads still exercise real online Access.
 	grantID := uid()
@@ -360,6 +388,11 @@ authorization {users: [
 	status, data = request("GET", base(a)+"/folders", nil, tb, "")
 	if status != 200 {
 		t.Fatalf("reader folders %d %s", status, data)
+	}
+
+	status, data = request("POST", base(a)+"/messages/list", messageQuery, tb, "")
+	if status != 200 {
+		t.Fatalf("reader messages %d %s", status, data)
 	}
 
 	for _, suffix := range []string{"/credentials/key", "/check"} {
@@ -381,6 +414,11 @@ authorization {users: [
 	status, data = request("GET", base(a)+"/folders", nil, tb, "")
 	if status != 403 {
 		t.Fatalf("revoked folders %d %s", status, data)
+	}
+
+	status, data = request("POST", base(a)+"/messages/list", messageQuery, tb, "")
+	if status != 403 {
+		t.Fatalf("revoked messages %d %s", status, data)
 	}
 
 	update := v1.Update{Scope: a, AccountInput: accountA.AccountInput, Revision: 2}
@@ -444,7 +482,7 @@ authorization {users: [
 			}
 		}
 	}
-	t.Log("PASS: signed Gate/Core/Access/TLS+NKey NATS/JetStream Mail, two users and multiple personal accounts, sealed credentials, real TLS IMAP/folder discovery, read-only/revoke, lifecycle/replay and ciphertext-only state")
+	t.Log("PASS: signed Gate/Core/Access/TLS+NKey NATS/JetStream Mail, two users and multiple personal accounts, sealed credentials, real TLS IMAP/folders/message UID windows, read-only/revoke, lifecycle/replay and ciphertext-only state")
 }
 
 func liveDomainAccess(t *testing.T, ctx context.Context, gateClient, domain identity.Client, session identity.UserSession, ws, source, op string) context.Context {

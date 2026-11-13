@@ -70,3 +70,17 @@ type FolderList struct {
 	Status     string              `json:"status"`
 	Folders    []imapclient.Folder `json:"folders"`
 }
+
+type MessageListQuery struct {
+	Scope
+	Generation int64 `json:"generation"`
+	imapclient.MessageQuery
+}
+type MessageList struct {
+	Scope
+	Revision   int64  `json:"revision"`
+	Generation int64  `json:"generation"`
+	WireName   string `json:"wire_name"`
+	Status     string `json:"status"`
+	imapclient.MessagePage
+}

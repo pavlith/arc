@@ -41,6 +41,7 @@ type Result struct {
 	Status       string
 	Capabilities []string
 	Folders      []Folder
+	Page         MessagePage
 }
 type Client struct {
 	allow   map[string][]netip.Prefix

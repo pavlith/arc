@@ -10,7 +10,7 @@
 | Pages | `arc-pages` | Scoped Tiptap tree, versions, templates, ACL-checked references | [Pages](../docs/PAGES.md), [contract](pages/api/v1/contract/manifest.json) |
 | Calendar | `arc-calendar` | Personal/workspace calendars, bounded multiget/sync, iCalendar/UID/ETag, recurrence and free/busy | [Calendar](../docs/CALENDAR.md), [contract](calendar/api/v1/contract/manifest.json) |
 | Contacts | `arc-contacts` | Personal/workspace address books, structured CRUD/search, vCard/UID/ETag, conditional writes and grants | [Contacts](../docs/CONTACTS.md), [contract](contacts/api/v1/contract/manifest.json) |
-| Mail | `arc-mail` | Personal IMAP settings, sealed credentials, live folders and bounded TLS checks; synchronization planned | [Mail](../docs/MAIL.md), [contract](mail/api/v1/contract/manifest.json) |
+| Mail | `arc-mail` | Personal IMAP settings, sealed credentials, live folders/message summaries and TLS checks; synchronization planned | [Mail](../docs/MAIL.md), [contract](mail/api/v1/contract/manifest.json) |
 | Agent | `arc-agent` | Trusted node runtime, journal and restricted host drivers | [Agent](agent/README.md) |
 
 These are code surfaces, **not production acceptance**. Progress, unfinished UI and verification live in [GitHub Issues](https://github.com/pavlith/arc/issues), not this catalog. `main` is authoritative; historical delivery notes are in Git.

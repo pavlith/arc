@@ -286,22 +286,26 @@ func (s *Module) save(ctx context.Context, tx *gorm.DB, row models.Account, revi
 	return dto(row), err
 }
 func (s *Module) checkConnection(ctx context.Context, q v1.Scope) (v1.CheckResult, error) {
-	row, result, err := s.remoteRead(ctx, q, "mail.connection.manage", s.Probe.Check)
+	row, result, err := s.remoteRead(ctx, q, "mail.connection.manage", 0, s.Probe.Check)
 	return v1.CheckResult{Scope: q, Revision: row.Revision, Generation: row.Generation, Status: result.Status, Capabilities: result.Capabilities}, err
 }
 func (s *Module) folders(ctx context.Context, q v1.Scope) (v1.FolderList, error) {
-	row, result, err := s.remoteRead(ctx, q, "mail.read", s.Probe.Folders)
+	row, result, err := s.remoteRead(ctx, q, "mail.read", 0, s.Probe.Folders)
 	if result.Folders == nil {
 		result.Folders = []imapclient.Folder{}
 	}
 	return v1.FolderList{Scope: q, Revision: row.Revision, Generation: row.Generation, Status: result.Status, Folders: result.Folders}, err
 }
-func (s *Module) remoteRead(ctx context.Context, q v1.Scope, action string, read func(context.Context, imapclient.Settings, []byte) imapclient.Result) (models.Account, imapclient.Result, error) {
+func (s *Module) remoteRead(ctx context.Context, q v1.Scope, action string, expectedGeneration int64, read func(context.Context, imapclient.Settings, []byte) imapclient.Result) (models.Account, imapclient.Result, error) {
 	row, err := s.root(ctx, q)
 	result := imapclient.Result{Capabilities: []string{}}
 	if err != nil {
 		return row, result, err
 	}
+	if expectedGeneration > 0 && row.Generation != expectedGeneration {
+		return row, result, conflict()
+	}
+
 	if row.State != "enabled" {
 		result.Status = row.State
 		return row, result, nil
@@ -329,6 +333,19 @@ func (s *Module) remoteRead(ctx context.Context, q v1.Scope, action string, read
 	return row, result, nil
 }
 
+func (s *Module) messages(ctx context.Context, q v1.MessageListQuery) (v1.MessageList, error) {
+	if q.Generation < 1 || !q.MessageQuery.Valid() {
+		return v1.MessageList{}, invalid()
+	}
+	row, result, err := s.remoteRead(ctx, q.Scope, "mail.read", q.Generation, func(ctx context.Context, settings imapclient.Settings, password []byte) imapclient.Result {
+		return s.Probe.Messages(ctx, settings, password, q.MessageQuery)
+	})
+	if result.Page.Messages == nil {
+		result.Page.Messages = []imapclient.Message{}
+	}
+	return v1.MessageList{Scope: q.Scope, Revision: row.Revision, Generation: row.Generation, WireName: q.WireName, Status: result.Status, MessagePage: result.Page}, err
+}
+
 func (s *Module) Register(r *module.Registry) error {
 	if s.DB == nil || s.Contract == nil || s.Vault == nil || s.Probe == nil || s.Check == nil {
 		return security.ErrUnavailable
@@ -351,6 +368,9 @@ func (s *Module) Register(r *module.Registry) error {
 		return err
 	}
 	if err := module.BindQuery(r, v1.ListFolders, policy, s.folders); err != nil {
+		return err
+	}
+	if err := module.BindQuery(r, v1.ListMessages, policy, s.messages); err != nil {
 		return err
 	}
 	return module.BindQuery(r, v1.CheckConnection, policy, s.checkConnection)

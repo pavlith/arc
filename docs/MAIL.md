@@ -1,15 +1,16 @@
 # Mail service design
 
-Mail 0.2.0 implements personal IMAP connection settings, sealed password
-submission, pause/resume/disconnect, live folder discovery and a bounded user-requested TLS IMAP check.
+Mail 0.3.0 implements personal IMAP connection settings, sealed password
+submission, pause/resume/disconnect, live folder discovery, message summaries and a bounded
+user-requested TLS IMAP check.
 Folder/message synchronization and persistence, content caching/streaming, OAuth provider flows,
 workspace accounts and sending remain planned. Requirements:
 [MAIL-01–MAIL-10](REQUIREMENTS.md#214-mail--imap-p1). This connection foundation does
 not satisfy full MAIL-10 or establish Gmail/Microsoft compatibility.
 
-## Implemented connection API (0.2.0)
+## Implemented connection API (0.3.0)
 
-The [signed contract](../services/mail/api/v1/contract/manifest.json) exposes seven
+The [signed contract](../services/mail/api/v1/contract/manifest.json) exposes eight
 operations under `/api/v1/mail/personal/accounts/{acl_root_id}`. Each account is
 one `mail.personal` root, owner-bound with an empty workspace. Account provisioning
 is an explicit operator reserve → `Accounts.PrepareRoot` → Access activation →
@@ -25,14 +26,15 @@ sharing APIs are deferred. Separate roots support multiple accounts per user.
 | POST `/state` | Set enabled/paused/disconnected with expected `revision`; `mail.connection.manage` |
 | POST `/check` | Current-user TLS authentication/capability check; `mail.connection.manage` |
 | GET `/folders` | Live folder discovery; `mail.read` |
+| POST `/messages/list` | Live message summaries in bounded UID windows; `mail.read` |
 
 Settings are `name` (1–256 Unicode characters), ASCII DNS/IP `host` (≤253), `port`
 (1–65535), `login` (1–320) and bare display `email` (≤254). Text is UTF-8,
 trimmed and control-free; hostnames normalize to lowercase. Only implicit TLS and
 password/application-password authentication are implemented. Checks negotiate
 AUTHENTICATE PLAIN (with/without SASL-IR), or TLS LOGIN when permitted by the server.
-Only CAPABILITY, authentication, LIST and LOGOUT are sent; message reads/mutations
-and mailbox changes remain unavailable. Query deadlines remain 5 s; network policy defaults to 2 s and permits
+The adapter sends CAPABILITY, authentication, LIST, read-only EXAMINE, UID FETCH
+metadata and LOGOUT. Bodies, remote mutations and mailbox changes remain unavailable. Query deadlines remain 5 s; network policy defaults to 2 s and permits
 100–3000 ms, bounded by the caller deadline. Server input is capped at 64 KiB,
 4096 bytes per line, 128 total lines and 32 response lines per command. Only eight
 recognized capability names can appear in the safe result.
@@ -57,10 +59,61 @@ listing. Large accounts need a subsequent bounded discovery/cache design; this
 query has no pagination or silent truncation. Reauthorize `mail.read` and verify
 the account revision after network I/O, including for read-only grantees.
 
-Version 0.2.0 requires operator approval of the new artifact digest and exact
+Folder discovery requires operator approval of its artifact digest and exact
 `mail.personal.folders.list` / `rpc.mail.v1.personal.folders.list` read/check edge.
 The same operator destination and TLS policy applies; no production permission
 is widened automatically.
+
+POST `/messages/list` is a read-only query with a 5 s deadline, under the same TLS,
+destination and `mail.read` checks. Supply the `generation` and exact `wire_name`
+from account/folder discovery, plus `uid_window` (1–20). For example, using values
+from the actual discovery response:
+
+```json
+{"generation":1,"wire_name":"SU5CT1g","uid_window":20}
+```
+
+EXAMINE selects the folder read-only and captures UIDVALIDITY, UIDNEXT and the
+selection-time EXISTS count. Initial scanning starts below UIDNEXT. A page
+examines at most `uid_window` numeric UID positions and sorts returned messages by
+UID descending; this is a scan bound, not a promise of that many existing messages.
+Gaps/expunges can produce empty pages. Continue with `before_uid` equal to
+`next_before_uid`, the returned `uid_validity`, and the same root/generation/folder.
+Each continuation advances its UID boundary even for an empty page. An absent
+`next_before_uid` ends the scan. `exists` is informational and not a stable count
+across requests. There is no frozen mailbox snapshot or unbounded UID SEARCH.
+
+Stale account generation conflicts before network I/O. A changed UIDVALIDITY
+returns `uidvalidity_changed`, the current namespace and no messages/continuation;
+restart discovery rather than interpreting old UIDs in the new namespace. A
+rejected EXAMINE returns `folder_unavailable`. Other credential/state/transport
+statuses match existing reads. Malformed/ambiguous/oversized results fail without
+a partial page. Cursor fields and wire names are selectors, never permissions;
+future individual-message reads must bind UID to the same complete namespace.
+
+Only `UID FLAGS INTERNALDATE RFC822.SIZE ENVELOPE` are fetched. Each summary has
+UID, flags, internal date, byte size, decoded subject, header date, From/To address
+summaries and Message-ID/In-Reply-To strings. Envelope MIME encoded words support
+UTF-8 and registered legacy charsets through the existing text encoding library.
+Address summaries retain display name/mailbox/host; group-boundary markers,
+source routes and the other envelope address lists are not projected. This is a
+summary view, not a lossless mail export or threading model. Message-ID is not a
+storage identity. Fetching ENVELOPE in a read-only selection does not mark a
+message Seen; other clients may still change flags/expunge while a page is read.
+
+The parser bounds literals to 8192 bytes, nesting to eight, tokens to 8192 per
+fetch and individual lists to 512 elements, within the existing aggregate 64 KiB
+input/4096-byte line/256-line read budgets. Message flags are limited to 64 × 64
+characters, address lists to 32, decoded text to 8192 bytes (subject ≤2048 Unicode
+characters; address display names ≤256; mailbox/host ≤320; identifiers ≤1024).
+Message-page JSON fits 128 KiB; remote sizes fit a safely represented JSON integer.
+Unrequested full-message UIDs, duplicate metadata and unsupported extra FETCH
+fields fail closed. Extended compatibility/recovery matrices remain M7 work.
+
+Version 0.3.0 requires explicit approval of the new artifact digest,
+`mail.personal.messages.list` / `rpc.mail.v1.personal.messages.list` and its exact
+Access read-check edge. No SQL cache/migration, body/attachment transfer, retained
+session or autonomous synchronization is introduced by this query.
 
 Commands require `Idempotency-Key`. Current authorization precedes replay; retry
 the exact sealed request, since resealing changes its ciphertext/fingerprint.

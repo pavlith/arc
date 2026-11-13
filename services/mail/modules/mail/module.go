@@ -92,7 +92,13 @@ func (s *Module) Authorize(ctx context.Context, root, action string) error {
 	if s.Check == nil {
 		return security.ErrUnavailable
 	}
-	return s.Check(ctx, root, action)
+	if err := s.Check(ctx, root, action); err != nil {
+		return err
+	}
+	if cl.Operation == v1.RefreshMessageIndex.ID {
+		return s.stageRefresh(ctx)
+	}
+	return nil
 }
 func text(s string, max int) (string, error) {
 	if !utf8.ValidString(s) || utf8.RuneCountInString(s) > max {
@@ -375,6 +381,16 @@ func (s *Module) Register(r *module.Registry) error {
 		return err
 	}
 	policy := module.Policy{Resource: s.Authorize}
+	if err := module.BindCommand(r, v1.RefreshMessageIndex, policy, events.Store{DB: s.DB}, s.refreshIndex); err != nil {
+		return err
+	}
+	if err := module.BindQuery(r, v1.ListCachedMessages, policy, s.listCached); err != nil {
+		return err
+	}
+	if err := module.BindQuery(r, v1.GetCachedMessage, policy, s.getCached); err != nil {
+		return err
+	}
+
 	if err := module.BindQuery(r, v1.PrivateDownload, policy, func(context.Context, v1.DownloadRequest) (struct{}, error) {
 		return struct{}{}, &rpc.Error{Code: rpc.CodePermissionDenied, Message: "Mail content requires private HTTPS transport"}
 	}); err != nil {

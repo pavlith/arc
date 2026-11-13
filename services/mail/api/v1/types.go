@@ -3,6 +3,7 @@ package v1
 import (
 	"github.com/pavlith/arc/services/mail/credentials"
 	"github.com/pavlith/arc/services/mail/imapclient"
+	"time"
 )
 
 type Scope struct {
@@ -122,3 +123,68 @@ type AccountList struct {
 	NextCursor     string    `json:"next_cursor,omitempty"`
 	PolicyRevision int64     `json:"policy_revision"`
 }
+
+type RefreshMessages struct{ MessageListQuery }
+type CachedFolder struct {
+	ID            string    `json:"id"`
+	WireName      string    `json:"wire_name"`
+	Revision      int64     `json:"revision"`
+	UIDValidity   uint32    `json:"uid_validity"`
+	UIDNext       uint32    `json:"uid_next"`
+	RemoteCount   uint32    `json:"remote_count"`
+	NextBeforeUID uint32    `json:"next_before_uid,omitempty"`
+	LowUID        uint32    `json:"low_uid"`
+	HighUID       uint32    `json:"high_uid"`
+	Status        string    `json:"status"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+type RefreshResult struct {
+	Scope
+	Generation int64         `json:"generation"`
+	Status     string        `json:"status"`
+	Folder     *CachedFolder `json:"folder"`
+	Upserted   int           `json:"upserted"`
+	Removed    int           `json:"removed"`
+}
+type CachedMessage struct {
+	ID          string `json:"id"`
+	FolderID    string `json:"folder_id"`
+	UIDValidity uint32 `json:"uid_validity"`
+	imapclient.Message
+}
+type CachedListQuery struct {
+	Scope
+	Generation  int64  `json:"generation"`
+	WireName    string `json:"wire_name"`
+	Limit       int    `json:"limit"`
+	UIDValidity uint32 `json:"uid_validity,omitempty"`
+	BeforeUID   uint32 `json:"before_uid,omitempty"`
+}
+type CachedList struct {
+	Scope
+	Generation    int64           `json:"generation"`
+	Folder        CachedFolder    `json:"folder"`
+	Messages      []CachedMessage `json:"messages"`
+	NextBeforeUID uint32          `json:"next_before_uid,omitempty"`
+}
+type CachedGetQuery struct {
+	Scope
+	Generation int64  `json:"generation"`
+	MessageID  string `json:"message_id"`
+}
+type CachedGet struct {
+	Scope
+	Generation int64  `json:"generation"`
+	WireName   string `json:"wire_name"`
+	CachedMessage
+}
+type MessagesChanged struct {
+	Scope
+	Generation  int64  `json:"generation"`
+	FolderID    string `json:"folder_id"`
+	Revision    int64  `json:"revision"`
+	UIDValidity uint32 `json:"uid_validity"`
+}
+
+const MessagesChangedSubject = "evt.mail.messages.changed.v1"
+const MessagesChangedName = "mail.messages.changed"

@@ -1,4 +1,4 @@
-// Package outbox publishes committed Accounts events after approval and readiness.
+// Package outbox publishes committed Mail events after approval and readiness.
 package outbox
 
 import (

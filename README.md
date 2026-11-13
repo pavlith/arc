@@ -5,7 +5,7 @@ Self-hosted collaboration platform: Core Identity/Access/Fabric, HTTPS Gate, Tas
 - [Docs](docs/README.md) · [Architecture](docs/ARCHITECTURE.md) · [Development](docs/DEVELOPMENT.md) · [Issues](https://github.com/pavlith/arc/issues)
 - `main` is the active source of truth; GitHub Issues track incomplete product acceptance.
 - Backend delivery is not product acceptance or production deployment; track unfinished UI and verification in Issues.
-- [Mail](docs/MAIL.md) currently provides personal account creation/discovery, connection settings, sealed credentials, live folders, message summaries, MIME metadata, private downloads and TLS checks; synchronization and provider OAuth acceptance remain pending.
+- [Mail](docs/MAIL.md) currently provides personal account creation/discovery, connection settings, sealed credentials, live folders, message summaries, MIME metadata, private downloads, local summaries with bounded refresh and TLS checks; autonomous synchronization and provider OAuth acceptance remain pending.
 
 Requirements: Go 1.27+, C compiler/CGO for SQLite; network tests use Python 3 and the pinned `nats-server`. Clients use Node.js 26 and the npm version in `client/package.json`; `client/web` (`ui`) and `client/ts` (`@arc/client`) share `client/package-lock.json`.
 

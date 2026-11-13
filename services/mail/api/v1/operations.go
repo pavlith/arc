@@ -3,6 +3,9 @@ package v1
 import "github.com/pavlith/arc/sdk/module"
 
 var (
+	RefreshMessageIndex   = module.Command[RefreshMessages, RefreshResult]{ID: "mail.personal.messages.refresh"}
+	ListCachedMessages    = module.Query[CachedListQuery, CachedList]{ID: "mail.personal.messages.cached.list"}
+	GetCachedMessage      = module.Query[CachedGetQuery, CachedGet]{ID: "mail.personal.messages.cached.get"}
 	CreatePersonalAccount = module.Command[CreateAccount, Account]{ID: "mail.personal.accounts.create"}
 	ListAccounts          = module.Query[AccountListQuery, AccountList]{ID: "mail.personal.accounts.list"}
 	PrivateDownload       = module.Query[DownloadRequest, struct{}]{ID: "mail.personal.messages.download"}

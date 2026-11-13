@@ -1,18 +1,19 @@
 # Mail service design
 
-Mail 0.6.0 implements personal account creation/discovery, IMAP connection settings,
+Mail 0.7.0 implements personal account creation/discovery, IMAP connection settings,
 sealed password submission, pause/resume/disconnect, live folders, message summaries,
-MIME structure, private content downloads and bounded user-requested TLS IMAP checks.
-Folder/message synchronization and persistence, content caching, OAuth provider flows,
+MIME structure, private content downloads, a durable local summary index and bounded
+user-requested TLS IMAP checks and metadata refreshes.
+Autonomous/full-mailbox synchronization, content caching, OAuth provider flows,
 workspace accounts and sending remain planned. Requirements:
 [MAIL-01–MAIL-10](REQUIREMENTS.md#214-mail--imap-p1). This connection foundation does
 not satisfy full MAIL-10 or establish Gmail/Microsoft compatibility.
 
-## Implemented Mail API (0.6.0)
+## Implemented Mail API (0.7.0)
 
-The [signed contract](../services/mail/api/v1/contract/manifest.json) exposes eleven
+The [signed contract](../services/mail/api/v1/contract/manifest.json) exposes fourteen
 JSON operations: two collection operations under `/api/v1/mail/personal/accounts`
-and nine account operations under `/api/v1/mail/personal/accounts/{acl_root_id}`.
+and twelve account operations under `/api/v1/mail/personal/accounts/{acl_root_id}`.
 Each account is one `mail.personal` root owned by the verified user, with an empty
 workspace. Separate roots support several unrelated accounts per user. Existing
 operator-provisioned roots remain supported; public sharing management and workspace
@@ -34,6 +35,9 @@ accounts are deferred. The private download operation is described separately be
 | GET `/folders` | Live folder discovery; `mail.read` |
 | POST `/messages/list` | Live message summaries in bounded UID windows; `mail.read` |
 | POST `/messages/structure` | Live MIME structure and attachment metadata for one UID; `mail.read` |
+| POST `/messages/refresh` | Persist one live metadata UID window; `mail.read`, idempotent command |
+| POST `/messages/cached/list` | Local summary pagination; `mail.read` |
+| POST `/messages/cached/get` | Read one local message occurrence; `mail.read` |
 
 ### Account creation and discovery
 
@@ -213,10 +217,93 @@ return `uidvalidity_changed`. All error statuses contain empty `parts` and
 `attachments`, never partial metadata. Stale account generation conflicts before
 IMAP I/O; the live ACL/account revision check runs again after remote I/O.
 
-Version 0.6.0 requires explicit approval of the new artifact digest and the hidden
+Version 0.7.0 requires explicit approval of the new artifact digest and the hidden
 `mail.personal.messages.download` / `rpc.mail.v1.personal.messages.download`
 operation with its exact Access read-check edge, retaining approved metadata
 operations and adding the exact collection/provisioning edges described above. The NATS handler for this operation fails closed and returns no bytes.
+
+### Local metadata index and explicit refresh
+
+POST `/messages/refresh` accepts the same generation, wire folder and bounded UID
+window as `/messages/list`, with `Idempotency-Key`. Each call authenticates the
+current user and fetches one EXAMINE/UID FETCH metadata window. It does not wait
+for or schedule a whole mailbox scan. Example:
+
+```json
+{"generation":1,"wire_name":"SU5CT1g","uid_window":20}
+```
+
+The response has scope, generation, safe `status`, nullable `folder`, `upserted`
+and `removed` counts. `folder` contains a local UUID, exact wire name, revision,
+UIDVALIDITY/UIDNEXT, informational remote count, last-window low/high UIDs,
+optional `next_before_uid`, last status and UTC update time. The folder continuation
+is the next numeric remote window after the last applied batch. It is durable
+progress for an explicit retry/continuation, not a monotonic backfill frontier,
+frozen snapshot or proof that every message has been indexed. Revisiting a window
+updates this cursor. Empty windows still advance; follow the cursor rather than
+assuming every UID exists. Use the returned UIDVALIDITY on continuations.
+
+Folder identity binds account root, account generation and exact wire name.
+Message occurrence identity additionally binds UIDVALIDITY and UID. Repeated
+refresh keeps local message UUIDs and updates flags/summaries. UIDs absent from
+the successfully fetched window are tombstoned; an empty selected folder removes
+all current occurrences. Other windows remain cached until explicitly refreshed.
+A detected UIDVALIDITY reset invalidates all old occurrences first and returns
+`uidvalidity_changed`, even if the caller omitted expected UIDVALIDITY. Rescan
+with a fresh key/current namespace; old UUIDs return not found and new occurrences
+receive new UUIDs. A renamed folder or rebound account cannot inherit guessed
+mappings. Account generation changes make old cached mappings unavailable.
+
+IMAP I/O and the post-network live ACL/account check happen before the write
+transaction. A bounded durable staging record holds only account/folder revision
+fences and fetched metadata, never passwords, ciphertext, proofs or saved sessions.
+The command transaction rechecks account generation/revision/credential version/
+state and folder revision, then atomically commits summaries, tombstones, cursor,
+audit, replay and one `mail.messages.changed` outbox hint. Stale concurrent work
+conflicts without advancing the index. The hint contains root/folder IDs, generation,
+UIDVALIDITY and folder revision, without subjects, addresses or bodies. Account
+settings revision is unchanged by metadata refresh. The audit records its account
+binding revision; the hint/response uses the independent folder revision.
+
+Completed replay requires current `mail.read`, returns the historical result and
+performs no IMAP work. Retrying a pending batch refetches under the current request;
+it cannot reuse a saved positive permission. Transport/account-state failures
+return their safe status with null folder and zero counts, leaving the index
+unchanged. To retry a completed failure after fixing credentials/state, use a new
+key. No background worker or persistent user-session authority is introduced.
+
+POST `/messages/cached/list` requires `generation`, exact `wire_name` and `limit`
+(1–20); optional `before_uid` is exclusive and requires `uid_validity`. It returns
+scope, generation, cached folder state, summaries with local `id`, `folder_id` and
+UIDVALIDITY, and an optional local `next_before_uid`. This local continuation is
+the last returned UID, distinct from the folder's remote-window continuation.
+Continue while present; payload bounds may shorten a page. A folder not yet
+indexed returns not found; these queries do not contact IMAP.
+
+POST `/messages/cached/get` accepts `generation` and local `message_id` and returns
+its summary with account scope, exact wire name, folder ID, UIDVALIDITY and UID.
+These transport selectors can be used with the private content endpoint. An ID
+from another readable account still cannot be resolved under the wrong root.
+Both local reads recheck live ACL and account/folder fences after lookup. Paused
+accounts retain local reads. Disconnect/rebinding changes generation, so old
+selectors conflict or return not found; no stale ID can resolve to new content.
+
+Fixed initial limits per account are 64 retained folder bindings, 10,000 retained
+occurrences (including tombstones/old namespaces), and 32 MiB of summary JSON.
+Each summary fits 64 KiB; local list JSON fits 128 KiB. At most ten pending batches
+of 160 KiB each are stored per account. Pending staging older than 15 minutes is
+removed on an authorized refresh; complete batches remove their staging rows.
+Capacity errors conflict without partial metadata commits. Automatic retention/
+pruning and full mailbox coverage remain deferred. Bodies and MIME structures are
+not cached by this index; content uses the private stream.
+
+The additive `000003_mail_message_index` migration creates the local index/staging
+and extends outbox subjects while preserving all prior envelopes, timestamps and
+publication state. Run the migrator before startup. Approve the new artifact and
+exact refresh/cached-read operations and their Access read-check edges. The broker
+and JetStream configuration must also explicitly permit
+`evt.mail.messages.changed.v1`; the existing publisher retains its live approval
+checks. No production permissions are installed by this implementation.
 
 ### Private content downloads
 

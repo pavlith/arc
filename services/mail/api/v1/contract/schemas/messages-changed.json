@@ -1,0 +1,38 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "const": ""
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "folder_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "uid_validity": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295
+    }
+  },
+  "required": [
+    "workspace_id",
+    "acl_root_id",
+    "generation",
+    "folder_id",
+    "revision",
+    "uid_validity"
+  ],
+  "additionalProperties": false
+}

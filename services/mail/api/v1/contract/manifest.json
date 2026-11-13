@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "service": {
     "name": "mail",
-    "build_version": "0.6.0",
+    "build_version": "0.7.0",
     "api_major": 1
   },
   "resources": [
@@ -337,6 +337,93 @@
         "path": "/api/v1/mail/personal/accounts/list",
         "success_status": 200
       }
+    },
+    {
+      "id": "mail.personal.messages.refresh",
+      "subject": "rpc.mail.v1.personal.messages.refresh",
+      "kind": "command",
+      "request_schema": "schemas/message-query.json",
+      "response_schema": "schemas/refresh-result.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "mail.personal",
+        "action": "mail.read",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/mail/personal/accounts/{acl_root_id}/messages/refresh",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "mail.personal.messages.cached.list",
+      "subject": "rpc.mail.v1.personal.messages.cached.list",
+      "kind": "query",
+      "request_schema": "schemas/cached-list-query.json",
+      "response_schema": "schemas/cached-list.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "mail.personal",
+        "action": "mail.read",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/mail/personal/accounts/{acl_root_id}/messages/cached/list",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "mail.personal.messages.cached.get",
+      "subject": "rpc.mail.v1.personal.messages.cached.get",
+      "kind": "query",
+      "request_schema": "schemas/cached-get-query.json",
+      "response_schema": "schemas/cached-get.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "mail.personal",
+        "action": "mail.read",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/mail/personal/accounts/{acl_root_id}/messages/cached/get",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
     }
   ],
   "events": [
@@ -344,6 +431,11 @@
       "name": "mail.accounts.changed",
       "subject": "evt.mail.accounts.changed.v1",
       "schema": "schemas/changed.json"
+    },
+    {
+      "name": "mail.messages.changed",
+      "subject": "evt.mail.messages.changed.v1",
+      "schema": "schemas/messages-changed.json"
     }
   ]
 }

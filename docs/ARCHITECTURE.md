@@ -394,7 +394,12 @@ Mail owns personal account creation/discovery, connection settings and encrypted
 credentials in its own SQLite. Public creation binds the owner to the verified
 user and persists its prepared root/request binding before Core activation; a
 current-user retry completes an interrupted transition without a second root.
-Discovery uses Core accessible roots and a final batched live read check. Its
+Discovery uses Core accessible roots and a final batched live read check.
+Explicit current-user metadata batches populate a local occurrence index with
+account/folder/UIDVALIDITY/UID binding, tombstones and durable window cursors.
+Metadata, cursor, audit/replay and minimal outbox hints commit together after
+network I/O and live ACL checks; local reads recheck current authority/fences.
+Autonomous/full-mailbox synchronization and body caching remain planned. Its
 adapter performs bounded TLS authentication, LIST, message summaries,
 MIME structure queries and private content downloads under current user invocation
 and online Access, with post-network revision/ACL
@@ -402,7 +407,7 @@ checks. Sealed submissions prevent plaintext credentials or password verifiers
 from entering generic replay. Operator host/port/CIDR policy and TLS validation
 bound external connections. See [Mail](MAIL.md) for the implemented contract.
 
-Remote bindings, jobs/cursors, MIME caches and noninteractive synchronization
+Background jobs/coverage cursors, MIME caches and noninteractive synchronization
 remain planned. External IMAP will remain authoritative for messages and flags;
 cached reads/streams require current Core authorization. Raw MIME/attachment bytes
 use approved private mTLS streaming behind Gate, not NATS payloads. Mail-to-Files

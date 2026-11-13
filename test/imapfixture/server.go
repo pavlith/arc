@@ -25,6 +25,9 @@ import (
 )
 
 type Server struct {
+	validity                  uint32
+	uids                      []uint32
+	flagged                   bool
 	Host                      string
 	Port                      int
 	CertFile, KeyFile, CAFile string
@@ -65,7 +68,7 @@ func New(t *testing.T, mode string, users map[string]string) *Server {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Server{Host: "127.0.0.1", Port: listener.Addr().(*net.TCPAddr).Port, listener: listener, cancel: cancel, conns: map[net.Conn]bool{}, Roots: x509.NewCertPool()}
+	s := &Server{validity: 77, uids: []uint32{101, 102}, Host: "127.0.0.1", Port: listener.Addr().(*net.TCPAddr).Port, listener: listener, cancel: cancel, conns: map[net.Conn]bool{}, Roots: x509.NewCertPool()}
 	s.Roots.AppendCertsFromPEM(certPEM)
 	dir := t.TempDir()
 	s.CertFile = filepath.Join(dir, "tls.crt")
@@ -139,6 +142,15 @@ func unquote(s string) (string, string, bool) {
 }
 
 // MessageContent and AttachmentContent are fixed payloads for byte-stream assertions.
+// SetMailbox changes only the isolated fixture's authoritative summary view.
+func (s *Server) SetMailbox(validity uint32, uids []uint32, flagged bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.validity = validity
+	s.uids = append([]uint32{}, uids...)
+	s.flagged = flagged
+}
+
 func MessageContent() []byte {
 	return []byte("Subject: fixture\r\nContent-Type: text/plain\r\n\r\n" + strings.Repeat("mail body line\r\n", 22000))
 }
@@ -159,6 +171,9 @@ func (s *Server) serve(ctx context.Context, conn net.Conn, mode string, users ma
 		tag, command := fields[0], strings.ToUpper(fields[1])
 		s.mu.Lock()
 		s.commands = append(s.commands, command)
+		validity := s.validity
+		uids := append([]uint32{}, s.uids...)
+		flagged := s.flagged
 		s.mu.Unlock()
 		switch command {
 		case "CAPABILITY":
@@ -218,10 +233,10 @@ func (s *Server) serve(ctx context.Context, conn net.Conn, mode string, users ma
 			write("Reports")
 			write(tag + " OK folders")
 		case "EXAMINE":
-			write("* 2 EXISTS")
+			write(fmt.Sprintf("* %d EXISTS", len(uids)))
 			write("* 0 RECENT")
 			write(`* FLAGS (\Seen \Flagged)`)
-			write("* OK [UIDVALIDITY 77] current")
+			write(fmt.Sprintf("* OK [UIDVALIDITY %d] current", validity))
 			write("* OK [UIDNEXT 103] next")
 			write(tag + " OK [READ-ONLY] selected")
 		case "UID":
@@ -326,7 +341,8 @@ func (s *Server) serve(ctx context.Context, conn net.Conn, mode string, users ma
 			if e != nil {
 				return
 			}
-			for _, id := range []uint64{101, 102} {
+			for sequence, rawID := range uids {
+				id := uint64(rawID)
 				if id < lo || id > hi {
 					continue
 				}
@@ -334,7 +350,11 @@ func (s *Server) serve(ctx context.Context, conn net.Conn, mode string, users ma
 				if id == 102 {
 					subject = `"=?UTF-8?B?0J/RgNC40LLQtdGC?="`
 				}
-				write(fmt.Sprintf(`* %d FETCH (UID %d FLAGS (\Seen) INTERNALDATE "13-Nov-2026 10:00:00 +0000" RFC822.SIZE 123 ENVELOPE ("Fri, 13 Nov 2026 10:00:00 +0000" %s (("Alice" NIL "alice" "example.test")) NIL NIL ((NIL NIL "bob" "example.test")) NIL NIL NIL "<message-%d@example.test>"))`, id-100, id, subject, id))
+				flags := `\Seen`
+				if flagged {
+					flags += ` \Flagged`
+				}
+				write(fmt.Sprintf(`* %d FETCH (UID %d FLAGS (%s) INTERNALDATE "13-Nov-2026 10:00:00 +0000" RFC822.SIZE 123 ENVELOPE ("Fri, 13 Nov 2026 10:00:00 +0000" %s (("Alice" NIL "alice" "example.test")) NIL NIL ((NIL NIL "bob" "example.test")) NIL NIL NIL "<message-%d@example.test>"))`, sequence+1, id, flags, subject, id))
 			}
 			write(tag + " OK fetched")
 

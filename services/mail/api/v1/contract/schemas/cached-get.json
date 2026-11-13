@@ -1,0 +1,147 @@
+{
+  "type": "object",
+  "properties": {
+    "uid": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295
+    },
+    "flags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 64
+      },
+      "maxItems": 64
+    },
+    "internal_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "size": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "subject": {
+      "type": "string",
+      "maxLength": 2048
+    },
+    "header_date": {
+      "type": "string",
+      "maxLength": 256
+    },
+    "from": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "mailbox": {
+            "type": "string",
+            "maxLength": 320
+          },
+          "host": {
+            "type": "string",
+            "maxLength": 320
+          }
+        },
+        "required": [
+          "name",
+          "mailbox",
+          "host"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 32
+    },
+    "to": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "mailbox": {
+            "type": "string",
+            "maxLength": 320
+          },
+          "host": {
+            "type": "string",
+            "maxLength": 320
+          }
+        },
+        "required": [
+          "name",
+          "mailbox",
+          "host"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 32
+    },
+    "message_id": {
+      "type": "string",
+      "maxLength": 1024
+    },
+    "in_reply_to": {
+      "type": "string",
+      "maxLength": 1024
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "folder_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "uid_validity": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295
+    },
+    "workspace_id": {
+      "const": ""
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "wire_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1366,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    }
+  },
+  "required": [
+    "uid",
+    "flags",
+    "internal_date",
+    "size",
+    "subject",
+    "header_date",
+    "from",
+    "to",
+    "message_id",
+    "in_reply_to",
+    "id",
+    "folder_id",
+    "uid_validity",
+    "workspace_id",
+    "acl_root_id",
+    "generation",
+    "wire_name"
+  ],
+  "additionalProperties": false
+}

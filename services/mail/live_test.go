@@ -134,7 +134,7 @@ tls {cert_file: %q,key_file: %q}
 authorization {users: [
  {nkey: %q,permissions:{publish:["_INBOX.>","evt.arc.fabric.routes.changed","ctl.arc.fabric.probe.>","$SRV.>"],subscribe:["rpc.identity.v1.>","rpc.access.v1.>","ctl.arc.fabric.>","$SRV.>","_INBOX.>"]}},
  {nkey: %q,permissions:{publish:["rpc.identity.v1.>","rpc.access.v1.>","rpc.mail.v1.>","ctl.arc.fabric.routes"],subscribe:["_INBOX.>"]}},
- {nkey: %q,permissions:{publish:["rpc.identity.v1.>","rpc.access.v1.>","ctl.arc.fabric.>","evt.mail.accounts.changed.v1","_INBOX.>","$SRV.>"],subscribe:["rpc.mail.v1.>","ctl.arc.fabric.probe.>","_INBOX.>","$SRV.>"]}},
+ {nkey: %q,permissions:{publish:["rpc.identity.v1.>","rpc.access.v1.>","ctl.arc.fabric.>","evt.mail.accounts.changed.v1","evt.mail.messages.changed.v1","_INBOX.>","$SRV.>"],subscribe:["rpc.mail.v1.>","ctl.arc.fabric.probe.>","_INBOX.>","$SRV.>"]}},
  {nkey: %q}
 ]}`, port, filepath.Join(dir, "js"), imap.CertFile, imap.KeyFile, pubs["core"], pubs["gate"], pubs["mail"], pubs["admin"])
 	configPath := write("nats.conf", []byte(conf))
@@ -242,7 +242,7 @@ authorization {users: [
 	defer admin.Close()
 	js, e := admin.JetStream()
 	must(e)
-	_, e = js.AddStream(&nats.StreamConfig{Name: "MAIL", Subjects: []string{v1.ChangedSubject}, Storage: nats.FileStorage})
+	_, e = js.AddStream(&nats.StreamConfig{Name: "MAIL", Subjects: []string{v1.ChangedSubject, v1.MessagesChangedSubject}, Storage: nats.FileStorage})
 	must(e)
 	ownerNC, e := sdk.Connect(ctx, cfg("mail"))
 	must(e)
@@ -508,6 +508,55 @@ authorization {users: [
 	if statusStructure != 409 {
 		t.Fatalf("structure generation guard %d %s", statusStructure, dataStructure)
 	}
+
+	refreshQuery := v1.RefreshMessages{MessageListQuery: v1.MessageListQuery{Generation: 1, MessageQuery: imapclient.MessageQuery{WireName: folderList.Folders[0].WireName, UIDWindow: 2}}}
+	refresh := func(key string) v1.RefreshResult {
+		status, data := request("POST", base(a)+"/messages/refresh", refreshQuery, ta, key)
+		var out v1.RefreshResult
+		must(json.Unmarshal(data, &out))
+		if status != 200 || out.Folder == nil {
+			t.Fatalf("index refresh %d %s", status, data)
+		}
+		return out
+	}
+	indexed := refresh("index-initial")
+	replayedIndex := refresh("index-initial")
+	if indexed.Status != "ok" || indexed.Upserted != 2 || replayedIndex.Folder.Revision != indexed.Folder.Revision {
+		t.Fatal("index replay", indexed, replayedIndex)
+	}
+	cachedQuery := v1.CachedListQuery{Generation: 1, WireName: folderList.Folders[0].WireName, Limit: 1}
+	cached := func(token string) v1.CachedList {
+		status, data := request("POST", base(a)+"/messages/cached/list", cachedQuery, token, "")
+		var out v1.CachedList
+		must(json.Unmarshal(data, &out))
+		if status != 200 {
+			t.Fatalf("cached list %d %s", status, data)
+		}
+		return out
+	}
+	cachedFirst := cached(ta)
+	if len(cachedFirst.Messages) != 1 || cachedFirst.Messages[0].UID != 102 || cachedFirst.NextBeforeUID != 102 {
+		t.Fatal("local first page", cachedFirst)
+	}
+	cachedQuery.BeforeUID = 102
+	cachedQuery.UIDValidity = 77
+	cachedSecond := cached(ta)
+	if len(cachedSecond.Messages) != 1 || cachedSecond.Messages[0].UID != 101 || cachedSecond.NextBeforeUID != 0 {
+		t.Fatal("local second page", cachedSecond)
+	}
+	local102, local101 := cachedFirst.Messages[0].ID, cachedSecond.Messages[0].ID
+	cachedGet := v1.CachedGetQuery{Generation: 1, MessageID: local102}
+	statusLocal, dataLocal := request("POST", base(a)+"/messages/cached/get", cachedGet, ta, "")
+	if statusLocal != 200 {
+		t.Fatalf("cached message %d %s", statusLocal, dataLocal)
+	}
+	statusLocal, _ = request("POST", base(c)+"/messages/cached/get", cachedGet, ta, "")
+	if statusLocal != 404 {
+		t.Fatalf("local ID crossed an independently readable root %d", statusLocal)
+	}
+
+	cachedQuery.BeforeUID = 0
+	cachedQuery.Limit = 20
 	// Trusted Core fixture seed: Mail 0.1 has no grant-management endpoint or
 	// downstream grant permission. All reads still exercise real online Access.
 	grantID := uid()
@@ -539,6 +588,14 @@ authorization {users: [
 	status, data = request("POST", base(a)+"/messages/content", downloadQuery, tb, "")
 	if status != 200 || !bytes.Equal(data, imapfixture.AttachmentContent()) {
 		t.Fatalf("reader stream %d %q", status, data)
+	}
+
+	if len(cached(tb).Messages) != 2 {
+		t.Fatal("reader cached list")
+	}
+	status, data = request("POST", base(a)+"/messages/cached/get", cachedGet, tb, "")
+	if status != 200 {
+		t.Fatalf("reader cached get %d %s", status, data)
 	}
 
 	for _, suffix := range []string{"/credentials/key", "/check"} {
@@ -581,6 +638,48 @@ authorization {users: [
 		t.Fatalf("revoked stream %d %s", status, data)
 	}
 
+	for _, suffix := range []string{"/messages/cached/list", "/messages/cached/get", "/messages/refresh"} {
+		var q any = cachedQuery
+		if suffix == "/messages/cached/get" {
+			q = cachedGet
+		}
+		if suffix == "/messages/refresh" {
+			q = refreshQuery
+		}
+		status, data = request("POST", base(a)+suffix, q, tb, "revoked-refresh")
+		if status != 403 {
+			t.Fatalf("revoked local index %s %d %s", suffix, status, data)
+		}
+	}
+	imap.SetMailbox(77, []uint32{102}, true)
+	reconciled := refresh("index-reconcile")
+	local := cached(ta)
+	if reconciled.Removed != 1 || len(local.Messages) != 1 || local.Messages[0].ID != local102 || len(local.Messages[0].Flags) != 2 {
+		t.Fatal("index reconciliation", reconciled, local)
+	}
+	cachedGet.MessageID = local101
+	status, _ = request("POST", base(a)+"/messages/cached/get", cachedGet, ta, "")
+	if status != 404 {
+		t.Fatalf("expunged local ID %d", status)
+	}
+	imap.SetMailbox(78, []uint32{101, 102}, false)
+	refreshQuery.UIDValidity = 77
+	resetIndex := refresh("index-namespace-reset")
+	if resetIndex.Status != "uidvalidity_changed" || resetIndex.Folder.UIDValidity != 78 {
+		t.Fatal("index namespace reset", resetIndex)
+	}
+	cachedGet.MessageID = local102
+	status, _ = request("POST", base(a)+"/messages/cached/get", cachedGet, ta, "")
+	if status != 404 {
+		t.Fatalf("old namespace local ID %d", status)
+	}
+	refreshQuery.UIDValidity = 78
+	refresh("index-rescan")
+	cachedQuery.UIDValidity = 78
+	local = cached(ta)
+	if len(local.Messages) != 2 || local.Messages[0].ID == local102 || local.Messages[1].ID == local101 {
+		t.Fatal("new namespace reused local IDs", local)
+	}
 	update := v1.Update{Scope: a, AccountInput: accountA.AccountInput, Revision: 2}
 	update.Name = "Renamed"
 	status, data = request("PUT", base(a), update, ta, "")
@@ -602,6 +701,9 @@ authorization {users: [
 			if status != 200 || out.Status != "paused" {
 				t.Fatal("paused check", status)
 			}
+			if len(cached(ta).Messages) != 2 {
+				t.Fatal("paused local read was unavailable")
+			}
 		}
 	}
 	status, data = request("PUT", base(a)+"/credentials", original, ta, "credential-"+a.RootID)
@@ -613,6 +715,10 @@ authorization {users: [
 	must(json.Unmarshal(data, &disconnected))
 	if status != 200 || disconnected.CredentialReady || disconnected.State != "disconnected" {
 		t.Fatal("replay reconnected account")
+	}
+	status, _ = request("POST", base(a)+"/messages/cached/list", cachedQuery, ta, "")
+	if status != 409 {
+		t.Fatalf("old account generation cache remained usable %d", status)
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for {
@@ -628,10 +734,10 @@ authorization {users: [
 	}
 	info, e := js.StreamInfo("MAIL")
 	must(e)
-	if info.State.Msgs != 10 {
+	if info.State.Msgs != 14 {
 		t.Fatal("wrong event count", info.State.Msgs)
 	}
-	for _, table := range []string{"accounts", "account_provisions", "audit", "outbox", "command_results"} {
+	for _, table := range []string{"accounts", "account_provisions", "mail_folders", "mail_messages", "mail_refresh_staging", "audit", "outbox", "command_results"} {
 		var rows []map[string]any
 		must(mailDB.Table(table).Find(&rows).Error)
 		raw, e := json.Marshal(rows)
@@ -642,5 +748,5 @@ authorization {users: [
 			}
 		}
 	}
-	t.Log("PASS: signed Gate/Core/Access/TLS+NKey NATS/JetStream Mail, two users, self-service accounts/discovery/provisioning replay and multiple personal accounts, sealed credentials, real TLS IMAP/folders/message UID windows/MIME structure/private mTLS decoded streams, read-only/revoke, lifecycle/replay and ciphertext-only state")
+	t.Log("PASS: signed Gate/Core/Access/TLS+NKey NATS/JetStream Mail, two users, self-service accounts/discovery/provisioning replay and multiple personal accounts, sealed credentials, real TLS IMAP/folders/message UID windows/MIME structure/private mTLS decoded streams, durable local index/reconciliation/namespace invalidation, read-only/revoke, lifecycle/replay and ciphertext-only state")
 }

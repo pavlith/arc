@@ -1,0 +1,26 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "const": ""
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "message_id": {
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "required": [
+    "acl_root_id",
+    "generation",
+    "message_id"
+  ],
+  "additionalProperties": false
+}

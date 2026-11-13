@@ -1,0 +1,131 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "const": ""
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "authentication_failed",
+        "tls_failed",
+        "destination_denied",
+        "unavailable",
+        "protocol_error",
+        "credentials_missing",
+        "paused",
+        "disconnected",
+        "limit_exceeded",
+        "folder_unavailable",
+        "uidvalidity_changed"
+      ]
+    },
+    "folder": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "wire_name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1366,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "uid_validity": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4294967295
+            },
+            "uid_next": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4294967295
+            },
+            "remote_count": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            "next_before_uid": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4294967295
+            },
+            "low_uid": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            "high_uid": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            "status": {
+              "enum": [
+                "ok",
+                "uidvalidity_changed"
+              ]
+            },
+            "updated_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "id",
+            "wire_name",
+            "revision",
+            "uid_validity",
+            "uid_next",
+            "remote_count",
+            "low_uid",
+            "high_uid",
+            "status",
+            "updated_at"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "upserted": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 20
+    },
+    "removed": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10000
+    }
+  },
+  "required": [
+    "workspace_id",
+    "acl_root_id",
+    "generation",
+    "status",
+    "folder",
+    "upserted",
+    "removed"
+  ],
+  "additionalProperties": false
+}

@@ -95,6 +95,10 @@ func (s *Module) Authorize(ctx context.Context, root, action string) error {
 	if err := s.Check(ctx, root, action); err != nil {
 		return err
 	}
+	if cl.Operation == v1.GetCacheStatus.ID || cl.Operation == v1.PruneCache.ID {
+		_, err := s.ownerCacheAccount(ctx, s.db(ctx), scope)
+		return err
+	}
 	if cl.Operation == v1.RefreshMessageIndex.ID {
 		return s.stageRefresh(ctx)
 	}
@@ -384,6 +388,12 @@ func (s *Module) Register(r *module.Registry) error {
 		return err
 	}
 	policy := module.Policy{Resource: s.Authorize}
+	if err := module.BindQuery(r, v1.GetCacheStatus, policy, s.cacheStatus); err != nil {
+		return err
+	}
+	if err := module.BindCommand(r, v1.PruneCache, policy, events.Store{DB: s.DB}, s.pruneCache); err != nil {
+		return err
+	}
 	if err := module.BindCommand(r, v1.RefreshMessageIndex, policy, events.Store{DB: s.DB}, s.refreshIndex); err != nil {
 		return err
 	}

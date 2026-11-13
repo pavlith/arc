@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "service": {
     "name": "mail",
-    "build_version": "0.8.0",
+    "build_version": "0.9.0",
     "api_major": 1
   },
   "resources": [
@@ -442,6 +442,64 @@
         "method": "POST",
         "path": "/api/v1/mail/personal/messages/unified/list",
         "success_status": 200
+      }
+    },
+    {
+      "id": "mail.personal.cache.get",
+      "subject": "rpc.mail.v1.personal.cache.get",
+      "kind": "query",
+      "request_schema": "schemas/scope.json",
+      "response_schema": "schemas/cache-status.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "mail.personal",
+        "action": "mail.connection.manage",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/mail/personal/accounts/{acl_root_id}/cache",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "mail.personal.cache.prune",
+      "subject": "rpc.mail.v1.personal.cache.prune",
+      "kind": "command",
+      "request_schema": "schemas/cache-prune.json",
+      "response_schema": "schemas/cache-pruned.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "mail.personal",
+        "action": "mail.connection.manage",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/mail/personal/accounts/{acl_root_id}/cache/prune",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
       }
     }
   ],

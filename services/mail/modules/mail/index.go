@@ -140,7 +140,7 @@ func (s *Module) stageRefresh(ctx context.Context) error {
 	}
 	snapshot := refreshSnapshot{AccountRevision: row.Revision, CredentialVersion: row.CredentialVersion, State: row.State, FolderID: baseline.ID, FolderRevision: baseline.Revision, Status: remote.Status, Page: remote.Page}
 	raw, err := json.Marshal(snapshot)
-	if err != nil || len(raw) > 160<<10 {
+	if err != nil || len(raw) > indexStageBytes {
 		return indexCapacity()
 	}
 	return database.RetryBusy(ctx, func() error {
@@ -157,7 +157,7 @@ func (s *Module) stageRefresh(ctx context.Context) error {
 				return conflict()
 			}
 			now := time.Now().Unix()
-			if err := tx.Exec("DELETE FROM mail_refresh_staging WHERE acl_root_id=? AND created_unix<?", q.RootID, now-900).Error; err != nil {
+			if err := tx.Exec("DELETE FROM mail_refresh_staging WHERE acl_root_id=? AND created_unix<?", q.RootID, now-indexPendingSeconds).Error; err != nil {
 				return dbError(err)
 			}
 			var old refreshStage
@@ -173,7 +173,7 @@ func (s *Module) stageRefresh(ctx context.Context) error {
 				if err := tx.Model(&refreshStage{}).Where("acl_root_id=?", q.RootID).Count(&count).Error; err != nil {
 					return dbError(err)
 				}
-				if count >= 10 {
+				if count >= indexPendingBatches {
 					return indexCapacity()
 				}
 			}
@@ -225,7 +225,7 @@ func (s *Module) refreshIndex(ctx context.Context, tx *gorm.DB, q v1.RefreshMess
 			if err := tx.Model(&indexFolder{}).Where("acl_root_id=?", q.RootID).Count(&count).Error; err != nil {
 				return empty, dbError(err)
 			}
-			if count >= 64 {
+			if count >= indexFolders {
 				return empty, indexCapacity()
 			}
 			f = indexFolder{ID: newID(), RootID: q.RootID, Generation: q.Generation, WireName: q.WireName}
@@ -270,7 +270,7 @@ func (s *Module) refreshIndex(ctx context.Context, tx *gorm.DB, q v1.RefreshMess
 				}
 				seen[message.UID] = true
 				raw, err := json.Marshal(message)
-				if err != nil || len(raw) > 64<<10 {
+				if err != nil || len(raw) > indexMessageBytes {
 					return empty, indexCapacity()
 				}
 				if err := tx.Exec(`INSERT INTO mail_messages(id,folder_id,uid_validity,uid,present,summary,internal_unix) VALUES(?,?,?,?,1,?,?) ON CONFLICT(folder_id,uid_validity,uid) DO UPDATE SET present=1,summary=excluded.summary,internal_unix=excluded.internal_unix`, newID(), f.ID, f.UIDValidity, message.UID, raw, message.InternalDate.UnixMicro()).Error; err != nil {
@@ -299,7 +299,7 @@ func (s *Module) refreshIndex(ctx context.Context, tx *gorm.DB, q v1.RefreshMess
 		if err := tx.Raw("SELECT count(*) AS count,COALESCE(sum(length(m.summary)),0) AS size FROM mail_messages m JOIN mail_folders f ON f.id=m.folder_id WHERE f.acl_root_id=?", q.RootID).Scan(&quota).Error; err != nil {
 			return empty, dbError(err)
 		}
-		if quota.Count > 10000 || quota.Size > 32<<20 {
+		if quota.Count > indexMessages || quota.Size > indexTotalBytes {
 			return empty, indexCapacity()
 		}
 		if err := tx.Exec("INSERT INTO audit(acl_root_id,actor,operation,revision,generation) VALUES(?,?,?,?,?)", q.RootID, actor, v1.RefreshMessageIndex.ID, row.Revision, row.Generation).Error; err != nil {

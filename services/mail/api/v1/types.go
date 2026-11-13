@@ -214,3 +214,46 @@ type UnifiedList struct {
 	NextCursor     string               `json:"next_cursor,omitempty"`
 	PolicyRevision int64                `json:"policy_revision"`
 }
+
+type CacheLimits struct {
+	FolderBindings         int64 `json:"folder_bindings"`
+	Messages               int64 `json:"messages"`
+	SummaryBytes           int64 `json:"summary_bytes"`
+	SummaryPerMessageBytes int64 `json:"summary_per_message_bytes"`
+	PendingBatches         int64 `json:"pending_batches"`
+	PendingSnapshotBytes   int64 `json:"pending_snapshot_bytes"`
+	PendingTTLSeconds      int64 `json:"pending_ttl_seconds"`
+}
+type CacheUsage struct {
+	FolderBindings   int64       `json:"folder_bindings"`
+	Messages         int64       `json:"messages"`
+	ActiveMessages   int64       `json:"active_messages"`
+	ObsoleteMessages int64       `json:"obsolete_messages"`
+	SummaryBytes     int64       `json:"summary_bytes"`
+	PendingBatches   int64       `json:"pending_batches"`
+	PendingBytes     int64       `json:"pending_bytes"`
+	Limits           CacheLimits `json:"limits"`
+}
+type CacheStatus struct {
+	Scope
+	Revision   int64      `json:"revision"`
+	Generation int64      `json:"generation"`
+	Usage      CacheUsage `json:"usage"`
+}
+type CachePrune struct {
+	Scope
+	Revision   int64  `json:"revision"`
+	Generation int64  `json:"generation"`
+	Mode       string `json:"mode"`
+	Limit      int    `json:"limit"`
+}
+type CachePruned struct {
+	CacheStatus
+	Mode                  string `json:"mode"`
+	RemovedMessages       int    `json:"removed_messages"`
+	RemovedFolders        int    `json:"removed_folders"`
+	RemovedBatches        int    `json:"removed_batches"`
+	ReclaimedSummaryBytes int64  `json:"reclaimed_summary_bytes"`
+	ReclaimedPendingBytes int64  `json:"reclaimed_pending_bytes"`
+	More                  bool   `json:"more"`
+}

@@ -1,0 +1,108 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "const": ""
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "usage": {
+      "type": "object",
+      "properties": {
+        "folder_bindings": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "messages": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "active_messages": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "obsolete_messages": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "summary_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pending_batches": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pending_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "folder_bindings": {
+              "const": 64
+            },
+            "messages": {
+              "const": 10000
+            },
+            "summary_bytes": {
+              "const": 33554432
+            },
+            "summary_per_message_bytes": {
+              "const": 65536
+            },
+            "pending_batches": {
+              "const": 10
+            },
+            "pending_snapshot_bytes": {
+              "const": 163840
+            },
+            "pending_ttl_seconds": {
+              "const": 900
+            }
+          },
+          "required": [
+            "folder_bindings",
+            "messages",
+            "summary_bytes",
+            "summary_per_message_bytes",
+            "pending_batches",
+            "pending_snapshot_bytes",
+            "pending_ttl_seconds"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "folder_bindings",
+        "messages",
+        "active_messages",
+        "obsolete_messages",
+        "summary_bytes",
+        "pending_batches",
+        "pending_bytes",
+        "limits"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "workspace_id",
+    "acl_root_id",
+    "revision",
+    "generation",
+    "usage"
+  ],
+  "additionalProperties": false
+}

@@ -1,19 +1,19 @@
 # Mail service design
 
-Mail 0.8.0 implements personal account creation/discovery, IMAP connection settings,
+Mail 0.9.0 implements personal account creation/discovery, IMAP connection settings,
 sealed password submission, pause/resume/disconnect, live folders, message summaries,
-MIME structure, private content downloads, a durable local summary index, unified feeds and bounded
+MIME structure, private content downloads, a durable local summary index, unified feeds, owner cache maintenance and bounded
 user-requested TLS IMAP checks and metadata refreshes.
 Autonomous/full-mailbox synchronization, content caching, OAuth provider flows,
 workspace accounts and sending remain planned. Requirements:
 [MAIL-01–MAIL-10](REQUIREMENTS.md#214-mail--imap-p1). This connection foundation does
 not satisfy full MAIL-10 or establish Gmail/Microsoft compatibility.
 
-## Implemented Mail API (0.8.0)
+## Implemented Mail API (0.9.0)
 
-The [signed contract](../services/mail/api/v1/contract/manifest.json) exposes fifteen
+The [signed contract](../services/mail/api/v1/contract/manifest.json) exposes seventeen
 JSON operations: two account collection operations under `/api/v1/mail/personal/accounts`
-and twelve account operations under `/api/v1/mail/personal/accounts/{acl_root_id}`,
+and fourteen account operations under `/api/v1/mail/personal/accounts/{acl_root_id}`,
 plus the unified local feed under `/api/v1/mail/personal/messages/unified/list`.
 Each account is one `mail.personal` root owned by the verified user, with an empty
 workspace. Separate roots support several unrelated accounts per user. Existing
@@ -39,6 +39,8 @@ accounts are deferred. The private download operation is described separately be
 | POST `/messages/refresh` | Persist one live metadata UID window; `mail.read`, idempotent command |
 | POST `/messages/cached/list` | Local summary pagination; `mail.read` |
 | POST `/messages/cached/get` | Read one local message occurrence; `mail.read` |
+| GET `/cache` | Owner-only retained usage and limits; `mail.connection.manage` |
+| POST `/cache/prune` | Owner-only bounded local cleanup; `mail.connection.manage`, idempotent command |
 
 ### Account creation and discovery
 
@@ -218,7 +220,7 @@ return `uidvalidity_changed`. All error statuses contain empty `parts` and
 `attachments`, never partial metadata. Stale account generation conflicts before
 IMAP I/O; the live ACL/account revision check runs again after remote I/O.
 
-Version 0.8.0 requires explicit approval of the new artifact digest and the hidden
+Version 0.9.0 requires explicit approval of the new artifact digest and the hidden
 `mail.personal.messages.download` / `rpc.mail.v1.personal.messages.download`
 operation with its exact Access read-check edge, retaining approved metadata
 operations and adding the exact collection/provisioning edges described above. The NATS handler for this operation fails closed and returns no bytes.
@@ -294,8 +296,8 @@ occurrences (including tombstones/old namespaces), and 32 MiB of summary JSON.
 Each summary fits 64 KiB; local list JSON fits 128 KiB. At most ten pending batches
 of 160 KiB each are stored per account. Pending staging older than 15 minutes is
 removed on an authorized refresh; complete batches remove their staging rows.
-Capacity errors conflict without partial metadata commits. Automatic retention/
-pruning and full mailbox coverage remain deferred. Bodies and MIME structures are
+Capacity errors conflict without partial metadata commits. Owner-triggered cleanup
+is described below; automatic retention/pruning and full mailbox coverage remain deferred. Bodies and MIME structures are
 not cached by this index; content uses the private stream.
 
 The additive `000003_mail_message_index` migration creates the local index/staging
@@ -359,6 +361,63 @@ Approve `mail.personal.messages.unified.list`, its exact Gate-to-Mail RPC subjec
 and source-bound `access.v1.check_many` edge under `mail.read` in the new artifact.
 No new event subjects, streaming transport, background authority, UI, search/filtering
 or provider compatibility claim is introduced by this query.
+
+### Owner cache usage and cleanup
+
+GET `/cache` returns account scope, current settings `revision`/`generation` and
+`usage`: retained folder/message counts, currently active and obsolete occurrences,
+summary bytes, pending batch count/bytes and the exact enforced `limits`. Active
+means the current account generation, current folder UIDVALIDITY and `present=1`.
+Obsolete counts include tombstones, old namespaces and retired account generations.
+Byte counts measure retained JSON payloads, not SQLite/WAL file size.
+This operation and cleanup require the direct verified account owner plus live
+`mail.connection.manage`. A read-only grantee or non-owner connection manager
+cannot inspect this management view or prune cache, including through replay.
+Statistics are read consistently in Mail SQL and rechecked against current Core
+management access/account binding after the read transaction; they are not a quota
+reservation or a fixed mailbox snapshot.
+
+POST `/cache/prune` requires `Idempotency-Key`, expected account `revision` and
+`generation`, explicit `mode` (`obsolete` or `all`) and `limit` (1–500 messages):
+
+```json
+{"revision":2,"generation":1,"mode":"obsolete","limit":500}
+```
+
+`obsolete` deletes only tombstones, old UIDVALIDITY occurrences and messages from
+retired account generations, then drops empty retired folder bindings. It preserves
+active local UUIDs/summaries and the current folder's last-window continuation.
+`all` explicitly forgets local index rows in bounded batches, resets affected
+folder continuations, and removes empty folder bindings once their rows are gone.
+It does not change IMAP messages/flags, account state, connection generation or
+credentials. Forgotten local IDs return not found; a later refresh creates new
+folder/occurrence UUIDs, never retargeting old links. Removing a binding invalidates
+its unified-feed cursors. While a partial batch leaves rows, pagination remains
+subject to the existing no-snapshot semantics.
+
+Each batch clears pending refresh staging for the same account and advances the
+account settings revision. That fences in-flight refreshes and invalidates stale
+credential-sealing/settings requests; refetch their current binding before a new
+write. Existing active metadata is retained by `obsolete`. Cleanup, audit, replay
+and one `account.cache.pruned` hint on `evt.mail.accounts.changed.v1` commit in a
+single transaction, without IMAP or Core calls inside that transaction. Connection
+password/key ciphertext and credential version stay unchanged. Core approval and
+owner identity are checked before cached command replay.
+
+The response contains new `revision`, unchanged `generation`, post-cleanup `usage`,
+mode, removed message/folder/pending-batch counts, reclaimed summary/pending bytes
+and `more`. Continue with a fresh key and the returned revision while `more=true`.
+A completed replay returns its historical counts/revision without another deletion;
+changed input under the same key or a stale new revision conflicts. Each request
+removes at most 500 messages, 64 empty bindings and ten staging records. No other
+account is touched. Cache usage/pruning also works while paused or disconnected,
+so retired bindings can release quota without reconnecting or restoring a secret.
+
+Cleanup removes owner-local rows. WAL/backups and retained command/audit/outbox
+history have their own retention; this is not a secure-erasure protocol. Automatic
+retention/eviction remains deferred. Version 0.9 adds no SQL migration or new event
+subject; deployment requires approval of the updated artifact, exact cache RPC/
+Gate operations and management Access edges, including the new account-event action.
 
 ### Private content downloads
 

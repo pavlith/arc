@@ -390,6 +390,25 @@ authorization {users: [
 		t.Fatal("cross-owner discovery", bobAccounts)
 	}
 	base := func(q v1.Scope) string { return "/api/v1/mail/personal/accounts/" + q.RootID }
+	cacheStatus := func(scope v1.Scope, token string) v1.CacheStatus {
+		status, data := request("GET", base(scope)+"/cache", nil, token, "")
+		var out v1.CacheStatus
+		must(json.Unmarshal(data, &out))
+		if status != 200 {
+			t.Fatalf("cache usage %d %s", status, data)
+		}
+		return out
+	}
+	pruneCache := func(scope v1.Scope, token string, q v1.CachePrune, key string) v1.CachePruned {
+		status, data := request("POST", base(scope)+"/cache/prune", q, token, key)
+		var out v1.CachePruned
+		must(json.Unmarshal(data, &out))
+		if status != 200 {
+			t.Fatalf("cache prune %d %s", status, data)
+		}
+		return out
+	}
+
 	for _, tc := range []struct {
 		scope v1.Scope
 		token string
@@ -690,6 +709,23 @@ authorization {users: [
 	if status != 409 {
 		t.Fatalf("cursor crossed source set %d", status)
 	}
+
+	status, _ = request("GET", base(a)+"/cache", nil, tb, "")
+	if status != 403 {
+		t.Fatalf("read-only grantee read owner cache usage %d", status)
+	}
+	managerGrant := uid()
+	must(coreDB.Exec("INSERT INTO access_grants(id,resource_id,principal_kind,principal_id,action,created_by,created_at) VALUES(?,?,'user',?,'mail.connection.manage',?,?)", managerGrant, a.RootID, bob, "user:"+alice, time.Now().UTC()).Error)
+	status, _ = request("GET", base(a)+"/cache", nil, tb, "")
+	if status != 403 {
+		t.Fatalf("non-owner manager read owner cache usage %d", status)
+	}
+	forbiddenPrune := v1.CachePrune{Revision: 2, Generation: 1, Mode: "all", Limit: 1}
+	status, _ = request("POST", base(a)+"/cache/prune", forbiddenPrune, tb, "foreign-cache")
+	if status != 403 {
+		t.Fatalf("non-owner manager pruned cache %d", status)
+	}
+	must(coreDB.Exec("UPDATE access_grants SET revoked_at=? WHERE id=?", time.Now().UTC(), managerGrant).Error)
 	for _, suffix := range []string{"/credentials/key", "/check"} {
 		method := "GET"
 		if suffix == "/check" {
@@ -782,7 +818,65 @@ authorization {users: [
 	if len(local.Messages) != 2 || local.Messages[0].ID == local102 || local.Messages[1].ID == local101 {
 		t.Fatal("new namespace reused local IDs", local)
 	}
-	update := v1.Update{Scope: a, AccountInput: accountA.AccountInput, Revision: 2}
+
+	usageA := cacheStatus(a, ta)
+	if usageA.Usage.Messages != 4 || usageA.Usage.ActiveMessages != 2 || usageA.Usage.ObsoleteMessages != 2 || usageA.Usage.Limits.Messages != 10000 {
+		t.Fatal("namespace cache usage", usageA)
+	}
+	obsolete := v1.CachePrune{Revision: usageA.Revision, Generation: usageA.Generation, Mode: "obsolete", Limit: 1}
+	cleaned := pruneCache(a, ta, obsolete, "prune-a-old-1")
+	if cleaned.RemovedMessages != 1 || !cleaned.More || cleaned.Usage.ActiveMessages != 2 {
+		t.Fatal("bounded obsolete cleanup", cleaned)
+	}
+	replayedCleanup := pruneCache(a, ta, obsolete, "prune-a-old-1")
+	if replayedCleanup.Revision != cleaned.Revision || cacheStatus(a, ta).Usage.Messages != 3 {
+		t.Fatal("cache replay repeated cleanup", replayedCleanup)
+	}
+	status, _ = request("POST", base(a)+"/cache/prune", obsolete, ta, "prune-a-stale")
+	if status != 409 {
+		t.Fatalf("stale cache revision accepted %d", status)
+	}
+	obsolete.Revision = cleaned.Revision
+	cleaned = pruneCache(a, ta, obsolete, "prune-a-old-2")
+	if cleaned.More || cleaned.Usage.Messages != 2 || cleaned.Usage.ObsoleteMessages != 0 {
+		t.Fatal("obsolete cleanup did not finish", cleaned)
+	}
+	preserved := cached(ta)
+	if len(preserved.Messages) != 2 || preserved.Messages[0].ID != local.Messages[0].ID || preserved.Messages[1].ID != local.Messages[1].ID {
+		t.Fatal("obsolete cleanup changed active identities", preserved)
+	}
+	usageB := cacheStatus(b, tb)
+	feedB := v1.UnifiedQuery{Sources: []v1.UnifiedSource{{RootID: b.RootID, Generation: 1, WireName: refreshQuery.WireName}}, Limit: 1}
+	beforePurgeB := unified(tb, feedB)
+	if len(beforePurgeB.Messages) != 1 || beforePurgeB.NextCursor == "" {
+		t.Fatal("expected B index before full purge", beforePurgeB)
+	}
+	clearB := v1.CachePrune{Revision: usageB.Revision, Generation: usageB.Generation, Mode: "all", Limit: 1}
+	clearedB := pruneCache(b, tb, clearB, "clear-b-1")
+	if !clearedB.More || clearedB.RemovedMessages != 1 || clearedB.Usage.Messages != 1 {
+		t.Fatal("bounded full purge", clearedB)
+	}
+	clearB.Revision = clearedB.Revision
+	clearedB = pruneCache(b, tb, clearB, "clear-b-2")
+	if clearedB.More || clearedB.Usage.Messages != 0 || clearedB.Usage.FolderBindings != 0 || clearedB.RemovedFolders != 1 {
+		t.Fatal("full purge did not clear binding", clearedB)
+	}
+	feedB.Cursor = beforePurgeB.NextCursor
+	status, _ = request("POST", unifiedPath, feedB, tb, "")
+	if status != 409 {
+		t.Fatalf("old cursor survived forgotten binding %d", status)
+	}
+	remoteB := v1.MessageListQuery{Generation: 1, MessageQuery: imapclient.MessageQuery{WireName: refreshQuery.WireName, UIDWindow: 2}}
+	status, data = request("POST", base(b)+"/messages/list", remoteB, tb, "")
+	var remoteAfterPurge v1.MessageList
+	must(json.Unmarshal(data, &remoteAfterPurge))
+	if status != 200 || remoteAfterPurge.Status != "ok" || len(remoteAfterPurge.Messages) != 2 {
+		t.Fatalf("local purge changed remote mail %d %s", status, data)
+	}
+	if cacheStatus(a, ta).Usage.Messages != 2 {
+		t.Fatal("B purge affected A")
+	}
+	update := v1.Update{Scope: a, AccountInput: accountA.AccountInput, Revision: cleaned.Revision}
 	update.Name = "Renamed"
 	status, data = request("PUT", base(a), update, ta, "")
 	if status != 200 {
@@ -791,7 +885,7 @@ authorization {users: [
 	for _, state := range []struct {
 		name     string
 		revision int64
-	}{{"paused", 3}, {"enabled", 4}, {"disconnected", 5}} {
+	}{{"paused", cleaned.Revision + 1}, {"enabled", cleaned.Revision + 2}, {"disconnected", cleaned.Revision + 3}} {
 		status, data = request("POST", base(a)+"/state", v1.SetState{Scope: a, Revision: state.revision, State: state.name}, ta, "")
 		if status != 200 {
 			t.Fatalf("state %d %s", status, data)
@@ -822,6 +916,15 @@ authorization {users: [
 	if status != 409 {
 		t.Fatalf("old account generation cache remained usable %d", status)
 	}
+
+	retired := cacheStatus(a, ta)
+	if retired.Usage.ActiveMessages != 0 || retired.Usage.ObsoleteMessages != 2 {
+		t.Fatal("disconnected cache not retired", retired)
+	}
+	retiredCleanup := pruneCache(a, ta, v1.CachePrune{Revision: retired.Revision, Generation: retired.Generation, Mode: "obsolete", Limit: 500}, "retired-a")
+	if retiredCleanup.More || retiredCleanup.RemovedMessages != 2 || retiredCleanup.RemovedFolders != 1 || retiredCleanup.Usage.Messages != 0 {
+		t.Fatal("retired generation cleanup", retiredCleanup)
+	}
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		var n int64
@@ -836,7 +939,7 @@ authorization {users: [
 	}
 	info, e := js.StreamInfo("MAIL")
 	must(e)
-	if info.State.Msgs != 15 {
+	if info.State.Msgs != 20 {
 		t.Fatal("wrong event count", info.State.Msgs)
 	}
 	for _, table := range []string{"accounts", "account_provisions", "mail_folders", "mail_messages", "mail_refresh_staging", "audit", "outbox", "command_results"} {
@@ -850,5 +953,5 @@ authorization {users: [
 			}
 		}
 	}
-	t.Log("PASS: signed Gate/Core/Access/TLS+NKey NATS/JetStream Mail, two users, self-service accounts/discovery/provisioning replay and multiple personal accounts, sealed credentials, real TLS IMAP/folders/message UID windows/MIME structure/private mTLS decoded streams, durable local index/reconciliation/namespace invalidation/unified feed, read-only/revoke, lifecycle/replay and ciphertext-only state")
+	t.Log("PASS: signed Gate/Core/Access/TLS+NKey NATS/JetStream Mail, two users, self-service accounts/discovery/provisioning replay and multiple personal accounts, sealed credentials, real TLS IMAP/folders/message UID windows/MIME structure/private mTLS decoded streams, durable local index/reconciliation/namespace invalidation/unified feed/owner cache pruning, read-only/revoke, lifecycle/replay and ciphertext-only state")
 }

@@ -1,0 +1,39 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "const": ""
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "mode": {
+      "enum": [
+        "obsolete",
+        "all"
+      ]
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500
+    }
+  },
+  "required": [
+    "acl_root_id",
+    "revision",
+    "generation",
+    "mode",
+    "limit"
+  ],
+  "additionalProperties": false
+}

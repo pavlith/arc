@@ -21,7 +21,8 @@
         "account.updated",
         "credentials.set",
         "account.state",
-        "account.created"
+        "account.created",
+        "account.cache.pruned"
       ]
     }
   },

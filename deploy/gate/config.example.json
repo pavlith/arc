@@ -19,5 +19,10 @@
   "files_stream_ca_file": "/run/arc/files-stream-ca.pem",
   "files_stream_server_name": "files.internal",
   "files_stream_client_cert_file": "/run/arc/gate-client.crt",
-  "files_stream_client_key_file": "/run/arc/gate-client.key"
+  "files_stream_client_key_file": "/run/arc/gate-client.key",
+  "mail_stream_url": "",
+  "mail_stream_ca_file": "",
+  "mail_stream_server_name": "",
+  "mail_stream_client_cert_file": "",
+  "mail_stream_client_key_file": ""
 }

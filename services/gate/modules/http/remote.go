@@ -130,12 +130,12 @@ func SubscribeChanges(nc *nats.Conn) (<-chan struct{}, func(), error) {
 	return ch, func() { _ = s.Unsubscribe() }, nil
 }
 
-// SignPrivate binds scope, object, offset and length into Core's normal
+// SignPrivate binds exact Files or Mail content selectors into Core's normal
 // Ed25519 invocation proof. Only Gate owns the instance signing key.
 func (r *Remote) SignPrivate(ctx context.Context, opID, token string, payload json.RawMessage, idem string) ([]byte, error) {
 	if r == nil || len(r.Client.PrivateKey) != ed25519.PrivateKeySize || r.Client.Kid == "" ||
 		ctx == nil || ctx.Err() != nil || len(payload) == 0 ||
-		opID != "files.uploads.chunk" && opID != "files.files.download" && opID != "files.personal.uploads.chunk" && opID != "files.personal.files.download" {
+		opID != "mail.personal.messages.download" && opID != "files.uploads.chunk" && opID != "files.files.download" && opID != "files.personal.uploads.chunk" && opID != "files.personal.files.download" {
 		return nil, security.ErrUnavailable
 	}
 	jti, err := tokenJTI(token)
@@ -162,6 +162,9 @@ func (r *Remote) SignPrivate(ctx context.Context, opID, token string, payload js
 		return nil, err
 	}
 	subject := "rpc.files.v1." + strings.TrimPrefix(opID, "files.")
+	if opID == "mail.personal.messages.download" {
+		subject = "rpc.mail.v1.personal.messages.download"
+	}
 	proof, err := security.SignProof(r.Client.PrivateKey, subject, unsigned, jti,
 		security.Proof{Kid: r.Client.Kid, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Nonce: NewID()})
 	if err != nil {

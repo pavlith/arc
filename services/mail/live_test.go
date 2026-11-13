@@ -5,10 +5,15 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -35,6 +40,7 @@ import (
 	"github.com/pavlith/arc/services/mail/credentials"
 	"github.com/pavlith/arc/services/mail/imapclient"
 	"github.com/pavlith/arc/services/mail/migrations"
+	"github.com/pavlith/arc/services/mail/stream"
 	"github.com/pavlith/arc/test/imapfixture"
 	"github.com/pavlith/arc/test/testdb"
 	"github.com/pavlith/arc/test/testlog"
@@ -83,6 +89,31 @@ func TestMailLive(t *testing.T) {
 		must(os.WriteFile(p, data, 0600))
 		return p
 	}
+	caKey := liveKey()
+	now := time.Now()
+	ca := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "Mail isolated live CA"}, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature}
+	der, err := x509.CreateCertificate(rand.Reader, ca, ca, caKey.Public(), caKey)
+	must(err)
+	ca, err = x509.ParseCertificate(der)
+	must(err)
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	caFile := write("ca.crt", caPEM)
+	leaf := func(name string, serial int64, usage x509.ExtKeyUsage) (string, string, tls.Certificate) {
+		k := liveKey()
+		c := &x509.Certificate{SerialNumber: big.NewInt(serial), Subject: pkix.Name{CommonName: name}, DNSNames: []string{"localhost", "mail.internal"}, IPAddresses: []net.IP{net.ParseIP("127.0.0.1")}, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{usage}}
+		d, e := x509.CreateCertificate(rand.Reader, c, ca, k.Public(), caKey)
+		must(e)
+		kb, e := x509.MarshalPKCS8PrivateKey(k)
+		must(e)
+		certPEM, keyPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: d}), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: kb})
+		pair, e := tls.X509KeyPair(certPEM, keyPEM)
+		must(e)
+		return write(name+".crt", certPEM), write(name+".key", keyPEM), pair
+	}
+	certFile, keyFile, serverPair := leaf("server", 2, x509.ExtKeyUsageServerAuth)
+	_, _, clientPair := leaf("gate", 3, x509.ExtKeyUsageClientAuth)
+	pools := x509.NewCertPool()
+	pools.AppendCertsFromPEM(caPEM)
 	seeds, pubs := map[string]string{}, map[string]string{}
 	for _, role := range []string{"core", "gate", "mail", "admin"} {
 		kp, e := nkeys.CreateUser()
@@ -233,7 +264,16 @@ authorization {users: [
 	must(app.Start(ctx))
 	defer app.Stop()
 	remote := &gate.Remote{Client: gateClient, TrustRoot: trust.Public().(ed25519.PublicKey)}
-	g, e := gate.New(gate.Config{Backend: remote, PublicOrigin: "https://arc.mail.test", RequestsPerMinute: 10000})
+	private, e := stream.New(stream.Config{Listen: "127.0.0.1:0", TLSCertFile: certFile, TLSKeyFile: keyFile, ClientCAFile: caFile, Accounts: app.Accounts, Contract: compiled, Verify: identity.RemoteAuthorizer(mailClient, coreKey.Public().(ed25519.PublicKey), "mail/v1")})
+	must(e)
+	privateHTTP := httptest.NewUnstartedServer(private.Handler())
+	privateHTTP.TLS = &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{serverPair}, ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: pools}
+	privateHTTP.StartTLS()
+	defer privateHTTP.Close()
+	privateTransport := &http.Transport{Proxy: nil, DisableCompression: true, TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: pools, Certificates: []tls.Certificate{clientPair}, ServerName: "mail.internal"}}
+	defer privateTransport.CloseIdleConnections()
+	privateClient := &http.Client{Transport: privateTransport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	g, e := gate.New(gate.Config{Backend: remote, PublicOrigin: "https://arc.mail.test", RequestsPerMinute: 10000, PrivateMail: &gate.PrivateMailConfig{URL: privateHTTP.URL, Client: privateClient, Sign: remote.SignPrivate}})
 	must(e)
 	must(g.Reconcile(ctx))
 	httpServer := httptest.NewTLSServer(g)
@@ -383,6 +423,35 @@ authorization {users: [
 	if statusStructure != 200 || structure.Status != "ok" || len(structure.Parts) != 3 || len(structure.Attachments) != 1 || structure.Parts[2].Filename != "report final.pdf" {
 		t.Fatalf("structure %d %s", statusStructure, dataStructure)
 	}
+	downloadQuery := v1.DownloadRequest{Generation: 1, DownloadQuery: imapclient.DownloadQuery{StructureQuery: structureQuery.StructureQuery}}
+	statusDownload, dataDownload := request("POST", base(a)+"/messages/content", downloadQuery, ta, "")
+	if statusDownload != 200 || !bytes.Equal(dataDownload, imapfixture.MessageContent()) {
+		t.Fatalf("raw stream %d length %d", statusDownload, len(dataDownload))
+	}
+	downloadQuery.Section = "2"
+	statusDownload, dataDownload = request("POST", base(a)+"/messages/content", downloadQuery, ta, "")
+	if statusDownload != 200 || !bytes.Equal(dataDownload, imapfixture.AttachmentContent()) {
+		t.Fatalf("attachment stream %d %q", statusDownload, dataDownload)
+	}
+	// The signed hidden operation never carries content through NATS.
+	downloadRPC := downloadQuery
+	downloadRPC.Scope = a
+	downloadPayload, e := json.Marshal(downloadRPC)
+	must(e)
+	downloadOp, e := compiled.Operation(v1.PrivateDownload.ID)
+	must(e)
+	downloadToken, e := remote.Exchange(ctx, identity.UserExchange{AccessToken: ta, Target: identity.Target{Audience: "mail/v1", Operation: v1.PrivateDownload.ID}})
+	must(e)
+	if _, e = remote.Invoke(ctx, compiled, downloadOp, downloadPayload, downloadToken.Token, ""); rpc.ErrorCode(e) != rpc.CodePermissionDenied {
+		t.Fatalf("NATS byte operation did not fail closed: %v", e)
+	}
+	staleDownload := downloadQuery
+	staleDownload.UIDValidity = 78
+	statusDownload, _ = request("POST", base(a)+"/messages/content", staleDownload, ta, "")
+	if statusDownload != 403 {
+		t.Fatalf("stream namespace guard %d", statusDownload)
+	}
+
 	staleStructure := structureQuery
 	staleStructure.UIDValidity = 78
 	statusStructure, dataStructure = request("POST", base(a)+"/messages/structure", staleStructure, ta, "")
@@ -420,6 +489,11 @@ authorization {users: [
 		t.Fatalf("reader structure %d %s", status, data)
 	}
 
+	status, data = request("POST", base(a)+"/messages/content", downloadQuery, tb, "")
+	if status != 200 || !bytes.Equal(data, imapfixture.AttachmentContent()) {
+		t.Fatalf("reader stream %d %q", status, data)
+	}
+
 	for _, suffix := range []string{"/credentials/key", "/check"} {
 		method := "GET"
 		if suffix == "/check" {
@@ -449,6 +523,11 @@ authorization {users: [
 	status, data = request("POST", base(a)+"/messages/structure", structureQuery, tb, "")
 	if status != 403 {
 		t.Fatalf("revoked structure %d %s", status, data)
+	}
+
+	status, data = request("POST", base(a)+"/messages/content", downloadQuery, tb, "")
+	if status != 403 {
+		t.Fatalf("revoked stream %d %s", status, data)
 	}
 
 	update := v1.Update{Scope: a, AccountInput: accountA.AccountInput, Revision: 2}
@@ -512,7 +591,7 @@ authorization {users: [
 			}
 		}
 	}
-	t.Log("PASS: signed Gate/Core/Access/TLS+NKey NATS/JetStream Mail, two users and multiple personal accounts, sealed credentials, real TLS IMAP/folders/message UID windows/MIME structure, read-only/revoke, lifecycle/replay and ciphertext-only state")
+	t.Log("PASS: signed Gate/Core/Access/TLS+NKey NATS/JetStream Mail, two users and multiple personal accounts, sealed credentials, real TLS IMAP/folders/message UID windows/MIME structure/private mTLS decoded streams, read-only/revoke, lifecycle/replay and ciphertext-only state")
 }
 
 func liveDomainAccess(t *testing.T, ctx context.Context, gateClient, domain identity.Client, session identity.UserSession, ws, source, op string) context.Context {

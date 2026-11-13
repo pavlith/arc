@@ -137,6 +137,13 @@ func unquote(s string) (string, string, bool) {
 	}
 	return "", "", false
 }
+
+// MessageContent and AttachmentContent are fixed payloads for byte-stream assertions.
+func MessageContent() []byte {
+	return []byte("Subject: fixture\r\nContent-Type: text/plain\r\n\r\n" + strings.Repeat("mail body line\r\n", 22000))
+}
+func AttachmentContent() []byte { return []byte("fixture attachment\n") }
+
 func (s *Server) serve(ctx context.Context, conn net.Conn, mode string, users map[string]string) {
 	_ = conn.SetDeadline(time.Now().Add(15 * time.Second))
 	write := func(v string) { fmt.Fprint(conn, v+"\r\n") }
@@ -218,13 +225,87 @@ func (s *Server) serve(ctx context.Context, conn net.Conn, mode string, users ma
 			write("* OK [UIDNEXT 103] next")
 			write(tag + " OK [READ-ONLY] selected")
 		case "UID":
+			if len(fields) == 6 && fields[2] == "FETCH" && fields[4] == "(UID" && fields[5] == "RFC822.SIZE)" {
+				id, e := strconv.ParseUint(fields[3], 10, 32)
+				if e != nil {
+					return
+				}
+				if id == 101 || id == 102 {
+					write(fmt.Sprintf("* %d FETCH (RFC822.SIZE %d UID %d)", id-100, len(MessageContent()), id))
+				}
+				write(tag + " OK size")
+				continue
+			}
+			if len(fields) == 6 && fields[2] == "FETCH" && fields[4] == "(UID" && strings.HasPrefix(fields[5], "BODY.PEEK[") {
+				id, e := strconv.ParseUint(fields[3], 10, 32)
+				if e != nil {
+					return
+				}
+				selector := strings.TrimSuffix(strings.TrimPrefix(fields[5], "BODY.PEEK["), ")")
+				end := strings.Index(selector, "]<")
+				if end < 0 || !strings.HasSuffix(selector, ">") {
+					return
+				}
+				section := selector[:end]
+				bounds := strings.Split(selector[end+2:len(selector)-1], ".")
+				if len(bounds) != 2 {
+					return
+				}
+				offset, e := strconv.ParseInt(bounds[0], 10, 64)
+				if e != nil {
+					return
+				}
+				count, e := strconv.ParseInt(bounds[1], 10, 64)
+				if e != nil || count < 1 || count > 256<<10 {
+					return
+				}
+				payload := MessageContent()
+				switch section {
+				case "":
+				case "1":
+					payload = []byte("hello world\n")
+				case "2":
+					payload = []byte(base64.StdEncoding.EncodeToString(AttachmentContent()))
+				default:
+					return
+				}
+				if id != 101 && id != 102 {
+					write(tag + " OK absent")
+					continue
+				}
+				if offset < 0 || offset >= int64(len(payload)) {
+					return
+				}
+				last := offset + count
+				if last > int64(len(payload)) {
+					last = int64(len(payload))
+				}
+				payload = payload[offset:last]
+				// UID deliberately follows the literal to exercise server attribute ordering.
+				write(fmt.Sprintf("* %d FETCH (BODY[%s]<%d> {%d}", id-100, section, offset, len(payload)))
+				if mode == "download-truncated" {
+					_, _ = conn.Write(payload[:len(payload)/2])
+					return
+				}
+				_, _ = conn.Write(payload)
+				if mode == "download-wrong-uid" {
+					id = 999
+				}
+				write(fmt.Sprintf(" UID %d)", id))
+				if mode == "download-incomplete" {
+					return
+				}
+				write(tag + " OK bytes")
+				continue
+			}
+
 			if len(fields) == 6 && fields[2] == "FETCH" && fields[4] == "(UID" && fields[5] == "BODYSTRUCTURE)" {
 				id, err := strconv.ParseUint(fields[3], 10, 32)
 				if err != nil {
 					return
 				}
 				if id == 101 || id == 102 {
-					write(fmt.Sprintf(`* %d FETCH (UID %d BODYSTRUCTURE (("TEXT" "PLAIN" ("CHARSET" "UTF-8") NIL NIL "8BIT" 12 1 NIL NIL)("APPLICATION" "PDF" ("NAME" "report.pdf") "<report>" NIL "BASE64" 120 NIL ("ATTACHMENT" ("FILENAME*" "utf-8''report%%20final.pdf"))) "MIXED" ("BOUNDARY" "fixture") NIL))`, id-100, id))
+					write(fmt.Sprintf(`* %d FETCH (UID %d BODYSTRUCTURE (("TEXT" "PLAIN" ("CHARSET" "UTF-8") NIL NIL "8BIT" 12 1 NIL NIL)("APPLICATION" "PDF" ("NAME" "report.pdf") "<report>" NIL "BASE64" 28 NIL ("ATTACHMENT" ("FILENAME*" "utf-8''report%%20final.pdf"))) "MIXED" ("BOUNDARY" "fixture") NIL))`, id-100, id))
 				}
 				write(tag + " OK structure")
 				continue

@@ -365,6 +365,11 @@ func (s *Module) Register(r *module.Registry) error {
 		return security.ErrUnavailable
 	}
 	policy := module.Policy{Resource: s.Authorize}
+	if err := module.BindQuery(r, v1.PrivateDownload, policy, func(context.Context, v1.DownloadRequest) (struct{}, error) {
+		return struct{}{}, &rpc.Error{Code: rpc.CodePermissionDenied, Message: "Mail content requires private HTTPS transport"}
+	}); err != nil {
+		return err
+	}
 	if err := module.BindQuery(r, v1.GetStructure, policy, s.structure); err != nil {
 		return err
 	}

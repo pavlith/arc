@@ -19,6 +19,7 @@ type Config struct {
 	TLSKeyFile         string
 	BehindTrustedProxy bool
 	EnableFilesStream  bool
+	EnableMailStream   bool
 }
 
 type Module struct {
@@ -57,10 +58,10 @@ func (m *Module) Start(ctx context.Context) error {
 		return err
 	}
 	// Normal Gate JSON calls retain short timeouts. A separately enabled
-	// Files byte path has its own 55-second request deadline and needs enough
+	// Files or Mail byte path has its own 55-second deadline and needs enough
 	// listener time to finish bounded upload and download streams.
 	readTimeout, writeTimeout := 15*time.Second, 20*time.Second
-	if m.Config.EnableFilesStream {
+	if m.Config.EnableFilesStream || m.Config.EnableMailStream {
 		readTimeout, writeTimeout = 70*time.Second, 70*time.Second
 	}
 	s := &http.Server{

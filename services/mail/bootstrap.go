@@ -6,17 +6,25 @@ import (
 	"errors"
 	"io"
 	"os"
+	"time"
 
 	"github.com/pavlith/arc/sdk/bootstrap"
+	"github.com/pavlith/arc/sdk/contract"
 	"github.com/pavlith/arc/services/core/modules/fabric"
 	"github.com/pavlith/arc/services/core/modules/identity"
+	v1 "github.com/pavlith/arc/services/mail/api/v1"
 	"github.com/pavlith/arc/services/mail/credentials"
 	"github.com/pavlith/arc/services/mail/imapclient"
+	"github.com/pavlith/arc/services/mail/stream"
 )
 
 // BootstrapConfig is the configuration of the standalone arc-mail process.
 // Other services never import it to start Mail.
 type BootstrapConfig struct {
+	StreamListen       string `json:"stream_listen,omitempty"`
+	StreamTLSCertFile  string `json:"stream_tls_cert_file,omitempty"`
+	StreamTLSKeyFile   string `json:"stream_tls_key_file,omitempty"`
+	StreamClientCAFile string `json:"stream_client_ca_file,omitempty"`
 	bootstrap.Config
 	MasterKeyFile string            `json:"master_key_file"`
 	IMAP          imapclient.Config `json:"imap"`
@@ -77,11 +85,32 @@ func Run(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
+	var private *stream.Server
+	if cfg.StreamListen != "" || cfg.StreamTLSCertFile != "" || cfg.StreamTLSKeyFile != "" || cfg.StreamClientCAFile != "" {
+		compiled, e := contract.Compile(v1.Artifact())
+		if e != nil {
+			return e
+		}
+		private, err = stream.New(stream.Config{Listen: cfg.StreamListen, TLSCertFile: cfg.StreamTLSCertFile, TLSKeyFile: cfg.StreamTLSKeyFile, ClientCAFile: cfg.StreamClientCAFile, Contract: compiled, Accounts: app.Accounts, Verify: identity.RemoteAuthorizer(app.Accounts.Identity, deps.CoreTrust, "mail/v1")})
+		if err != nil {
+			return err
+		}
+	}
 	if err = app.Start(ctx); err != nil {
 		_ = app.Stop()
 		return err
 	}
 	defer app.Stop()
+	if private != nil {
+		if err = private.Start(); err != nil {
+			return err
+		}
+		defer func() {
+			shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			_ = private.Stop(shutdown)
+		}()
+	}
 	err = app.App.Wait(ctx)
 	if errors.Is(err, context.Canceled) && ctx.Err() != nil {
 		return nil

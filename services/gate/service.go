@@ -51,6 +51,7 @@ func New(cfg Config) (*Service, error) {
 		Listen: cfg.Listen, TLSCertFile: cfg.TLSCertFile, TLSKeyFile: cfg.TLSKeyFile,
 		BehindTrustedProxy: len(cfg.HTTP.TrustedProxies) > 0,
 		EnableFilesStream:  cfg.HTTP.PrivateFiles != nil,
+		EnableMailStream:   cfg.HTTP.PrivateMail != nil,
 	}, g)
 	if err != nil {
 		return nil, err

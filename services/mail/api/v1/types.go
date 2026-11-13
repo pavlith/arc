@@ -99,3 +99,10 @@ type Structure struct {
 	Status     string `json:"status"`
 	imapclient.MessageStructure
 }
+
+// DownloadRequest is signed in full for the private HTTPS byte transport.
+type DownloadRequest struct {
+	Scope
+	Generation int64 `json:"generation"`
+	imapclient.DownloadQuery
+}

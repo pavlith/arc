@@ -15,5 +15,9 @@
   "imap": {
     "timeout_ms": 2000,
     "endpoints": []
-  }
+  },
+  "stream_listen": "",
+  "stream_tls_cert_file": "",
+  "stream_tls_key_file": "",
+  "stream_client_ca_file": ""
 }

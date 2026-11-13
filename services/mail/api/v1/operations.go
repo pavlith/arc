@@ -3,6 +3,7 @@ package v1
 import "github.com/pavlith/arc/sdk/module"
 
 var (
+	PrivateDownload  = module.Query[DownloadRequest, struct{}]{ID: "mail.personal.messages.download"}
 	GetStructure     = module.Query[StructureQuery, Structure]{ID: "mail.personal.messages.structure"}
 	ListMessages     = module.Query[MessageListQuery, MessageList]{ID: "mail.personal.messages.list"}
 	ListFolders      = module.Query[Scope, FolderList]{ID: "mail.personal.folders.list"}

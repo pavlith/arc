@@ -44,6 +44,7 @@ type Config struct {
 	LoginsPerMinute   int
 	EnableRealtime    bool
 	RealtimeNATS      *nats.Conn
+	PrivateMail       *PrivateMailConfig
 	PrivateFiles      *PrivateFilesConfig
 }
 type bucket struct {
@@ -89,6 +90,11 @@ func New(cfg Config) (*Gate, error) {
 	}
 	if cfg.PrivateFiles != nil {
 		if err := validatePrivateFiles(cfg.PrivateFiles); err != nil {
+			return nil, err
+		}
+	}
+	if cfg.PrivateMail != nil {
+		if err := validatePrivateMail(cfg.PrivateMail); err != nil {
 			return nil, err
 		}
 	}
@@ -169,7 +175,10 @@ func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
 	w.Header().Set("Cache-Control", "no-store")
 	defer func() {
-		if recover() != nil {
+		if recovered := recover(); recovered != nil {
+			if recovered == http.ErrAbortHandler {
+				panic(recovered)
+			}
 			writeError(w, id, fault(rpc.CodeInternal))
 		}
 	}()
@@ -220,6 +229,10 @@ func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == realtimePath {
 		g.realtimeWS(w, r, id, client)
+		return
+	}
+	if isMailBytePath(r.URL.Path) {
+		g.mailBytes(w, r, id)
 		return
 	}
 	if isFilesBytePath(r.URL.Path) {

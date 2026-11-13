@@ -1,16 +1,16 @@
 # Mail service design
 
-Mail 0.4.0 implements personal IMAP connection settings, sealed password
-submission, pause/resume/disconnect, live folder discovery, message summaries, MIME structure and a bounded
+Mail 0.5.0 implements personal IMAP connection settings, sealed password
+submission, pause/resume/disconnect, live folder discovery, message summaries, MIME structure, private content downloads and a bounded
 user-requested TLS IMAP check.
-Folder/message synchronization and persistence, content caching/streaming, OAuth provider flows,
+Folder/message synchronization and persistence, content caching, OAuth provider flows,
 workspace accounts and sending remain planned. Requirements:
 [MAIL-01–MAIL-10](REQUIREMENTS.md#214-mail--imap-p1). This connection foundation does
 not satisfy full MAIL-10 or establish Gmail/Microsoft compatibility.
 
-## Implemented connection API (0.4.0)
+## Implemented connection API (0.5.0)
 
-The [signed contract](../services/mail/api/v1/contract/manifest.json) exposes nine
+The [signed contract](../services/mail/api/v1/contract/manifest.json) exposes nine JSON
 operations under `/api/v1/mail/personal/accounts/{acl_root_id}`. Each account is
 one `mail.personal` root, owner-bound with an empty workspace. Account provisioning
 is an explicit operator reserve → `Accounts.PrepareRoot` → Access activation →
@@ -35,7 +35,7 @@ trimmed and control-free; hostnames normalize to lowercase. Only implicit TLS an
 password/application-password authentication are implemented. Checks negotiate
 AUTHENTICATE PLAIN (with/without SASL-IR), or TLS LOGIN when permitted by the server.
 The adapter sends CAPABILITY, authentication, LIST, read-only EXAMINE, UID FETCH
-metadata and LOGOUT. Bodies, remote mutations and mailbox changes remain unavailable. Query deadlines remain 5 s; network policy defaults to 2 s and permits
+metadata/partial BODY.PEEK and LOGOUT. Remote mutations and mailbox changes remain unavailable. JSON query deadlines remain 5 s; network policy defaults to 2 s and permits
 100–3000 ms, bounded by the caller deadline. Server input is capped at 64 KiB,
 4096 bytes per line, 128 total lines and 32 response lines per command. Only eight
 recognized capability names can appear in the safe result.
@@ -148,12 +148,70 @@ return `uidvalidity_changed`. All error statuses contain empty `parts` and
 `attachments`, never partial metadata. Stale account generation conflicts before
 IMAP I/O; the live ACL/account revision check runs again after remote I/O.
 
-Version 0.4.0 requires explicit approval of the new artifact digest,
-`mail.personal.messages.structure` / `rpc.mail.v1.personal.messages.structure` and
-its exact Access read-check edge, retaining approval for message listing. No SQL
-cache/migration, body/attachment transfer, retained session or autonomous
-synchronization is introduced. Body/attachment bytes still require the planned
-private Mail-to-Gate streaming transport.
+Version 0.5.0 requires explicit approval of the new artifact digest and the hidden
+`mail.personal.messages.download` / `rpc.mail.v1.personal.messages.download`
+operation with its exact Access read-check edge, retaining approved metadata
+operations. The NATS handler for this operation fails closed and returns no bytes.
+
+### Private content downloads
+
+When explicitly configured at both services, POST
+`/api/v1/mail/personal/accounts/{acl_root_id}/messages/content` returns an attachment
+stream. Send JSON with the same exact selectors as `/messages/structure`, plus a
+required `section`: empty for the unchanged RFC 5322 message (`message.eml`), or a
+numeric MIME leaf section for decoded content (`attachment.bin`):
+
+```json
+{"generation":1,"wire_name":"SU5CT1g","uid_validity":77,"uid":102,"section":"2"}
+```
+
+This is a specialized Gate byte route, enabled only with the exact hidden operation
+in the same approved signed artifact as `mail.personal.messages.structure`.
+It is not a JSON RPC response. Gate authenticates the current user, exchanges a
+`mail/v1` invocation and signs the complete payload, including generation, wire
+folder, UIDVALIDITY, UID and section. Only the configured private HTTPS origin
+receives that envelope; browser cookies/tokens never go to the private endpoint.
+Mail requires TLS 1.3 with a verified client certificate and Core verification of
+the signed invocation, including current session, exact audience/operation and
+proof/nonce. No body bytes are sent through NATS.
+
+Mail selects using EXAMINE, checks UIDVALIDITY and obtains RFC822.SIZE (whole
+message) or BODYSTRUCTURE (selected leaf). It fetches up to 256 KiB of encoded
+content per `UID FETCH ... BODY.PEEK[section]<offset.count>`, without setting Seen.
+Each block remains bounded in memory until its exact UID, section, origin, byte
+count and tagged completion are verified; UID may precede or follow the literal.
+Current Core access, active account state, revision, generation and credential
+version are checked around each encoded fetch, each released block and at completion. Changes,
+revoke, cancellation, wrong/duplicate UID, namespace resets, expunge, malformed
+metadata or truncated literals stop delivery. Streams that have already started
+abort HTTP rather than returning a complete successful response.
+
+Raw messages are unchanged. Selected leaves decode base64 or quoted-printable;
+7bit, 8bit and binary pass through. Unknown encodings and multipart sections are
+rejected. Embedded RFC822/GLOBAL leaves can be downloaded, but their inner sections
+remain unavailable. Maximum encoded input/output is 32 MiB per request, with no
+unbounded buffer or disk cache. Existing 64 KiB metadata/4096-byte line budgets
+remain separate from validated body literals; byte sessions permit 1024 total
+control lines. Authentication/setup retains `imap.timeout_ms` (at most 3 s);
+a download has a 45 s IMAP budget, a signed deadline of 50 s and a 55 s Gate cap.
+Large/slow messages may exceed these limits. This is an initial bounded adapter,
+not a provider compatibility acceptance claim.
+
+Both hops force `application/octet-stream`, fixed safe attachment filenames,
+`no-store`, `nosniff` and restrictive CSP. Filenames, HTML, CID references and
+remote images are never rendered or fetched. Range/resume, browser rendering,
+inline sanitization, MIME cache, automatic synchronization and export to Files
+remain deferred. Pre-stream failures use generic permission/unavailability errors;
+no raw server responses or credentials appear in errors.
+
+Opt in using all four Mail settings (`stream_listen`, `stream_tls_cert_file`,
+`stream_tls_key_file`, `stream_client_ca_file`) and all five Gate settings
+(`mail_stream_url`, `mail_stream_ca_file`, `mail_stream_server_name`,
+`mail_stream_client_cert_file`, `mail_stream_client_key_file`). Examples keep them
+empty/disabled. Provision a dedicated private TLS listener, trusted Gate client
+certificate, matching server name/CA, and owner-only key files. Gate disables
+redirects, proxies and HTTP decompression for this transport. Neither example
+authorizes production contracts or creates credentials.
 
 Commands require `Idempotency-Key`. Current authorization precedes replay; retry
 the exact sealed request, since resealing changes its ciphertext/fingerprint.
@@ -229,7 +287,7 @@ stream separately. No production permissions or external credentials are install
 by the example.
 
 Focused verification is `scripts/test-mail-live.sh`: isolated Core/Gate/Access,
-TLS+NKey NATS/JetStream and a real local TLS IMAP fixture. Record actual results
+TLS+NKey NATS/JetStream, real TLS IMAP and private mTLS byte fixtures. Record actual results
 in the owning Issue. Extended tests/provider matrices remain deferred. The design
 below describes the wider service and pending synchronization/integration scope.
 
@@ -250,7 +308,7 @@ outside the first delivery; operating an Arc mail server is outside this design.
 
 User requests pass through signed Gate/Fabric operations with online Core checks.
 NATS carries bounded commands, job references and metadata invalidations. Raw MIME,
-large bodies and attachment bytes use an approved private Mail-to-Gate stream,
+body and attachment bytes use the approved private Mail-to-Gate stream,
 following the Files transport boundary. They never become NATS file payloads,
 public cache paths or browser IMAP connections.
 

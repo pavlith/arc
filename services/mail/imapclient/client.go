@@ -111,6 +111,9 @@ func (c *Client) Check(ctx context.Context, s Settings, password []byte) Result 
 	return c.run(ctx, s, password, nil)
 }
 func (c *Client) run(ctx context.Context, s Settings, password []byte, read func(*protocol, map[string]bool) Result) Result {
+	return c.runWithin(ctx, s, password, c.timeout, read)
+}
+func (c *Client) runWithin(ctx context.Context, s Settings, password []byte, timeout time.Duration, read func(*protocol, map[string]bool) Result) Result {
 	fail := func(status string) Result { return Result{Status: status, Capabilities: []string{}} }
 	host, err := Host(s.Host)
 	if err != nil || s.Port < 1 || s.Port > 65535 {
@@ -130,9 +133,11 @@ func (c *Client) run(ctx context.Context, s Settings, password []byte, read func
 			}
 		}
 	}
-	work, cancel := context.WithTimeout(ctx, c.timeout)
+	work, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	ips, err := net.DefaultResolver.LookupNetIP(work, "ip", host)
+	setup, cancelSetup := context.WithTimeout(work, c.timeout)
+	defer cancelSetup()
+	ips, err := net.DefaultResolver.LookupNetIP(setup, "ip", host)
 	if err != nil || len(ips) == 0 || len(ips) > 32 {
 		return fail("unavailable")
 	}
@@ -149,7 +154,7 @@ func (c *Client) run(ctx context.Context, s Settings, password []byte, read func
 	// can redirect a credential-bearing connection after destination validation.
 	var raw net.Conn
 	for _, ip := range ips {
-		raw, err = (&net.Dialer{}).DialContext(work, "tcp", net.JoinHostPort(ip.Unmap().String(), strconv.Itoa(s.Port)))
+		raw, err = (&net.Dialer{}).DialContext(setup, "tcp", net.JoinHostPort(ip.Unmap().String(), strconv.Itoa(s.Port)))
 		if err == nil {
 			break
 		}
@@ -160,17 +165,18 @@ func (c *Client) run(ctx context.Context, s Settings, password []byte, read func
 	defer raw.Close()
 	stop := context.AfterFunc(work, func() { raw.Close() })
 	defer stop()
-	deadline, _ := work.Deadline()
+	deadline, _ := setup.Deadline()
 	if raw.SetDeadline(deadline) != nil {
 		return fail("unavailable")
 	}
 	conn := tls.Client(raw, &tls.Config{ServerName: host, RootCAs: c.roots, MinVersion: tls.VersionTLS12})
-	if conn.HandshakeContext(work) != nil {
+	if conn.HandshakeContext(setup) != nil {
 		return fail("tls_failed")
 	}
 	// LimitReader also bounds a malicious server that keeps sending unterminated
 	// lines. Reader.ReadSlice avoids an unbounded allocation before that cap.
-	p := &protocol{reader: bufio.NewReaderSize(io.LimitReader(conn, 64<<10), 4096), writer: conn}
+	budget := &io.LimitedReader{R: conn, N: 64 << 10}
+	p := &protocol{reader: bufio.NewReaderSize(budget, 4096), writer: conn, budget: budget}
 	greeting, err := p.read()
 	if err != nil || !strings.HasPrefix(strings.ToUpper(greeting), "* OK ") {
 		return fail("protocol_error")
@@ -242,6 +248,10 @@ func (c *Client) run(ctx context.Context, s Settings, password []byte, read func
 		}
 	}
 	if read != nil {
+		deadline, _ = work.Deadline()
+		if raw.SetDeadline(deadline) != nil {
+			return fail("unavailable")
+		}
 		result = read(p, caps)
 		_ = p.write("M5 LOGOUT")
 	} else {
@@ -251,6 +261,7 @@ func (c *Client) run(ctx context.Context, s Settings, password []byte, read func
 }
 
 type protocol struct {
+	budget   *io.LimitedReader
 	reader   *bufio.Reader
 	writer   io.Writer
 	lines    int

@@ -41,6 +41,11 @@ type config struct {
 	TLSKeyFile                string     `json:"tls_key_file"`
 	UIDirectory               string     `json:"ui_directory,omitempty"`
 	EnableRealtime            bool       `json:"enable_realtime,omitempty"`
+	MailStreamURL             string     `json:"mail_stream_url,omitempty"`
+	MailStreamCAFile          string     `json:"mail_stream_ca_file,omitempty"`
+	MailStreamServerName      string     `json:"mail_stream_server_name,omitempty"`
+	MailStreamClientCertFile  string     `json:"mail_stream_client_cert_file,omitempty"`
+	MailStreamClientKeyFile   string     `json:"mail_stream_client_key_file,omitempty"`
 	FilesStreamURL            string     `json:"files_stream_url,omitempty"`
 	FilesStreamCAFile         string     `json:"files_stream_ca_file,omitempty"`
 	FilesStreamServerName     string     `json:"files_stream_server_name,omitempty"`
@@ -176,6 +181,48 @@ func run(file string) error {
 			Sign: remote.SignPrivate,
 		}
 	}
+	var mailBytes *edge.PrivateMailConfig
+	mailStreamConfigured := cfg.MailStreamURL != "" || cfg.MailStreamCAFile != "" ||
+		cfg.MailStreamServerName != "" || cfg.MailStreamClientCertFile != "" ||
+		cfg.MailStreamClientKeyFile != ""
+	if mailStreamConfigured {
+		if cfg.MailStreamURL == "" || cfg.MailStreamCAFile == "" ||
+			cfg.MailStreamServerName == "" || cfg.MailStreamClientCertFile == "" ||
+			cfg.MailStreamClientKeyFile == "" {
+			return errors.New("gate: incomplete private Mail mTLS configuration")
+		}
+		clientKey, e := os.Stat(cfg.MailStreamClientKeyFile)
+		if e != nil || !clientKey.Mode().IsRegular() || clientKey.Mode().Perm()&0077 != 0 {
+			return errors.New("gate: private Mail client TLS key permissions must be private")
+		}
+		cert, e := tls.LoadX509KeyPair(cfg.MailStreamClientCertFile, cfg.MailStreamClientKeyFile)
+		if e != nil {
+			return errors.New("gate: private Mail client certificate unavailable")
+		}
+		ca, e := os.ReadFile(cfg.MailStreamCAFile)
+		if e != nil {
+			return errors.New("gate: private Mail CA unavailable")
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(ca) {
+			return errors.New("gate: invalid private Mail CA")
+		}
+		privateTransport := &http.Transport{
+			Proxy: nil, DisableCompression: true, ForceAttemptHTTP2: false,
+			TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: 20 * time.Second,
+			TLSClientConfig: &tls.Config{
+				MinVersion: tls.VersionTLS13, ServerName: cfg.MailStreamServerName,
+				RootCAs: pool, Certificates: []tls.Certificate{cert},
+			},
+		}
+		defer privateTransport.CloseIdleConnections()
+		mailBytes = &edge.PrivateMailConfig{
+			URL: cfg.MailStreamURL,
+			Client: &http.Client{Transport: privateTransport,
+				CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
+			Sign: remote.SignPrivate,
+		}
+	}
 	g, err := gate.New(gate.Config{
 		HTTP: edge.Config{
 			Backend:        remote,
@@ -185,6 +232,7 @@ func run(file string) error {
 			TrustedProxies: proxies,
 			EnableRealtime: cfg.EnableRealtime,
 			PrivateFiles:   filesBytes,
+			PrivateMail:    mailBytes,
 		},
 		Listen:      cfg.Listen,
 		TLSCertFile: cfg.TLSCertFile,

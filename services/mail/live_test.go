@@ -376,6 +376,26 @@ authorization {users: [
 		t.Fatalf("binding generation guard %d %s", statusMessages, dataMessages)
 	}
 
+	structureQuery := v1.StructureQuery{Generation: 1, StructureQuery: imapclient.StructureQuery{WireName: folderList.Folders[0].WireName, UIDValidity: 77, UID: 102}}
+	statusStructure, dataStructure := request("POST", base(a)+"/messages/structure", structureQuery, ta, "")
+	var structure v1.Structure
+	must(json.Unmarshal(dataStructure, &structure))
+	if statusStructure != 200 || structure.Status != "ok" || len(structure.Parts) != 3 || len(structure.Attachments) != 1 || structure.Parts[2].Filename != "report final.pdf" {
+		t.Fatalf("structure %d %s", statusStructure, dataStructure)
+	}
+	staleStructure := structureQuery
+	staleStructure.UIDValidity = 78
+	statusStructure, dataStructure = request("POST", base(a)+"/messages/structure", staleStructure, ta, "")
+	must(json.Unmarshal(dataStructure, &structure))
+	if statusStructure != 200 || structure.Status != "uidvalidity_changed" || len(structure.Parts) != 0 {
+		t.Fatalf("structure namespace guard %d %s", statusStructure, dataStructure)
+	}
+	staleStructure = structureQuery
+	staleStructure.Generation = 2
+	statusStructure, dataStructure = request("POST", base(a)+"/messages/structure", staleStructure, ta, "")
+	if statusStructure != 409 {
+		t.Fatalf("structure generation guard %d %s", statusStructure, dataStructure)
+	}
 	// Trusted Core fixture seed: Mail 0.1 has no grant-management endpoint or
 	// downstream grant permission. All reads still exercise real online Access.
 	grantID := uid()
@@ -393,6 +413,11 @@ authorization {users: [
 	status, data = request("POST", base(a)+"/messages/list", messageQuery, tb, "")
 	if status != 200 {
 		t.Fatalf("reader messages %d %s", status, data)
+	}
+
+	status, data = request("POST", base(a)+"/messages/structure", structureQuery, tb, "")
+	if status != 200 {
+		t.Fatalf("reader structure %d %s", status, data)
 	}
 
 	for _, suffix := range []string{"/credentials/key", "/check"} {
@@ -419,6 +444,11 @@ authorization {users: [
 	status, data = request("POST", base(a)+"/messages/list", messageQuery, tb, "")
 	if status != 403 {
 		t.Fatalf("revoked messages %d %s", status, data)
+	}
+
+	status, data = request("POST", base(a)+"/messages/structure", structureQuery, tb, "")
+	if status != 403 {
+		t.Fatalf("revoked structure %d %s", status, data)
 	}
 
 	update := v1.Update{Scope: a, AccountInput: accountA.AccountInput, Revision: 2}
@@ -482,7 +512,7 @@ authorization {users: [
 			}
 		}
 	}
-	t.Log("PASS: signed Gate/Core/Access/TLS+NKey NATS/JetStream Mail, two users and multiple personal accounts, sealed credentials, real TLS IMAP/folders/message UID windows, read-only/revoke, lifecycle/replay and ciphertext-only state")
+	t.Log("PASS: signed Gate/Core/Access/TLS+NKey NATS/JetStream Mail, two users and multiple personal accounts, sealed credentials, real TLS IMAP/folders/message UID windows/MIME structure, read-only/revoke, lifecycle/replay and ciphertext-only state")
 }
 
 func liveDomainAccess(t *testing.T, ctx context.Context, gateClient, domain identity.Client, session identity.UserSession, ws, source, op string) context.Context {

@@ -84,3 +84,18 @@ type MessageList struct {
 	Status     string `json:"status"`
 	imapclient.MessagePage
 }
+
+// StructureQuery requires an exact remote namespace; it cannot follow a UID reset.
+type StructureQuery struct {
+	Scope
+	Generation int64 `json:"generation"`
+	imapclient.StructureQuery
+}
+type Structure struct {
+	Scope
+	Revision   int64  `json:"revision"`
+	Generation int64  `json:"generation"`
+	WireName   string `json:"wire_name"`
+	Status     string `json:"status"`
+	imapclient.MessageStructure
+}

@@ -1,16 +1,16 @@
 # Mail service design
 
-Mail 0.3.0 implements personal IMAP connection settings, sealed password
-submission, pause/resume/disconnect, live folder discovery, message summaries and a bounded
+Mail 0.4.0 implements personal IMAP connection settings, sealed password
+submission, pause/resume/disconnect, live folder discovery, message summaries, MIME structure and a bounded
 user-requested TLS IMAP check.
 Folder/message synchronization and persistence, content caching/streaming, OAuth provider flows,
 workspace accounts and sending remain planned. Requirements:
 [MAIL-01–MAIL-10](REQUIREMENTS.md#214-mail--imap-p1). This connection foundation does
 not satisfy full MAIL-10 or establish Gmail/Microsoft compatibility.
 
-## Implemented connection API (0.3.0)
+## Implemented connection API (0.4.0)
 
-The [signed contract](../services/mail/api/v1/contract/manifest.json) exposes eight
+The [signed contract](../services/mail/api/v1/contract/manifest.json) exposes nine
 operations under `/api/v1/mail/personal/accounts/{acl_root_id}`. Each account is
 one `mail.personal` root, owner-bound with an empty workspace. Account provisioning
 is an explicit operator reserve → `Accounts.PrepareRoot` → Access activation →
@@ -27,6 +27,7 @@ sharing APIs are deferred. Separate roots support multiple accounts per user.
 | POST `/check` | Current-user TLS authentication/capability check; `mail.connection.manage` |
 | GET `/folders` | Live folder discovery; `mail.read` |
 | POST `/messages/list` | Live message summaries in bounded UID windows; `mail.read` |
+| POST `/messages/structure` | Live MIME structure and attachment metadata for one UID; `mail.read` |
 
 Settings are `name` (1–256 Unicode characters), ASCII DNS/IP `host` (≤253), `port`
 (1–65535), `login` (1–320) and bare display `email` (≤254). Text is UTF-8,
@@ -89,7 +90,7 @@ restart discovery rather than interpreting old UIDs in the new namespace. A
 rejected EXAMINE returns `folder_unavailable`. Other credential/state/transport
 statuses match existing reads. Malformed/ambiguous/oversized results fail without
 a partial page. Cursor fields and wire names are selectors, never permissions;
-future individual-message reads must bind UID to the same complete namespace.
+individual-message reads bind UID to the same complete namespace.
 
 Only `UID FLAGS INTERNALDATE RFC822.SIZE ENVELOPE` are fetched. Each summary has
 UID, flags, internal date, byte size, decoded subject, header date, From/To address
@@ -110,10 +111,49 @@ Message-page JSON fits 128 KiB; remote sizes fit a safely represented JSON integ
 Unrequested full-message UIDs, duplicate metadata and unsupported extra FETCH
 fields fail closed. Extended compatibility/recovery matrices remain M7 work.
 
-Version 0.3.0 requires explicit approval of the new artifact digest,
-`mail.personal.messages.list` / `rpc.mail.v1.personal.messages.list` and its exact
-Access read-check edge. No SQL cache/migration, body/attachment transfer, retained
-session or autonomous synchronization is introduced by this query.
+POST `/messages/structure` uses the same live `mail.read` authorization, TLS policy
+and 5 s deadline. Supply the current account `generation`, exact `wire_name`,
+`uid_validity` and positive `uid`, for example:
+
+```json
+{"generation":1,"wire_name":"SU5CT1g","uid_validity":77,"uid":102}
+```
+
+It selects with EXAMINE and fetches only `UID BODYSTRUCTURE`, following
+[RFC 9051 §7.5.2](https://www.rfc-editor.org/rfc/rfc9051.html#section-7.5.2).
+The response echoes the requested wire name, UID and UIDVALIDITY and includes
+account revision/generation, safe status, a preorder `parts` list and `attachments`
+section identifiers. No message content is fetched or marked Seen. Multipart root
+section is empty; other parts use numeric sections (`1`, `2`, `2.1`). A single-part
+root is section `1`. Each part contains `media_type`, raw lowercased parameter keys,
+Content-ID, decoded description, transfer encoding, nullable encoded octet size
+and line count, disposition/parameters, decoded filename and `embedded` flag.
+Multipart sizes/line counts are null. MESSAGE/RFC822 and MESSAGE/GLOBAL are opaque
+embedded leaves: their envelope and inner sections are not projected.
+
+Filenames prefer disposition `filename`, then content-type `name`. UTF-8/Latin-1
+RFC 2231 extended/continued parameters and MIME encoded words are decoded using
+standard MIME parsing. Unsupported extended parameter charsets can leave the
+filename empty; raw parameters remain available. Names are untrusted display
+metadata, never paths. `attachments` includes parts with attachment disposition
+or a nonempty filename, including inline candidates; this is not a download URL.
+
+Maximums are 64 projected parts, five descendant levels (also subject to the
+shared eight-level data parser), 32 parameter pairs per list, 1024 characters per
+parameter value and 256 per filename. Numeric sizes/line counts fit a safe JSON
+integer. The entire response structure fits 128 KiB and existing transport/parser
+budgets still apply. Unknown extension fields are skipped within those bounds.
+Absent or concurrently expunged UIDs return `message_unavailable`; namespace resets
+return `uidvalidity_changed`. All error statuses contain empty `parts` and
+`attachments`, never partial metadata. Stale account generation conflicts before
+IMAP I/O; the live ACL/account revision check runs again after remote I/O.
+
+Version 0.4.0 requires explicit approval of the new artifact digest,
+`mail.personal.messages.structure` / `rpc.mail.v1.personal.messages.structure` and
+its exact Access read-check edge, retaining approval for message listing. No SQL
+cache/migration, body/attachment transfer, retained session or autonomous
+synchronization is introduced. Body/attachment bytes still require the planned
+private Mail-to-Gate streaming transport.
 
 Commands require `Idempotency-Key`. Current authorization precedes replay; retry
 the exact sealed request, since resealing changes its ciphertext/fingerprint.

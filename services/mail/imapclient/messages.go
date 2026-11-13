@@ -76,107 +76,9 @@ func (p *protocol) messagePage(q MessageQuery, isUTF8 bool) (MessagePage, string
 		page.NextBeforeUID = 0
 		return page, status
 	}
-	raw, err := base64.RawURLEncoding.Strict().DecodeString(q.WireName)
-	if err != nil || len(raw) == 0 || len(raw) > 1024 || q.UIDWindow < 1 || q.UIDWindow > 20 || q.BeforeUID > 0 && q.UIDValidity == 0 {
-		return fail("protocol_error")
-	}
-	wire := string(raw)
-	name := wire
-	if !isUTF8 {
-		name, err = decodeUTF7(wire)
-	}
-	if err != nil || !utf8.ValidString(name) {
-		return fail("protocol_error")
-	}
-	for _, r := range name {
-		if unicode.IsControl(r) {
-			return fail("protocol_error")
-		}
-	}
-	quoted := `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(wire) + `"`
-	p.maxLines = 256
-	if p.write("M4 EXAMINE "+quoted) != nil {
-		return fail("unavailable")
-	}
-	sawValidity, sawNext, sawExists, selected := false, false, false, false
-	for i := 0; i < 64; i++ {
-		line, err := p.read()
-		if err != nil {
-			return fail("protocol_error")
-		}
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			return fail("protocol_error")
-		}
-		if fields[0] == "M4" {
-			if strings.EqualFold(fields[1], "NO") {
-				return fail("folder_unavailable")
-			}
-			if !strings.EqualFold(fields[1], "OK") {
-				return fail("protocol_error")
-			}
-			selected = true
-			break
-		}
-		if fields[0] != "*" {
-			return fail("protocol_error")
-		}
-		if len(fields) == 3 && strings.EqualFold(fields[2], "EXISTS") {
-			n, err := number(fields[1], 32)
-			if err != nil || sawExists {
-				return fail("protocol_error")
-			}
-			page.Exists = uint32(n)
-			sawExists = true
-			continue
-		}
-		if strings.EqualFold(fields[1], "OK") {
-			upper := strings.ToUpper(line)
-			for _, code := range []string{"UIDVALIDITY", "UIDNEXT"} {
-				prefix := "* OK [" + code + " "
-				if strings.HasPrefix(upper, prefix) {
-					end := strings.IndexByte(line[len(prefix):], ']')
-					if end < 0 {
-						return fail("protocol_error")
-					}
-					n, err := number(line[len(prefix):len(prefix)+end], 32)
-					if err != nil || n == 0 {
-						return fail("protocol_error")
-					}
-					if code == "UIDVALIDITY" {
-						if sawValidity {
-							return fail("protocol_error")
-						}
-						page.UIDValidity = uint32(n)
-						sawValidity = true
-					} else {
-						if sawNext {
-							return fail("protocol_error")
-						}
-						page.UIDNext = uint32(n)
-						sawNext = true
-					}
-				}
-			}
-			continue
-		}
-		if len(fields) == 3 && strings.EqualFold(fields[2], "RECENT") {
-			if _, err := number(fields[1], 32); err != nil {
-				return fail("protocol_error")
-			}
-			continue
-		}
-
-		if strings.EqualFold(fields[1], "FLAGS") {
-			continue
-		}
-		return fail("protocol_error")
-	}
-	if !selected || !sawValidity || !sawNext || !sawExists {
-		return fail("protocol_error")
-	}
-	if q.UIDValidity != 0 && q.UIDValidity != page.UIDValidity {
-		return fail("uidvalidity_changed")
+	page, status := p.selectFolder(q.WireName, q.UIDValidity, isUTF8)
+	if status != "ok" {
+		return fail(status)
 	}
 	if page.Exists == 0 {
 		return page, "ok"
@@ -335,6 +237,113 @@ func (p *protocol) messagePage(q MessageQuery, isUTF8 bool) (MessagePage, string
 	}
 	return page, "ok"
 }
+func (p *protocol) selectFolder(wireName string, uidValidity uint32, isUTF8 bool) (MessagePage, string) {
+	page := MessagePage{Messages: []Message{}}
+	fail := func(status string) (MessagePage, string) { return page, status }
+	raw, err := base64.RawURLEncoding.Strict().DecodeString(wireName)
+	if err != nil || len(raw) == 0 || len(raw) > 1024 {
+		return fail("protocol_error")
+	}
+	wire := string(raw)
+	name := wire
+	if !isUTF8 {
+		name, err = decodeUTF7(wire)
+	}
+	if err != nil || !utf8.ValidString(name) {
+		return fail("protocol_error")
+	}
+	for _, r := range name {
+		if unicode.IsControl(r) {
+			return fail("protocol_error")
+		}
+	}
+	quoted := `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(wire) + `"`
+	p.maxLines = 256
+	if p.write("M4 EXAMINE "+quoted) != nil {
+		return fail("unavailable")
+	}
+	sawValidity, sawNext, sawExists, selected := false, false, false, false
+	for i := 0; i < 64; i++ {
+		line, err := p.read()
+		if err != nil {
+			return fail("protocol_error")
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			return fail("protocol_error")
+		}
+		if fields[0] == "M4" {
+			if strings.EqualFold(fields[1], "NO") {
+				return fail("folder_unavailable")
+			}
+			if !strings.EqualFold(fields[1], "OK") {
+				return fail("protocol_error")
+			}
+			selected = true
+			break
+		}
+		if fields[0] != "*" {
+			return fail("protocol_error")
+		}
+		if len(fields) == 3 && strings.EqualFold(fields[2], "EXISTS") {
+			n, err := number(fields[1], 32)
+			if err != nil || sawExists {
+				return fail("protocol_error")
+			}
+			page.Exists = uint32(n)
+			sawExists = true
+			continue
+		}
+		if strings.EqualFold(fields[1], "OK") {
+			upper := strings.ToUpper(line)
+			for _, code := range []string{"UIDVALIDITY", "UIDNEXT"} {
+				prefix := "* OK [" + code + " "
+				if strings.HasPrefix(upper, prefix) {
+					end := strings.IndexByte(line[len(prefix):], ']')
+					if end < 0 {
+						return fail("protocol_error")
+					}
+					n, err := number(line[len(prefix):len(prefix)+end], 32)
+					if err != nil || n == 0 {
+						return fail("protocol_error")
+					}
+					if code == "UIDVALIDITY" {
+						if sawValidity {
+							return fail("protocol_error")
+						}
+						page.UIDValidity = uint32(n)
+						sawValidity = true
+					} else {
+						if sawNext {
+							return fail("protocol_error")
+						}
+						page.UIDNext = uint32(n)
+						sawNext = true
+					}
+				}
+			}
+			continue
+		}
+		if len(fields) == 3 && strings.EqualFold(fields[2], "RECENT") {
+			if _, err := number(fields[1], 32); err != nil {
+				return fail("protocol_error")
+			}
+			continue
+		}
+
+		if strings.EqualFold(fields[1], "FLAGS") {
+			continue
+		}
+		return fail("protocol_error")
+	}
+	if !selected || !sawValidity || !sawNext || !sawExists {
+		return fail("protocol_error")
+	}
+	if uidValidity != 0 && uidValidity != page.UIDValidity {
+		return fail("uidvalidity_changed")
+	}
+	return page, "ok"
+}
 func number(s string, bits int) (uint64, error) {
 	if s == "" {
 		return 0, ErrInvalid
@@ -398,7 +407,8 @@ func (d *dataParser) read(depth int) (dataValue, error) {
 				return fail()
 			}
 			out.list = append(out.list, value)
-			if d.pos < len(d.line) && d.line[d.pos] != ' ' && d.line[d.pos] != ')' {
+			// IMAP body-mpart permits adjacent child body lists without spaces.
+			if d.pos < len(d.line) && d.line[d.pos] != ' ' && d.line[d.pos] != ')' && !(value.kind == 'l' && d.line[d.pos] == '(') {
 				return fail()
 			}
 		}
@@ -471,7 +481,7 @@ func fetchAttributes(v dataValue) (map[string]dataValue, error) {
 		}
 		key := strings.ToUpper(v.list[i].atom)
 		switch key {
-		case "UID", "FLAGS", "INTERNALDATE", "RFC822.SIZE", "ENVELOPE":
+		case "UID", "FLAGS", "INTERNALDATE", "RFC822.SIZE", "ENVELOPE", "BODYSTRUCTURE":
 		default:
 			return nil, ErrInvalid
 		}

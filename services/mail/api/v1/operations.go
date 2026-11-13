@@ -3,6 +3,7 @@ package v1
 import "github.com/pavlith/arc/sdk/module"
 
 var (
+	GetStructure     = module.Query[StructureQuery, Structure]{ID: "mail.personal.messages.structure"}
 	ListMessages     = module.Query[MessageListQuery, MessageList]{ID: "mail.personal.messages.list"}
 	ListFolders      = module.Query[Scope, FolderList]{ID: "mail.personal.folders.list"}
 	GetAccount       = module.Query[Scope, Account]{ID: "mail.personal.accounts.get"}

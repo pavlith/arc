@@ -38,6 +38,7 @@ type Settings struct {
 	Login string
 }
 type Result struct {
+	Structure    *MessageStructure
 	Status       string
 	Capabilities []string
 	Folders      []Folder

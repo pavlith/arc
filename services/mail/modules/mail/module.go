@@ -346,11 +346,28 @@ func (s *Module) messages(ctx context.Context, q v1.MessageListQuery) (v1.Messag
 	return v1.MessageList{Scope: q.Scope, Revision: row.Revision, Generation: row.Generation, WireName: q.WireName, Status: result.Status, MessagePage: result.Page}, err
 }
 
+func (s *Module) structure(ctx context.Context, q v1.StructureQuery) (v1.Structure, error) {
+	if q.Generation < 1 || !q.StructureQuery.Valid() {
+		return v1.Structure{}, invalid()
+	}
+	row, result, err := s.remoteRead(ctx, q.Scope, "mail.read", q.Generation, func(ctx context.Context, settings imapclient.Settings, password []byte) imapclient.Result {
+		return s.Probe.Structure(ctx, settings, password, q.StructureQuery)
+	})
+	structure := imapclient.EmptyStructure(q.StructureQuery)
+	if result.Structure != nil {
+		structure = *result.Structure
+	}
+	return v1.Structure{Scope: q.Scope, Revision: row.Revision, Generation: row.Generation, WireName: q.WireName, Status: result.Status, MessageStructure: structure}, err
+}
+
 func (s *Module) Register(r *module.Registry) error {
 	if s.DB == nil || s.Contract == nil || s.Vault == nil || s.Probe == nil || s.Check == nil {
 		return security.ErrUnavailable
 	}
 	policy := module.Policy{Resource: s.Authorize}
+	if err := module.BindQuery(r, v1.GetStructure, policy, s.structure); err != nil {
+		return err
+	}
 	store := events.Store{DB: s.DB}
 	if err := module.BindQuery(r, v1.GetAccount, policy, s.get); err != nil {
 		return err

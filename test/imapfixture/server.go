@@ -218,6 +218,17 @@ func (s *Server) serve(ctx context.Context, conn net.Conn, mode string, users ma
 			write("* OK [UIDNEXT 103] next")
 			write(tag + " OK [READ-ONLY] selected")
 		case "UID":
+			if len(fields) == 6 && fields[2] == "FETCH" && fields[4] == "(UID" && fields[5] == "BODYSTRUCTURE)" {
+				id, err := strconv.ParseUint(fields[3], 10, 32)
+				if err != nil {
+					return
+				}
+				if id == 101 || id == 102 {
+					write(fmt.Sprintf(`* %d FETCH (UID %d BODYSTRUCTURE (("TEXT" "PLAIN" ("CHARSET" "UTF-8") NIL NIL "8BIT" 12 1 NIL NIL)("APPLICATION" "PDF" ("NAME" "report.pdf") "<report>" NIL "BASE64" 120 NIL ("ATTACHMENT" ("FILENAME*" "utf-8''report%%20final.pdf"))) "MIXED" ("BOUNDARY" "fixture") NIL))`, id-100, id))
+				}
+				write(tag + " OK structure")
+				continue
+			}
 			if len(fields) != 9 || strings.ToUpper(fields[2]) != "FETCH" {
 				write(tag + " BAD unsupported")
 				return

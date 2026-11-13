@@ -1,0 +1,161 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "const": ""
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "wire_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1366,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "authentication_failed",
+        "tls_failed",
+        "destination_denied",
+        "unavailable",
+        "protocol_error",
+        "credentials_missing",
+        "paused",
+        "disconnected",
+        "limit_exceeded",
+        "folder_unavailable",
+        "uidvalidity_changed",
+        "message_unavailable"
+      ]
+    },
+    "uid_validity": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "uid": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295
+    },
+    "parts": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "properties": {
+          "section": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "media_type": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "parameters": {
+            "type": "object",
+            "maxProperties": 32,
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 1024
+            }
+          },
+          "content_id": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "encoding": {
+            "type": "string",
+            "maxLength": 127
+          },
+          "size": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "lines": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "disposition": {
+            "type": "string",
+            "maxLength": 127
+          },
+          "disposition_parameters": {
+            "type": "object",
+            "maxProperties": 32,
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 1024
+            }
+          },
+          "filename": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "embedded": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "section",
+          "media_type",
+          "parameters",
+          "content_id",
+          "description",
+          "encoding",
+          "size",
+          "lines",
+          "disposition",
+          "disposition_parameters",
+          "filename",
+          "embedded"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "attachments": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "string",
+        "maxLength": 32
+      }
+    }
+  },
+  "required": [
+    "workspace_id",
+    "acl_root_id",
+    "revision",
+    "generation",
+    "wire_name",
+    "status",
+    "uid_validity",
+    "uid",
+    "parts",
+    "attachments"
+  ],
+  "additionalProperties": false
+}

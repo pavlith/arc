@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "service": {
     "name": "mail",
-    "build_version": "0.7.0",
+    "build_version": "0.8.0",
     "api_major": 1
   },
   "resources": [
@@ -423,6 +423,25 @@
             "type": "string"
           }
         ]
+      }
+    },
+    {
+      "id": "mail.personal.messages.unified.list",
+      "subject": "rpc.mail.v1.personal.messages.unified.list",
+      "kind": "query",
+      "request_schema": "schemas/unified-query.json",
+      "response_schema": "schemas/unified-list.json",
+      "auth": {
+        "mode": "service",
+        "action": "mail.read"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/mail/personal/messages/unified/list",
+        "success_status": 200
       }
     }
   ],

@@ -1,19 +1,20 @@
 # Mail service design
 
-Mail 0.7.0 implements personal account creation/discovery, IMAP connection settings,
+Mail 0.8.0 implements personal account creation/discovery, IMAP connection settings,
 sealed password submission, pause/resume/disconnect, live folders, message summaries,
-MIME structure, private content downloads, a durable local summary index and bounded
+MIME structure, private content downloads, a durable local summary index, unified feeds and bounded
 user-requested TLS IMAP checks and metadata refreshes.
 Autonomous/full-mailbox synchronization, content caching, OAuth provider flows,
 workspace accounts and sending remain planned. Requirements:
 [MAIL-01–MAIL-10](REQUIREMENTS.md#214-mail--imap-p1). This connection foundation does
 not satisfy full MAIL-10 or establish Gmail/Microsoft compatibility.
 
-## Implemented Mail API (0.7.0)
+## Implemented Mail API (0.8.0)
 
-The [signed contract](../services/mail/api/v1/contract/manifest.json) exposes fourteen
-JSON operations: two collection operations under `/api/v1/mail/personal/accounts`
-and twelve account operations under `/api/v1/mail/personal/accounts/{acl_root_id}`.
+The [signed contract](../services/mail/api/v1/contract/manifest.json) exposes fifteen
+JSON operations: two account collection operations under `/api/v1/mail/personal/accounts`
+and twelve account operations under `/api/v1/mail/personal/accounts/{acl_root_id}`,
+plus the unified local feed under `/api/v1/mail/personal/messages/unified/list`.
 Each account is one `mail.personal` root owned by the verified user, with an empty
 workspace. Separate roots support several unrelated accounts per user. Existing
 operator-provisioned roots remain supported; public sharing management and workspace
@@ -217,7 +218,7 @@ return `uidvalidity_changed`. All error statuses contain empty `parts` and
 `attachments`, never partial metadata. Stale account generation conflicts before
 IMAP I/O; the live ACL/account revision check runs again after remote I/O.
 
-Version 0.7.0 requires explicit approval of the new artifact digest and the hidden
+Version 0.8.0 requires explicit approval of the new artifact digest and the hidden
 `mail.personal.messages.download` / `rpc.mail.v1.personal.messages.download`
 operation with its exact Access read-check edge, retaining approved metadata
 operations and adding the exact collection/provisioning edges described above. The NATS handler for this operation fails closed and returns no bytes.
@@ -304,6 +305,60 @@ exact refresh/cached-read operations and their Access read-check edges. The brok
 and JetStream configuration must also explicitly permit
 `evt.mail.messages.changed.v1`; the existing publisher retains its live approval
 checks. No production permissions are installed by this implementation.
+
+### Unified local message feed
+
+POST `/api/v1/mail/personal/messages/unified/list` combines explicitly selected
+local folders, such as Inbox from several personal accounts. Supply 1–20 `sources`,
+each with `acl_root_id`, expected `generation` and exact `wire_name`, plus `limit`
+(1–20) and an optional continuation `cursor`. Use actual discovered account UUIDs
+and wire names; for example:
+
+```json
+{"sources":[{"acl_root_id":"00000000-0000-4000-8000-000000000001","generation":1,"wire_name":"SU5CT1g"},{"acl_root_id":"00000000-0000-4000-8000-000000000002","generation":1,"wire_name":"SU5CT1g"}],"limit":20}
+```
+
+This is a signed direct-user query with `mail.read`, empty workspace and the same
+actor restrictions as account discovery. Sources select folders rather than
+permissions. Mail checks every distinct root through one live Core `check_many`
+before any source lookup, and again after reading. A denied source or unavailable
+Core fails the entire query without a partial feed, including for unindexed or
+empty sources. Explicit read grants allow shared personal accounts; there is no
+implicit workspace/account sharing or permission obtained from a cursor.
+
+The response contains `sources`, `messages`, optional `next_cursor`, empty
+`workspace_id` and the final `policy_revision`. Sources are normalized by root and
+wire name and include `indexed`; indexed sources also include their local folder
+UUID and current UIDVALIDITY. Unindexed folders remain explicit rather than
+triggering IMAP work. Refresh them separately. Each message includes its local
+UUID, source account root/generation, exact wire name, folder UUID, UIDVALIDITY,
+UID and existing summary fields. Identical Message-ID headers across accounts or
+folders do not collapse occurrences. Clients choose the folders; this endpoint
+does not guess Inbox aliases or folder equivalence.
+
+Messages sort by IMAP internal date descending, then local UUID descending.
+The stored sort key is UTC Unix microseconds, independent of the original timezone.
+The additive `000004_mail_unified_order` migration backfills it from existing
+summary dates in bounded SQL batches and adds an index. It preserves summaries,
+UUIDs, tombstones, namespace/progress and outbox state; an invalid saved date
+fails the transactional migration instead of silently guessing a date. New
+refreshes update the summary and sort key together. Run the migrator before
+starting the updated service.
+
+Pagination uses a bounded base64url position envelope tied to the normalized
+source set and observed folder namespaces. It is a selector, never an authority
+token. Source input order and page limit can change; changing a source, its account
+generation, an indexed/unindexed binding or observed UIDVALIDITY requires restarting
+pagination (409 for a stale cursor/generation). Final source checks fence concurrent
+namespace/rebinding changes. Flags and new messages can change between pages:
+there is no frozen snapshot. Response JSON fits 128 KiB and can shorten a page;
+follow `next_cursor` rather than message count. No body bytes are included, and
+queries perform no IMAP work or outbox writes.
+
+Approve `mail.personal.messages.unified.list`, its exact Gate-to-Mail RPC subject
+and source-bound `access.v1.check_many` edge under `mail.read` in the new artifact.
+No new event subjects, streaming transport, background authority, UI, search/filtering
+or provider compatibility claim is introduced by this query.
 
 ### Private content downloads
 

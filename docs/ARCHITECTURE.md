@@ -399,6 +399,8 @@ Explicit current-user metadata batches populate a local occurrence index with
 account/folder/UIDVALIDITY/UID binding, tombstones and durable window cursors.
 Metadata, cursor, audit/replay and minimal outbox hints commit together after
 network I/O and live ACL checks; local reads recheck current authority/fences.
+Unified local feeds select bounded account/folder sets, preserve source identity
+and check every selected root before and after reading; cursors grant no access.
 Autonomous/full-mailbox synchronization and body caching remain planned. Its
 adapter performs bounded TLS authentication, LIST, message summaries,
 MIME structure queries and private content downloads under current user invocation

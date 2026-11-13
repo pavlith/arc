@@ -23,7 +23,7 @@ func SQLite() []*gormigrate.Migration {
 			}
 		}
 		return nil
-	}}}
+	}}, {ID: "000004_mail_unified_order", Migrate: unifiedOrder}}
 }
 
 var baseline = []string{

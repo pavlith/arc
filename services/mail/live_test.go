@@ -231,7 +231,14 @@ authorization {users: [
 	}
 	for _, operation := range []string{"list_accessible_roots", "check_many"} {
 		source := "mail/v1:" + v1.ListAccounts.ID
-		policy.Rules = append(policy.Rules, access.Rule{Caller: provider, Audience: "access/v1", Operation: "access.v1." + operation, ActorKinds: []string{"user"}, Actions: []string{"mail.read"}, DownstreamFrom: []string{source}, DownstreamActions: map[string][]string{source: {"mail.read"}}})
+		from := []string{source}
+		actions := map[string][]string{source: {"mail.read"}}
+		if operation == "check_many" {
+			unified := "mail/v1:" + v1.ListUnifiedMessages.ID
+			from = append(from, unified)
+			actions[unified] = []string{"mail.read"}
+		}
+		policy.Rules = append(policy.Rules, access.Rule{Caller: provider, Audience: "access/v1", Operation: "access.v1." + operation, ActorKinds: []string{"user"}, Actions: []string{"mail.read"}, DownstreamFrom: from, DownstreamActions: actions})
 	}
 	installation := fabric.Installation{Publisher: "mail-live-fixture", Account: provider, Deployment: "live-mail", Artifact: v1.Artifact(), Subjects: subjects, Policy: approved(operator, policy)}
 	raw, sig := signed(operator, installation)
@@ -519,6 +526,13 @@ authorization {users: [
 		}
 		return out
 	}
+	imap.SetInternalDate("b", "14-Nov-2026 10:00:00 +0000")
+	statusBob, dataBob := request("POST", base(b)+"/messages/refresh", refreshQuery, tb, "index-b")
+	var indexedBob v1.RefreshResult
+	must(json.Unmarshal(dataBob, &indexedBob))
+	if statusBob != 200 || indexedBob.Upserted != 2 {
+		t.Fatalf("index second account %d %s", statusBob, dataBob)
+	}
 	indexed := refresh("index-initial")
 	replayedIndex := refresh("index-initial")
 	if indexed.Status != "ok" || indexed.Upserted != 2 || replayedIndex.Folder.Revision != indexed.Folder.Revision {
@@ -557,6 +571,42 @@ authorization {users: [
 
 	cachedQuery.BeforeUID = 0
 	cachedQuery.Limit = 20
+
+	unifiedPath := "/api/v1/mail/personal/messages/unified/list"
+	unifiedAlice := v1.UnifiedQuery{Sources: []v1.UnifiedSource{{RootID: a.RootID, Generation: 1, WireName: refreshQuery.WireName}, {RootID: c.RootID, Generation: 1, WireName: refreshQuery.WireName}}, Limit: 1}
+	unifiedBob := v1.UnifiedQuery{Sources: []v1.UnifiedSource{{RootID: a.RootID, Generation: 1, WireName: refreshQuery.WireName}, {RootID: b.RootID, Generation: 1, WireName: refreshQuery.WireName}}, Limit: 1}
+	unified := func(token string, q v1.UnifiedQuery) v1.UnifiedList {
+		status, data := request("POST", unifiedPath, q, token, "")
+		var out v1.UnifiedList
+		must(json.Unmarshal(data, &out))
+		if status != 200 || out.PolicyRevision < 1 {
+			t.Fatalf("unified feed %d %s", status, data)
+		}
+		return out
+	}
+	firstUnifiedAlice := unified(ta, unifiedAlice)
+	if len(firstUnifiedAlice.Messages) != 1 || firstUnifiedAlice.NextCursor == "" || len(firstUnifiedAlice.Sources) != 2 {
+		t.Fatal("unified page/unindexed source", firstUnifiedAlice)
+	}
+	unindexed := false
+	for _, source := range firstUnifiedAlice.Sources {
+		if source.RootID == c.RootID && !source.Indexed {
+			unindexed = true
+		}
+	}
+	if !unindexed {
+		t.Fatal("unindexed folder was not explicit")
+	}
+	statusLocal, _ = request("POST", unifiedPath, unifiedBob, tb, "")
+	if statusLocal != 403 {
+		t.Fatalf("unified feed accepted unauthorized selected root %d", statusLocal)
+	}
+	unindexedDenied := unifiedBob
+	unindexedDenied.Sources = []v1.UnifiedSource{unifiedBob.Sources[1], unifiedAlice.Sources[1]}
+	statusLocal, _ = request("POST", unifiedPath, unindexedDenied, tb, "")
+	if statusLocal != 403 {
+		t.Fatalf("unindexed selected root bypassed ACL %d", statusLocal)
+	}
 	// Trusted Core fixture seed: Mail 0.1 has no grant-management endpoint or
 	// downstream grant permission. All reads still exercise real online Access.
 	grantID := uid()
@@ -598,6 +648,48 @@ authorization {users: [
 		t.Fatalf("reader cached get %d %s", status, data)
 	}
 
+	firstUnifiedBob := unified(tb, unifiedBob)
+	if len(firstUnifiedBob.Messages) != 1 || firstUnifiedBob.Messages[0].RootID != b.RootID {
+		t.Fatal("unified internal date ordering", firstUnifiedBob)
+	}
+	allUnified := []v1.CachedGet{}
+	scanUnified := unifiedBob
+	for pageNumber := 0; pageNumber < 5; pageNumber++ {
+		page := unified(tb, scanUnified)
+		allUnified = append(allUnified, page.Messages...)
+		if page.NextCursor == "" {
+			break
+		}
+		scanUnified.Cursor = page.NextCursor
+	}
+	seenUnified := map[string]bool{}
+	headersUnified := map[string]int{}
+	for i, message := range allUnified {
+		if seenUnified[message.ID] || message.Generation != 1 || message.UIDValidity != 77 || message.WireName != refreshQuery.WireName || message.FolderID == "" {
+			t.Fatal("lost unified source identity", message)
+		}
+		seenUnified[message.ID] = true
+		headersUnified[message.MessageID]++
+		if i < 2 && message.RootID != b.RootID || i >= 2 && message.RootID != a.RootID {
+			t.Fatal("unstable unified chronology", allUnified)
+		}
+	}
+	if len(allUnified) != 4 || len(headersUnified) != 2 {
+		t.Fatal("unified feed collapsed distinct occurrences", len(allUnified), headersUnified)
+	}
+	reversed := unifiedBob
+	reversed.Sources = []v1.UnifiedSource{unifiedBob.Sources[1], unifiedBob.Sources[0]}
+	reversed.Cursor = firstUnifiedBob.NextCursor
+	if page := unified(tb, reversed); len(page.Messages) != 1 || page.Messages[0].ID != allUnified[1].ID {
+		t.Fatal("source order changed cursor", page)
+	}
+	differentSources := unifiedBob
+	differentSources.Sources = unifiedBob.Sources[1:]
+	differentSources.Cursor = firstUnifiedBob.NextCursor
+	status, _ = request("POST", unifiedPath, differentSources, tb, "")
+	if status != 409 {
+		t.Fatalf("cursor crossed source set %d", status)
+	}
 	for _, suffix := range []string{"/credentials/key", "/check"} {
 		method := "GET"
 		if suffix == "/check" {
@@ -609,6 +701,10 @@ authorization {users: [
 		}
 	}
 	must(coreDB.Exec("UPDATE access_grants SET revoked_at=? WHERE id=?", time.Now().UTC(), grantID).Error)
+	status, _ = request("POST", unifiedPath, unifiedBob, tb, "")
+	if status != 403 {
+		t.Fatalf("revoked unified source returned a partial feed %d", status)
+	}
 	visibleAfterRevoke := listAccounts(tb, v1.AccountListQuery{Limit: 20})
 	if len(visibleAfterRevoke.Accounts) != 1 || visibleAfterRevoke.Accounts[0].RootID != b.RootID {
 		t.Fatal("revoked discovery", visibleAfterRevoke)
@@ -673,6 +769,12 @@ authorization {users: [
 	if status != 404 {
 		t.Fatalf("old namespace local ID %d", status)
 	}
+	staleUnified := unifiedAlice
+	staleUnified.Cursor = firstUnifiedAlice.NextCursor
+	status, _ = request("POST", unifiedPath, staleUnified, ta, "")
+	if status != 409 {
+		t.Fatalf("unified cursor crossed namespace reset %d", status)
+	}
 	refreshQuery.UIDValidity = 78
 	refresh("index-rescan")
 	cachedQuery.UIDValidity = 78
@@ -734,7 +836,7 @@ authorization {users: [
 	}
 	info, e := js.StreamInfo("MAIL")
 	must(e)
-	if info.State.Msgs != 14 {
+	if info.State.Msgs != 15 {
 		t.Fatal("wrong event count", info.State.Msgs)
 	}
 	for _, table := range []string{"accounts", "account_provisions", "mail_folders", "mail_messages", "mail_refresh_staging", "audit", "outbox", "command_results"} {
@@ -748,5 +850,5 @@ authorization {users: [
 			}
 		}
 	}
-	t.Log("PASS: signed Gate/Core/Access/TLS+NKey NATS/JetStream Mail, two users, self-service accounts/discovery/provisioning replay and multiple personal accounts, sealed credentials, real TLS IMAP/folders/message UID windows/MIME structure/private mTLS decoded streams, durable local index/reconciliation/namespace invalidation, read-only/revoke, lifecycle/replay and ciphertext-only state")
+	t.Log("PASS: signed Gate/Core/Access/TLS+NKey NATS/JetStream Mail, two users, self-service accounts/discovery/provisioning replay and multiple personal accounts, sealed credentials, real TLS IMAP/folders/message UID windows/MIME structure/private mTLS decoded streams, durable local index/reconciliation/namespace invalidation/unified feed, read-only/revoke, lifecycle/replay and ciphertext-only state")
 }

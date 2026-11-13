@@ -35,12 +35,13 @@ type indexFolder struct {
 func (indexFolder) TableName() string { return "mail_folders" }
 
 type indexMessage struct {
-	ID          string
-	FolderID    string
-	UIDValidity uint32 `gorm:"column:uid_validity"`
-	UID         uint32 `gorm:"column:uid"`
-	Present     bool
-	Summary     []byte
+	ID           string
+	FolderID     string
+	UIDValidity  uint32 `gorm:"column:uid_validity"`
+	UID          uint32 `gorm:"column:uid"`
+	Present      bool
+	Summary      []byte
+	InternalUnix int64
 }
 
 func (indexMessage) TableName() string { return "mail_messages" }
@@ -272,7 +273,7 @@ func (s *Module) refreshIndex(ctx context.Context, tx *gorm.DB, q v1.RefreshMess
 				if err != nil || len(raw) > 64<<10 {
 					return empty, indexCapacity()
 				}
-				if err := tx.Exec(`INSERT INTO mail_messages(id,folder_id,uid_validity,uid,present,summary) VALUES(?,?,?,?,1,?) ON CONFLICT(folder_id,uid_validity,uid) DO UPDATE SET present=1,summary=excluded.summary`, newID(), f.ID, f.UIDValidity, message.UID, raw).Error; err != nil {
+				if err := tx.Exec(`INSERT INTO mail_messages(id,folder_id,uid_validity,uid,present,summary,internal_unix) VALUES(?,?,?,?,1,?,?) ON CONFLICT(folder_id,uid_validity,uid) DO UPDATE SET present=1,summary=excluded.summary,internal_unix=excluded.internal_unix`, newID(), f.ID, f.UIDValidity, message.UID, raw, message.InternalDate.UnixMicro()).Error; err != nil {
 					return empty, dbError(err)
 				}
 				uids = append(uids, message.UID)

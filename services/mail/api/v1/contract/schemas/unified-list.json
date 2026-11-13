@@ -1,0 +1,75 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "const": ""
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "properties": {
+          "acl_root_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "wire_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1366,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "indexed": {
+            "type": "boolean"
+          },
+          "folder_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "uid_validity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4294967295
+          }
+        },
+        "required": [
+          "acl_root_id",
+          "generation",
+          "wire_name",
+          "indexed"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "messages": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "$ref": "cached-get.json"
+      }
+    },
+    "next_cursor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "policy_revision": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "required": [
+    "workspace_id",
+    "sources",
+    "messages",
+    "policy_revision"
+  ],
+  "additionalProperties": false
+}

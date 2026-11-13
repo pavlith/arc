@@ -374,6 +374,9 @@ func (s *Module) Register(r *module.Registry) error {
 		return security.ErrUnavailable
 	}
 	collection := module.Policy{Trusted: s.AuthorizeCollection}
+	if err := module.BindQuery(r, v1.ListUnifiedMessages, collection, s.listUnified); err != nil {
+		return err
+	}
 	if err := module.BindCommand(r, v1.CreatePersonalAccount, collection, events.Store{DB: s.DB}, s.createAccount); err != nil {
 		return err
 	}

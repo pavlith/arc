@@ -45,8 +45,8 @@ func (s *Module) AuthorizeCollection(ctx context.Context, operation string) erro
 		return err
 	}
 	switch operation {
-	case v1.ListAccounts.ID:
-		return nil // The handler discovers roots through live Core ACL.
+	case v1.ListAccounts.ID, v1.ListUnifiedMessages.ID:
+		return nil // Collection handlers enforce live Core ACL.
 	case v1.CreatePersonalAccount.ID:
 		meta, ok := rpc.Metadata(ctx)
 		var q v1.CreateAccount

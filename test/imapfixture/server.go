@@ -25,6 +25,7 @@ import (
 )
 
 type Server struct {
+	internalDates             map[string]string
 	validity                  uint32
 	uids                      []uint32
 	flagged                   bool
@@ -143,6 +144,15 @@ func unquote(s string) (string, string, bool) {
 
 // MessageContent and AttachmentContent are fixed payloads for byte-stream assertions.
 // SetMailbox changes only the isolated fixture's authoritative summary view.
+func (s *Server) SetInternalDate(login, date string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.internalDates == nil {
+		s.internalDates = map[string]string{}
+	}
+	s.internalDates[login] = date
+}
+
 func (s *Server) SetMailbox(validity uint32, uids []uint32, flagged bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -160,6 +170,7 @@ func (s *Server) serve(ctx context.Context, conn net.Conn, mode string, users ma
 	_ = conn.SetDeadline(time.Now().Add(15 * time.Second))
 	write := func(v string) { fmt.Fprint(conn, v+"\r\n") }
 	write("* OK Mail fixture")
+	authenticatedLogin := ""
 	scanner := bufio.NewScanner(conn)
 	scanner.Buffer(make([]byte, 4096), 16384)
 	for scanner.Scan() {
@@ -174,6 +185,10 @@ func (s *Server) serve(ctx context.Context, conn net.Conn, mode string, users ma
 		validity := s.validity
 		uids := append([]uint32{}, s.uids...)
 		flagged := s.flagged
+		internalDate := s.internalDates[authenticatedLogin]
+		if internalDate == "" {
+			internalDate = "13-Nov-2026 10:00:00 +0000"
+		}
 		s.mu.Unlock()
 		switch command {
 		case "CAPABILITY":
@@ -211,6 +226,7 @@ func (s *Server) serve(ctx context.Context, conn net.Conn, mode string, users ma
 			if err != nil || len(parts) != 3 || parts[1] == "" || users[parts[1]] != parts[2] {
 				write(tag + " NO authentication denied")
 			} else {
+				authenticatedLogin = parts[1]
 				write(tag + " OK authenticated")
 			}
 		case "LOGIN":
@@ -223,6 +239,7 @@ func (s *Server) serve(ctx context.Context, conn net.Conn, mode string, users ma
 			if !ok || login == "" || users[login] != password {
 				write(tag + " NO authentication denied")
 			} else {
+				authenticatedLogin = login
 				write(tag + " OK authenticated")
 			}
 		case "LIST":
@@ -354,7 +371,7 @@ func (s *Server) serve(ctx context.Context, conn net.Conn, mode string, users ma
 				if flagged {
 					flags += ` \Flagged`
 				}
-				write(fmt.Sprintf(`* %d FETCH (UID %d FLAGS (%s) INTERNALDATE "13-Nov-2026 10:00:00 +0000" RFC822.SIZE 123 ENVELOPE ("Fri, 13 Nov 2026 10:00:00 +0000" %s (("Alice" NIL "alice" "example.test")) NIL NIL ((NIL NIL "bob" "example.test")) NIL NIL NIL "<message-%d@example.test>"))`, sequence+1, id, flags, subject, id))
+				write(fmt.Sprintf(`* %d FETCH (UID %d FLAGS (%s) INTERNALDATE %q RFC822.SIZE 123 ENVELOPE ("Fri, 13 Nov 2026 10:00:00 +0000" %s (("Alice" NIL "alice" "example.test")) NIL NIL ((NIL NIL "bob" "example.test")) NIL NIL NIL "<message-%d@example.test>"))`, sequence+1, id, flags, internalDate, subject, id))
 			}
 			write(tag + " OK fetched")
 

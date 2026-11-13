@@ -188,3 +188,29 @@ type MessagesChanged struct {
 
 const MessagesChangedSubject = "evt.mail.messages.changed.v1"
 const MessagesChangedName = "mail.messages.changed"
+
+// UnifiedSource selects one exact local folder binding, never a permission.
+type UnifiedSource struct {
+	RootID     string `json:"acl_root_id"`
+	Generation int64  `json:"generation"`
+	WireName   string `json:"wire_name"`
+}
+type UnifiedQuery struct {
+	WorkspaceID string          `json:"workspace_id"`
+	Sources     []UnifiedSource `json:"sources"`
+	Limit       int             `json:"limit"`
+	Cursor      string          `json:"cursor,omitempty"`
+}
+type UnifiedSourceState struct {
+	UnifiedSource
+	Indexed     bool   `json:"indexed"`
+	FolderID    string `json:"folder_id,omitempty"`
+	UIDValidity uint32 `json:"uid_validity,omitempty"`
+}
+type UnifiedList struct {
+	WorkspaceID    string               `json:"workspace_id"`
+	Sources        []UnifiedSourceState `json:"sources"`
+	Messages       []CachedGet          `json:"messages"`
+	NextCursor     string               `json:"next_cursor,omitempty"`
+	PolicyRevision int64                `json:"policy_revision"`
+}

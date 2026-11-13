@@ -3,6 +3,7 @@ package v1
 import "github.com/pavlith/arc/sdk/module"
 
 var (
+	ListUnifiedMessages   = module.Query[UnifiedQuery, UnifiedList]{ID: "mail.personal.messages.unified.list"}
 	RefreshMessageIndex   = module.Command[RefreshMessages, RefreshResult]{ID: "mail.personal.messages.refresh"}
 	ListCachedMessages    = module.Query[CachedListQuery, CachedList]{ID: "mail.personal.messages.cached.list"}
 	GetCachedMessage      = module.Query[CachedGetQuery, CachedGet]{ID: "mail.personal.messages.cached.get"}

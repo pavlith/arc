@@ -13,7 +13,7 @@
 | Page hierarchy, Tiptap validation and versions | [Pages](PAGES.md) |
 | Calendar roots, events and free/busy | [Calendar](CALENDAR.md) |
 | Address books, structured contact CRUD and search | [Contacts](CONTACTS.md) |
-| Mail accounts, sealed credentials, live folders, message summaries, MIME metadata and private downloads and planned sync | [Mail design](MAIL.md) |
+| Mail account creation/discovery, sealed credentials, live folders, message summaries, MIME metadata and private downloads and planned sync | [Mail design](MAIL.md) |
 | Inbox sources and outbound webhook | [Notify](NOTIFY.md) |
 | Product dependencies / infrastructure rollout | [Product sequence](shortplan.md) / [Agent roadmap](AGENT-HOST-ROADMAP.md) |
 | Executables / SDK / clients | [Services](../services/README.md) / [SDK](../sdk/README.md) / [Web](../client/web/README.md), [TypeScript](../client/ts/README.md) |

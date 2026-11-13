@@ -1,0 +1,21 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "const": ""
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 20
+    },
+    "cursor": {
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "required": [
+    "limit"
+  ],
+  "additionalProperties": false
+}

@@ -390,8 +390,12 @@ Task root grants require live `access.grants.manage`, correct bound workspace/ro
 
 Notify never trusts event fields to select recipients. The approved consumer checks producer/digest/subject/durable and live target read; inbox rows, dedup, optional outbound intent and realtime hints commit before ACK. Webhook delivery is at-least-once with durable keys, fenced leases, HMAC, bounded retry and no target content. Default outbound remains disabled; [Notify](NOTIFY.md) defines its exact channel contract.
 
-Mail owns personal connection settings and encrypted credentials in its own
-SQLite. Its adapter performs bounded TLS authentication, LIST, message summaries,
+Mail owns personal account creation/discovery, connection settings and encrypted
+credentials in its own SQLite. Public creation binds the owner to the verified
+user and persists its prepared root/request binding before Core activation; a
+current-user retry completes an interrupted transition without a second root.
+Discovery uses Core accessible roots and a final batched live read check. Its
+adapter performs bounded TLS authentication, LIST, message summaries,
 MIME structure queries and private content downloads under current user invocation
 and online Access, with post-network revision/ACL
 checks. Sealed submissions prevent plaintext credentials or password verifiers

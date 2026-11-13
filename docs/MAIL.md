@@ -1,21 +1,27 @@
 # Mail service design
 
-Mail 0.5.0 implements personal IMAP connection settings, sealed password
-submission, pause/resume/disconnect, live folder discovery, message summaries, MIME structure, private content downloads and a bounded
-user-requested TLS IMAP check.
+Mail 0.6.0 implements personal account creation/discovery, IMAP connection settings,
+sealed password submission, pause/resume/disconnect, live folders, message summaries,
+MIME structure, private content downloads and bounded user-requested TLS IMAP checks.
 Folder/message synchronization and persistence, content caching, OAuth provider flows,
 workspace accounts and sending remain planned. Requirements:
 [MAIL-01–MAIL-10](REQUIREMENTS.md#214-mail--imap-p1). This connection foundation does
 not satisfy full MAIL-10 or establish Gmail/Microsoft compatibility.
 
-## Implemented connection API (0.5.0)
+## Implemented Mail API (0.6.0)
 
-The [signed contract](../services/mail/api/v1/contract/manifest.json) exposes nine JSON
-operations under `/api/v1/mail/personal/accounts/{acl_root_id}`. Each account is
-one `mail.personal` root, owner-bound with an empty workspace. Account provisioning
-is an explicit operator reserve → `Accounts.PrepareRoot` → Access activation →
-`Accounts.ActivateRoot` workflow. Public root creation, account discovery and
-sharing APIs are deferred. Separate roots support multiple accounts per user.
+The [signed contract](../services/mail/api/v1/contract/manifest.json) exposes eleven
+JSON operations: two collection operations under `/api/v1/mail/personal/accounts`
+and nine account operations under `/api/v1/mail/personal/accounts/{acl_root_id}`.
+Each account is one `mail.personal` root owned by the verified user, with an empty
+workspace. Separate roots support several unrelated accounts per user. Existing
+operator-provisioned roots remain supported; public sharing management and workspace
+accounts are deferred. The private download operation is described separately below.
+
+| Collection method / path | Operation / required action |
+|---|---|
+| POST `/api/v1/mail/personal/accounts` | `mail.personal.accounts.create`; `mail.connection.manage` |
+| POST `/api/v1/mail/personal/accounts/list` | `mail.personal.accounts.list`; `mail.read` |
 
 | Method / suffix | Operation / required action |
 |---|---|
@@ -28,6 +34,65 @@ sharing APIs are deferred. Separate roots support multiple accounts per user.
 | GET `/folders` | Live folder discovery; `mail.read` |
 | POST `/messages/list` | Live message summaries in bounded UID windows; `mail.read` |
 | POST `/messages/structure` | Live MIME structure and attachment metadata for one UID; `mail.read` |
+
+### Account creation and discovery
+
+POST `/api/v1/mail/personal/accounts` requires `Idempotency-Key` and settings only:
+
+```json
+{"name":"Work","host":"imap.example.test","port":993,"login":"user","email":"user@example.test"}
+```
+
+The owner is derived from a direct verified user/session, never JSON. Workspace
+must be absent or empty. Root IDs, owner IDs, generation and credentials are not
+accepted on creation. Service actors and delegated users cannot create or discover
+personal accounts through these collection operations. The settings operation does
+not contact IMAP or change destination policy. A successful 201 response is an
+account with revision/generation 1, state enabled and no credentials; submit the
+password afterward through the existing scoped sealing API.
+
+Creation reserves a Core root using actor/operation/idempotency binding, commits
+its prepared Mail row and request-bound provisioning intent, obtains activation
+with a signed receipt for that committed row, then atomically makes the local
+account active with audit, command replay result and `account.created` outbox.
+No Mail transaction spans a Core call. Prepared accounts remain unavailable to
+reads, listing and credential submission. If Core activates but the local final
+commit fails, retrying the same request/key completes the same root. Fresh receipt
+expiry does not cause an activation replay fingerprint conflict. An interrupted
+request needs an explicit current-user retry; there is no autonomous reconciler.
+Timeout never deletes an active Core root.
+
+The additive `000002_mail_account_provisioning` migration stores actor, key,
+canonical request hash and root binding in `account_provisions`; existing account
+rows and credentials remain unchanged. Run the Mail migrator before startup.
+The durable intent rejects changed input under the same key even before final
+activation. Completed replay rechecks live account management access and returns
+the historical creation response; fetch the account again for current state.
+Credentials and account edits are separate commands, so a replay cannot recreate
+a password or reset later account changes.
+
+POST `/api/v1/mail/personal/accounts/list` accepts `limit` (1–20) and an optional
+UUID `cursor`. It returns `workspace_id`, `accounts`, optional `next_cursor` and
+`policy_revision`. Core discovers currently readable `mail.personal` user roots;
+Mail joins only its active local accounts, validates owner/provider binding and
+rechecks the returned roots through one live `check_many` call. The list includes
+explicitly shared personal roots when Core grants `mail.read`; there is no owner
+selector or an implicit management permission. Revoked roots disappear, and a
+failed final ACL check fails the whole query without a partial account list.
+
+Cursors follow Core's accessible root order. Prepared/missing local roots are
+skipped, so a page can contain fewer accounts than the limit, including an empty
+page with a continuation. Follow `next_cursor`, not list length. Pagination has
+no frozen snapshot or total count; Core outage fails closed. Paused/disconnected
+accounts remain discoverable, but their remote reads retain existing state checks.
+All fields match the ordinary account response: encrypted credentials/key material
+are never listed.
+
+Both collection operations require approval in the new signed artifact. Exact
+source-bound downstream edges are creation → `resources.reserve`,
+`resources.activate`, `check` under `mail.connection.manage`; discovery →
+`list_accessible_roots`, `check_many` under `mail.read`. No other caller, actor,
+operation or service permission is widened automatically.
 
 Settings are `name` (1–256 Unicode characters), ASCII DNS/IP `host` (≤253), `port`
 (1–65535), `login` (1–320) and bare display `email` (≤254). Text is UTF-8,
@@ -148,10 +213,10 @@ return `uidvalidity_changed`. All error statuses contain empty `parts` and
 `attachments`, never partial metadata. Stale account generation conflicts before
 IMAP I/O; the live ACL/account revision check runs again after remote I/O.
 
-Version 0.5.0 requires explicit approval of the new artifact digest and the hidden
+Version 0.6.0 requires explicit approval of the new artifact digest and the hidden
 `mail.personal.messages.download` / `rpc.mail.v1.personal.messages.download`
 operation with its exact Access read-check edge, retaining approved metadata
-operations. The NATS handler for this operation fails closed and returns no bytes.
+operations and adding the exact collection/provisioning edges described above. The NATS handler for this operation fails closed and returns no bytes.
 
 ### Private content downloads
 

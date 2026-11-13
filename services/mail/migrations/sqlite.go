@@ -14,6 +14,8 @@ func SQLite() []*gormigrate.Migration {
 			}
 		}
 		return nil
+	}}, {ID: "000002_mail_account_provisioning", Migrate: func(tx *gorm.DB) error {
+		return tx.Exec(`CREATE TABLE account_provisions(actor TEXT NOT NULL,idempotency_key TEXT NOT NULL,request_hash BLOB NOT NULL CHECK(length(request_hash)=32),acl_root_id TEXT NOT NULL UNIQUE REFERENCES accounts(acl_root_id),created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(actor,idempotency_key))`).Error
 	}}}
 }
 

@@ -1,0 +1,29 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "const": ""
+    },
+    "accounts": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "$ref": "account.json"
+      }
+    },
+    "next_cursor": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "policy_revision": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "required": [
+    "workspace_id",
+    "accounts",
+    "policy_revision"
+  ],
+  "additionalProperties": false
+}

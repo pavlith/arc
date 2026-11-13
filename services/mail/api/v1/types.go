@@ -106,3 +106,19 @@ type DownloadRequest struct {
 	Generation int64 `json:"generation"`
 	imapclient.DownloadQuery
 }
+
+type CreateAccount struct {
+	WorkspaceID string `json:"workspace_id"`
+	AccountInput
+}
+type AccountListQuery struct {
+	WorkspaceID string `json:"workspace_id"`
+	Limit       int    `json:"limit"`
+	Cursor      string `json:"cursor,omitempty"`
+}
+type AccountList struct {
+	WorkspaceID    string    `json:"workspace_id"`
+	Accounts       []Account `json:"accounts"`
+	NextCursor     string    `json:"next_cursor,omitempty"`
+	PolicyRevision int64     `json:"policy_revision"`
+}

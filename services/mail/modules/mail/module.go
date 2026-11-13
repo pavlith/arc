@@ -144,6 +144,9 @@ func binding(row models.Account) credentials.Binding {
 // PrepareRoot is a trusted operator hook after exact Access reservation. It is
 // not an unauthenticated/public account provisioning or credential API.
 func (s *Module) PrepareRoot(ctx context.Context, q v1.Scope, owner string, in v1.AccountInput, key ed25519.PrivateKey, kid, provider string) (string, error) {
+	return s.prepareRoot(ctx, s.db(ctx), q, owner, in, key, kid, provider)
+}
+func (s *Module) prepareRoot(ctx context.Context, db *gorm.DB, q v1.Scope, owner string, in v1.AccountInput, key ed25519.PrivateKey, kid, provider string) (string, error) {
 	if !validScope(q) || !idPattern.MatchString(owner) {
 		return "", invalid()
 	}
@@ -155,12 +158,12 @@ func (s *Module) PrepareRoot(ctx context.Context, q v1.Scope, owner string, in v
 	if err != nil {
 		return "", err
 	}
-	err = s.DB.WithContext(ctx).Exec("INSERT INTO accounts(acl_root_id,workspace_id,owner_id,lifecycle,name,host,port,login,email,state,revision,generation) VALUES(?,'',?,'prepared',?,?,?,?,?,'enabled',1,1) ON CONFLICT DO NOTHING", q.RootID, owner, in.Name, in.Host, in.Port, in.Login, in.Email).Error
+	err = db.WithContext(ctx).Exec("INSERT INTO accounts(acl_root_id,workspace_id,owner_id,lifecycle,name,host,port,login,email,state,revision,generation) VALUES(?,'',?,'prepared',?,?,?,?,?,'enabled',1,1) ON CONFLICT DO NOTHING", q.RootID, owner, in.Name, in.Host, in.Port, in.Login, in.Email).Error
 	if err != nil {
 		return "", dbError(err)
 	}
 	var old models.Account
-	if err = s.DB.WithContext(ctx).Where("acl_root_id=?", q.RootID).Take(&old).Error; err != nil {
+	if err = db.WithContext(ctx).Where("acl_root_id=?", q.RootID).Take(&old).Error; err != nil {
 		return "", dbError(err)
 	}
 	if old.WorkspaceID != "" || old.OwnerID != owner || old.Lifecycle == "prepared" && input(old) != in {
@@ -363,6 +366,13 @@ func (s *Module) structure(ctx context.Context, q v1.StructureQuery) (v1.Structu
 func (s *Module) Register(r *module.Registry) error {
 	if s.DB == nil || s.Contract == nil || s.Vault == nil || s.Probe == nil || s.Check == nil {
 		return security.ErrUnavailable
+	}
+	collection := module.Policy{Trusted: s.AuthorizeCollection}
+	if err := module.BindCommand(r, v1.CreatePersonalAccount, collection, events.Store{DB: s.DB}, s.createAccount); err != nil {
+		return err
+	}
+	if err := module.BindQuery(r, v1.ListAccounts, collection, s.listAccounts); err != nil {
+		return err
 	}
 	policy := module.Policy{Resource: s.Authorize}
 	if err := module.BindQuery(r, v1.PrivateDownload, policy, func(context.Context, v1.DownloadRequest) (struct{}, error) {

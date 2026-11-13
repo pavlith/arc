@@ -20,7 +20,8 @@
       "enum": [
         "account.updated",
         "credentials.set",
-        "account.state"
+        "account.state",
+        "account.created"
       ]
     }
   },

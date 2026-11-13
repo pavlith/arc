@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "service": {
     "name": "mail",
-    "build_version": "0.5.0",
+    "build_version": "0.6.0",
     "api_major": 1
   },
   "resources": [
@@ -298,6 +298,44 @@
       "timeout_ms": 5000,
       "http": {
         "expose": false
+      }
+    },
+    {
+      "id": "mail.personal.accounts.create",
+      "subject": "rpc.mail.v1.personal.accounts.create",
+      "kind": "command",
+      "request_schema": "schemas/account-create.json",
+      "response_schema": "schemas/account.json",
+      "auth": {
+        "mode": "service",
+        "action": "mail.connection.manage"
+      },
+      "idempotency": "required",
+      "timeout_ms": 10000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/mail/personal/accounts",
+        "success_status": 201
+      }
+    },
+    {
+      "id": "mail.personal.accounts.list",
+      "subject": "rpc.mail.v1.personal.accounts.list",
+      "kind": "query",
+      "request_schema": "schemas/account-list-query.json",
+      "response_schema": "schemas/accounts.json",
+      "auth": {
+        "mode": "service",
+        "action": "mail.read"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "POST",
+        "path": "/api/v1/mail/personal/accounts/list",
+        "success_status": 200
       }
     }
   ],

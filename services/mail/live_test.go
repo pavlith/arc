@@ -8,7 +8,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -20,7 +19,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -176,9 +174,7 @@ authorization {users: [
 	must(e)
 	la, e := id.LoginBrowser(ctx, "alice@mail.test", "live fixture password")
 	must(e)
-	lb, e := id.LoginBrowser(ctx, "bob@mail.test", "live fixture password")
-	must(e)
-	sa, sb := identity.UserSession{Secret: la.Secret, CSRF: la.CSRF}, identity.UserSession{Secret: lb.Secret, CSRF: lb.CSRF}
+	sa := identity.UserSession{Secret: la.Secret, CSRF: la.CSRF}
 	baseline := access.Approval{AdminUsers: []string{alice}, Deployments: []access.Deployment{{Definition: "gate", Instance: "live-gate"}, {Definition: "mail", Instance: "live-mail"}}}
 	static, e := access.NewContracts(operator.Public().(ed25519.PublicKey), []access.Approved{approved(operator, baseline)})
 	must(e)
@@ -230,11 +226,12 @@ authorization {users: [
 	policy.Rules = append(policy.Rules, access.Rule{Caller: provider, Audience: "access/v1", Operation: "access.v1.check", ActorKinds: []string{"user"}, Actions: resource.Actions, DownstreamFrom: sources, DownstreamActions: down})
 	for _, op := range []string{"resources.reserve", "resources.activate"} {
 		acts := []string{"mail.connection.manage"}
-		if strings.HasPrefix(op, "grants.") {
-			acts = resource.Actions
-		}
-		src := "mail/v1:" + v1.UpdateAccount.ID
+		src := "mail/v1:" + v1.CreatePersonalAccount.ID
 		policy.Rules = append(policy.Rules, access.Rule{Caller: provider, Audience: "access/v1", Operation: "access.v1." + op, ActorKinds: []string{"user"}, Actions: acts, DownstreamFrom: []string{src}, DownstreamActions: map[string][]string{src: acts}})
+	}
+	for _, operation := range []string{"list_accessible_roots", "check_many"} {
+		source := "mail/v1:" + v1.ListAccounts.ID
+		policy.Rules = append(policy.Rules, access.Rule{Caller: provider, Audience: "access/v1", Operation: "access.v1." + operation, ActorKinds: []string{"user"}, Actions: []string{"mail.read"}, DownstreamFrom: []string{source}, DownstreamActions: map[string][]string{source: {"mail.read"}}})
 	}
 	installation := fabric.Installation{Publisher: "mail-live-fixture", Account: provider, Deployment: "live-mail", Artifact: v1.Artifact(), Subjects: subjects, Policy: approved(operator, policy)}
 	raw, sig := signed(operator, installation)
@@ -323,22 +320,68 @@ authorization {users: [
 		return out.Token
 	}
 	ta, tb := login("alice@mail.test"), login("bob@mail.test")
-	ac := &access.Client{RPC: ownerRPC}
-	accessCtx := func(session identity.UserSession, op string) context.Context {
-		return liveDomainAccess(t, ctx, gateClient, mailClient, session, "", v1.UpdateAccount.ID, op)
+	createAccount := func(token, login, key string) (v1.Scope, []byte) {
+		q := v1.CreateAccount{AccountInput: v1.AccountInput{Name: "Mailbox", Host: imap.Host, Port: imap.Port, Login: login, Email: login + "@mail.test"}}
+		status, data := request("POST", "/api/v1/mail/personal/accounts", q, token, key)
+		var account v1.Account
+		must(json.Unmarshal(data, &account))
+		if status != 201 || account.Revision != 1 || account.Generation != 1 || account.CredentialReady || account.CredentialVersion != 0 || account.State != "enabled" {
+			t.Fatalf("create account %d %s", status, data)
+		}
+		return account.Scope, data
 	}
-	provision := func(owner string, session identity.UserSession, login string) v1.Scope {
-		reserved, e := ac.Reserve(accessCtx(session, "resources.reserve"), access.ReserveRequest{Type: "mail.personal", OwnerKind: "user", OwnerID: owner})
-		must(e)
-		scope := v1.Scope{RootID: reserved.ResourceID}
-		receipt, e := app.Accounts.PrepareRoot(ctx, scope, owner, v1.AccountInput{Name: "Mailbox", Host: imap.Host, Port: imap.Port, Login: login, Email: login + "@mail.test"}, mailKey, "live-mail", provider)
-		must(e)
-		_, e = ac.Activate(accessCtx(session, "resources.activate"), access.LifecycleRequest{ResourceID: scope.RootID, Receipt: receipt})
-		must(e)
-		must(app.Accounts.ActivateRoot(ctx, scope))
-		return scope
+	a, createdA := createAccount(ta, "a", "create-a")
+	b, _ := createAccount(tb, "b", "create-b")
+	// Fail local activation after durable prepare and successful Core activation.
+	must(mailDB.Exec(`CREATE TRIGGER fail_mail_activation BEFORE UPDATE OF lifecycle ON accounts WHEN OLD.lifecycle='prepared' AND NEW.lifecycle='active' BEGIN SELECT RAISE(FAIL,'isolated fixture'); END`).Error)
+	createC := v1.CreateAccount{AccountInput: v1.AccountInput{Name: "Mailbox", Host: imap.Host, Port: imap.Port, Login: "c", Email: "c@mail.test"}}
+	statusResume, dataResume := request("POST", "/api/v1/mail/personal/accounts", createC, ta, "create-c")
+	if statusResume < 400 {
+		t.Fatalf("injected activation failure accepted %d %s", statusResume, dataResume)
 	}
-	a, b, c := provision(alice, sa, "a"), provision(bob, sb, "b"), provision(alice, sa, "c")
+	var prepared struct {
+		RootID string `gorm:"column:acl_root_id"`
+	}
+	must(mailDB.Table("accounts").Select("acl_root_id").Where("lifecycle='prepared'").Take(&prepared).Error)
+	var preparedState string
+	must(coreDB.Raw("SELECT state FROM access_resources WHERE id=?", prepared.RootID).Row().Scan(&preparedState))
+	if preparedState != "active" {
+		t.Fatal("expected durable staged transition", preparedState)
+	}
+	must(mailDB.Exec("DROP TRIGGER fail_mail_activation").Error)
+	c, _ := createAccount(ta, "c", "create-c")
+	if c.RootID != prepared.RootID {
+		t.Fatal("partial retry allocated another root")
+	}
+	// Completed replay must be identical and must not emit a second event.
+	replayScope, replayA := createAccount(ta, "a", "create-a")
+	if replayScope != a || !bytes.Equal(createdA, replayA) {
+		t.Fatal("create replay changed account")
+	}
+	mismatch := createC
+	mismatch.Name = "Different"
+	statusResume, _ = request("POST", "/api/v1/mail/personal/accounts", mismatch, ta, "create-a")
+	if statusResume != 409 {
+		t.Fatalf("create payload conflict %d", statusResume)
+	}
+	listAccounts := func(token string, q v1.AccountListQuery) v1.AccountList {
+		status, data := request("POST", "/api/v1/mail/personal/accounts/list", q, token, "")
+		var out v1.AccountList
+		must(json.Unmarshal(data, &out))
+		if status != 200 || out.PolicyRevision < 1 {
+			t.Fatalf("account discovery %d %s", status, data)
+		}
+		return out
+	}
+	firstPage := listAccounts(ta, v1.AccountListQuery{Limit: 1})
+	secondPage := listAccounts(ta, v1.AccountListQuery{Limit: 1, Cursor: firstPage.NextCursor})
+	if len(firstPage.Accounts) != 1 || firstPage.NextCursor == "" || len(secondPage.Accounts) != 1 || secondPage.NextCursor != "" || firstPage.Accounts[0].RootID == secondPage.Accounts[0].RootID || firstPage.Accounts[0].OwnerID != alice || secondPage.Accounts[0].OwnerID != alice {
+		t.Fatal("owner pagination", firstPage, secondPage)
+	}
+	bobAccounts := listAccounts(tb, v1.AccountListQuery{Limit: 20})
+	if len(bobAccounts.Accounts) != 1 || bobAccounts.Accounts[0].RootID != b.RootID {
+		t.Fatal("cross-owner discovery", bobAccounts)
+	}
 	base := func(q v1.Scope) string { return "/api/v1/mail/personal/accounts/" + q.RootID }
 	for _, tc := range []struct {
 		scope v1.Scope
@@ -470,6 +513,10 @@ authorization {users: [
 	grantID := uid()
 	must(coreDB.Exec("INSERT INTO access_grants(id,resource_id,principal_kind,principal_id,action,created_by,created_at) VALUES(?,?,'user',?,'mail.read',?,?)", grantID, a.RootID, bob, "user:"+alice, time.Now().UTC()).Error)
 
+	sharedAccounts := listAccounts(tb, v1.AccountListQuery{Limit: 20})
+	if len(sharedAccounts.Accounts) != 2 {
+		t.Fatal("shared account discovery", sharedAccounts)
+	}
 	status, data := request("GET", base(a), nil, tb, "")
 	if status != 200 {
 		t.Fatalf("read grant %d %s", status, data)
@@ -505,6 +552,10 @@ authorization {users: [
 		}
 	}
 	must(coreDB.Exec("UPDATE access_grants SET revoked_at=? WHERE id=?", time.Now().UTC(), grantID).Error)
+	visibleAfterRevoke := listAccounts(tb, v1.AccountListQuery{Limit: 20})
+	if len(visibleAfterRevoke.Accounts) != 1 || visibleAfterRevoke.Accounts[0].RootID != b.RootID {
+		t.Fatal("revoked discovery", visibleAfterRevoke)
+	}
 
 	status, data = request("GET", base(a), nil, tb, "")
 	if status != 403 {
@@ -577,10 +628,10 @@ authorization {users: [
 	}
 	info, e := js.StreamInfo("MAIL")
 	must(e)
-	if info.State.Msgs != 7 {
+	if info.State.Msgs != 10 {
 		t.Fatal("wrong event count", info.State.Msgs)
 	}
-	for _, table := range []string{"accounts", "audit", "outbox", "command_results"} {
+	for _, table := range []string{"accounts", "account_provisions", "audit", "outbox", "command_results"} {
 		var rows []map[string]any
 		must(mailDB.Table(table).Find(&rows).Error)
 		raw, e := json.Marshal(rows)
@@ -591,30 +642,5 @@ authorization {users: [
 			}
 		}
 	}
-	t.Log("PASS: signed Gate/Core/Access/TLS+NKey NATS/JetStream Mail, two users and multiple personal accounts, sealed credentials, real TLS IMAP/folders/message UID windows/MIME structure/private mTLS decoded streams, read-only/revoke, lifecycle/replay and ciphertext-only state")
-}
-
-func liveDomainAccess(t *testing.T, ctx context.Context, gateClient, domain identity.Client, session identity.UserSession, ws, source, op string) context.Context {
-	t.Helper()
-	must := func(err error) {
-		t.Helper()
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	audience := strings.Split(source, ".")[0] + "/v1"
-	cred, err := gateClient.Credentials("identity.exchange_user")
-	must(err)
-	incoming, err := identity.Call[identity.UserExchange, identity.TokenResult](ctx, gateClient, "identity.v1.invocations.exchange_user", identity.UserExchange{Assertion: cred.Token, Session: session, Target: identity.Target{Audience: audience, Operation: source, WorkspaceID: ws}})
-	must(err)
-	outgoing, err := identity.Call[identity.ServiceExchange, identity.TokenResult](ctx, domain, "identity.v1.invocations.exchange_service", identity.ServiceExchange{IncomingToken: incoming.Token, IncomingOperation: source, Target: identity.Target{Audience: "access/v1", Operation: "access.v1." + op, WorkspaceID: ws}})
-	must(err)
-	parts := strings.Split(outgoing.Token, ".")
-	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
-	must(err)
-	var claims security.Claims
-	must(json.Unmarshal(raw, &claims))
-	return rpc.WithCredentials(ctx, rpc.Credentials{Token: outgoing.Token, IdempotencyKey: uid(), Proof: func(subject string, raw []byte) (security.Proof, error) {
-		return security.SignProof(domain.PrivateKey, subject, raw, claims.JTI, security.Proof{Kid: domain.Kid, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Nonce: uid()})
-	}})
+	t.Log("PASS: signed Gate/Core/Access/TLS+NKey NATS/JetStream Mail, two users, self-service accounts/discovery/provisioning replay and multiple personal accounts, sealed credentials, real TLS IMAP/folders/message UID windows/MIME structure/private mTLS decoded streams, read-only/revoke, lifecycle/replay and ciphertext-only state")
 }

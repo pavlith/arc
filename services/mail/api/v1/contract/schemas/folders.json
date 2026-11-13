@@ -1,0 +1,91 @@
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "const": ""
+    },
+    "acl_root_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "authentication_failed",
+        "tls_failed",
+        "destination_denied",
+        "unavailable",
+        "protocol_error",
+        "credentials_missing",
+        "paused",
+        "disconnected",
+        "limit_exceeded"
+      ]
+    },
+    "folders": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "wire_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1366,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "delimiter": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 1
+          },
+          "attributes": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          "selectable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "wire_name",
+          "delimiter",
+          "attributes",
+          "selectable"
+        ]
+      }
+    }
+  },
+  "required": [
+    "workspace_id",
+    "acl_root_id",
+    "revision",
+    "generation",
+    "status",
+    "folders"
+  ],
+  "additionalProperties": false
+}

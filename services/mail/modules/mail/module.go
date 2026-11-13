@@ -286,41 +286,49 @@ func (s *Module) save(ctx context.Context, tx *gorm.DB, row models.Account, revi
 	return dto(row), err
 }
 func (s *Module) checkConnection(ctx context.Context, q v1.Scope) (v1.CheckResult, error) {
-	row, err := s.root(ctx, q)
-	if err != nil {
-		return v1.CheckResult{}, err
+	row, result, err := s.remoteRead(ctx, q, "mail.connection.manage", s.Probe.Check)
+	return v1.CheckResult{Scope: q, Revision: row.Revision, Generation: row.Generation, Status: result.Status, Capabilities: result.Capabilities}, err
+}
+func (s *Module) folders(ctx context.Context, q v1.Scope) (v1.FolderList, error) {
+	row, result, err := s.remoteRead(ctx, q, "mail.read", s.Probe.Folders)
+	if result.Folders == nil {
+		result.Folders = []imapclient.Folder{}
 	}
-	out := v1.CheckResult{Scope: q, Revision: row.Revision, Generation: row.Generation, Capabilities: []string{}}
-	switch {
-	case row.State != "enabled":
-		out.Status = row.State
-		return out, nil
-	case len(row.Ciphertext) == 0:
-		out.Status = "credentials_missing"
-		return out, nil
+	return v1.FolderList{Scope: q, Revision: row.Revision, Generation: row.Generation, Status: result.Status, Folders: result.Folders}, err
+}
+func (s *Module) remoteRead(ctx context.Context, q v1.Scope, action string, read func(context.Context, imapclient.Settings, []byte) imapclient.Result) (models.Account, imapclient.Result, error) {
+	row, err := s.root(ctx, q)
+	result := imapclient.Result{Capabilities: []string{}}
+	if err != nil {
+		return row, result, err
+	}
+	if row.State != "enabled" {
+		result.Status = row.State
+		return row, result, nil
+	}
+	if len(row.Ciphertext) == 0 {
+		result.Status = "credentials_missing"
+		return row, result, nil
 	}
 	password, err := s.Vault.Decrypt(binding(row), row.CredentialVersion, row.KeyID, row.Ciphertext)
 	if err != nil {
-		return out, security.ErrUnavailable
+		return row, result, security.ErrUnavailable
 	}
 	defer clear(password)
-	result := s.Probe.Check(ctx, imapclient.Settings{Host: row.Host, Port: row.Port, Login: row.Login}, password)
-	// Network work holds no SQL write transaction. Recheck live authority and the
-	// complete connection revision before exposing even a successful result.
-	if err = s.Check(ctx, q.RootID, "mail.connection.manage"); err != nil {
-		return out, err
+	result = read(ctx, imapclient.Settings{Host: row.Host, Port: row.Port, Login: row.Login}, password)
+	if err = s.Check(ctx, q.RootID, action); err != nil {
+		return row, result, err
 	}
 	latest, err := s.root(ctx, q)
 	if err != nil {
-		return out, err
+		return row, result, err
 	}
 	if latest.Revision != row.Revision || latest.Generation != row.Generation || latest.CredentialVersion != row.CredentialVersion || latest.State != "enabled" {
-		return out, conflict()
+		return row, result, conflict()
 	}
-	out.Status = result.Status
-	out.Capabilities = result.Capabilities
-	return out, nil
+	return row, result, nil
 }
+
 func (s *Module) Register(r *module.Registry) error {
 	if s.DB == nil || s.Contract == nil || s.Vault == nil || s.Probe == nil || s.Check == nil {
 		return security.ErrUnavailable
@@ -340,6 +348,9 @@ func (s *Module) Register(r *module.Registry) error {
 		return err
 	}
 	if err := module.BindCommand(r, v1.SetAccountState, policy, store, s.state); err != nil {
+		return err
+	}
+	if err := module.BindQuery(r, v1.ListFolders, policy, s.folders); err != nil {
 		return err
 	}
 	return module.BindQuery(r, v1.CheckConnection, policy, s.checkConnection)

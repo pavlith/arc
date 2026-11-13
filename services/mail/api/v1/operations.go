@@ -3,6 +3,7 @@ package v1
 import "github.com/pavlith/arc/sdk/module"
 
 var (
+	ListFolders      = module.Query[Scope, FolderList]{ID: "mail.personal.folders.list"}
 	GetAccount       = module.Query[Scope, Account]{ID: "mail.personal.accounts.get"}
 	UpdateAccount    = module.Command[Update, Account]{ID: "mail.personal.accounts.update"}
 	GetCredentialKey = module.Query[Scope, KeyInfo]{ID: "mail.personal.credentials.key"}

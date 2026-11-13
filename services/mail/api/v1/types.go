@@ -1,6 +1,9 @@
 package v1
 
-import "github.com/pavlith/arc/services/mail/credentials"
+import (
+	"github.com/pavlith/arc/services/mail/credentials"
+	"github.com/pavlith/arc/services/mail/imapclient"
+)
 
 type Scope struct {
 	WorkspaceID string `json:"workspace_id"`
@@ -59,3 +62,11 @@ type Changed struct {
 
 const ChangedSubject = "evt.mail.accounts.changed.v1"
 const ChangedName = "mail.accounts.changed"
+
+type FolderList struct {
+	Scope
+	Revision   int64               `json:"revision"`
+	Generation int64               `json:"generation"`
+	Status     string              `json:"status"`
+	Folders    []imapclient.Folder `json:"folders"`
+}

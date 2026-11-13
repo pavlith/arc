@@ -341,6 +341,13 @@ authorization {users: [
 			t.Fatalf("IMAP check %d %s", status, data)
 		}
 	}
+	statusFolders, dataFolders := request("GET", base(a)+"/folders", nil, ta, "")
+	var folderList v1.FolderList
+	must(json.Unmarshal(dataFolders, &folderList))
+	if statusFolders != 200 || folderList.Status != "ok" || len(folderList.Folders) != 4 || folderList.Folders[2].Name != "Почта" || folderList.Folders[1].Selectable || folderList.Folders[3].Name != "Reports" {
+		t.Fatalf("folders %d %s", statusFolders, dataFolders)
+	}
+
 	// Trusted Core fixture seed: Mail 0.1 has no grant-management endpoint or
 	// downstream grant permission. All reads still exercise real online Access.
 	grantID := uid()
@@ -350,6 +357,11 @@ authorization {users: [
 	if status != 200 {
 		t.Fatalf("read grant %d %s", status, data)
 	}
+	status, data = request("GET", base(a)+"/folders", nil, tb, "")
+	if status != 200 {
+		t.Fatalf("reader folders %d %s", status, data)
+	}
+
 	for _, suffix := range []string{"/credentials/key", "/check"} {
 		method := "GET"
 		if suffix == "/check" {
@@ -366,6 +378,11 @@ authorization {users: [
 	if status != 403 {
 		t.Fatalf("revoked read %d %s", status, data)
 	}
+	status, data = request("GET", base(a)+"/folders", nil, tb, "")
+	if status != 403 {
+		t.Fatalf("revoked folders %d %s", status, data)
+	}
+
 	update := v1.Update{Scope: a, AccountInput: accountA.AccountInput, Revision: 2}
 	update.Name = "Renamed"
 	status, data = request("PUT", base(a), update, ta, "")
@@ -427,7 +444,7 @@ authorization {users: [
 			}
 		}
 	}
-	t.Log("PASS: signed Gate/Core/Access/TLS+NKey NATS/JetStream Mail, two users and multiple personal accounts, sealed credentials, real TLS IMAP, read-only/revoke, lifecycle/replay and ciphertext-only state")
+	t.Log("PASS: signed Gate/Core/Access/TLS+NKey NATS/JetStream Mail, two users and multiple personal accounts, sealed credentials, real TLS IMAP/folder discovery, read-only/revoke, lifecycle/replay and ciphertext-only state")
 }
 
 func liveDomainAccess(t *testing.T, ctx context.Context, gateClient, domain identity.Client, session identity.UserSession, ws, source, op string) context.Context {

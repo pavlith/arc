@@ -202,6 +202,13 @@ func (s *Server) serve(ctx context.Context, conn net.Conn, mode string, users ma
 			} else {
 				write(tag + " OK authenticated")
 			}
+		case "LIST":
+			write(`* LIST (\HasNoChildren) "/" INBOX`)
+			write(`* LIST (\Noselect \HasChildren) NIL "Archive"`)
+			write(`* LIST () "/" "&BB8EPgRHBEIEMA-"`)
+			write(`* LIST () "/" {7}`)
+			write("Reports")
+			write(tag + " OK folders")
 		case "LOGOUT":
 			write("* BYE")
 			write(tag + " OK logout")

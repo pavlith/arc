@@ -40,6 +40,7 @@ type Settings struct {
 type Result struct {
 	Status       string
 	Capabilities []string
+	Folders      []Folder
 }
 type Client struct {
 	allow   map[string][]netip.Prefix
@@ -105,6 +106,9 @@ func New(cfg Config) (*Client, error) {
 	return c, nil
 }
 func (c *Client) Check(ctx context.Context, s Settings, password []byte) Result {
+	return c.run(ctx, s, password, nil)
+}
+func (c *Client) run(ctx context.Context, s Settings, password []byte, read func(*protocol, map[string]bool) Result) Result {
 	fail := func(status string) Result { return Result{Status: status, Capabilities: []string{}} }
 	host, err := Host(s.Host)
 	if err != nil || s.Port < 1 || s.Port > 65535 {
@@ -235,19 +239,29 @@ func (c *Client) Check(ctx context.Context, s Settings, password []byte) Result 
 			result.Capabilities = append(result.Capabilities, name)
 		}
 	}
-	_ = p.write("M4 LOGOUT")
+	if read != nil {
+		result = read(p, caps)
+		_ = p.write("M5 LOGOUT")
+	} else {
+		_ = p.write("M4 LOGOUT")
+	}
 	return result
 }
 
 type protocol struct {
-	reader *bufio.Reader
-	writer io.Writer
-	lines  int
+	reader   *bufio.Reader
+	writer   io.Writer
+	lines    int
+	maxLines int
 }
 
 func (p *protocol) read() (string, error) {
 	p.lines++
-	if p.lines > 128 {
+	limit := p.maxLines
+	if limit == 0 {
+		limit = 128
+	}
+	if p.lines > limit {
 		return "", ErrInvalid
 	}
 	raw, err := p.reader.ReadSlice('\n')

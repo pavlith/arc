@@ -1,15 +1,15 @@
 # Mail service design
 
-Mail 0.1.0 implements personal IMAP connection settings, sealed password
-submission, pause/resume/disconnect and a bounded user-requested TLS IMAP check.
-Folder/message synchronization, content caching/streaming, OAuth provider flows,
+Mail 0.2.0 implements personal IMAP connection settings, sealed password
+submission, pause/resume/disconnect, live folder discovery and a bounded user-requested TLS IMAP check.
+Folder/message synchronization and persistence, content caching/streaming, OAuth provider flows,
 workspace accounts and sending remain planned. Requirements:
 [MAIL-01–MAIL-10](REQUIREMENTS.md#214-mail--imap-p1). This connection foundation does
 not satisfy full MAIL-10 or establish Gmail/Microsoft compatibility.
 
-## Implemented connection API (0.1.0)
+## Implemented connection API (0.2.0)
 
-The [signed contract](../services/mail/api/v1/contract/manifest.json) exposes six
+The [signed contract](../services/mail/api/v1/contract/manifest.json) exposes seven
 operations under `/api/v1/mail/personal/accounts/{acl_root_id}`. Each account is
 one `mail.personal` root, owner-bound with an empty workspace. Account provisioning
 is an explicit operator reserve → `Accounts.PrepareRoot` → Access activation →
@@ -24,17 +24,43 @@ sharing APIs are deferred. Separate roots support multiple accounts per user.
 | PUT `/credentials` | Write-only sealed password replacement with expected `revision`; `mail.connection.manage` |
 | POST `/state` | Set enabled/paused/disconnected with expected `revision`; `mail.connection.manage` |
 | POST `/check` | Current-user TLS authentication/capability check; `mail.connection.manage` |
+| GET `/folders` | Live folder discovery; `mail.read` |
 
 Settings are `name` (1–256 Unicode characters), ASCII DNS/IP `host` (≤253), `port`
 (1–65535), `login` (1–320) and bare display `email` (≤254). Text is UTF-8,
 trimmed and control-free; hostnames normalize to lowercase. Only implicit TLS and
 password/application-password authentication are implemented. Checks negotiate
 AUTHENTICATE PLAIN (with/without SASL-IR), or TLS LOGIN when permitted by the server.
-Only CAPABILITY, authentication and LOGOUT are sent; no folder/message command is
-available. Query deadlines remain 5 s; network policy defaults to 2 s and permits
+Only CAPABILITY, authentication, LIST and LOGOUT are sent; message reads/mutations
+and mailbox changes remain unavailable. Query deadlines remain 5 s; network policy defaults to 2 s and permits
 100–3000 ms, bounded by the caller deadline. Server input is capped at 64 KiB,
 4096 bytes per line, 128 total lines and 32 response lines per command. Only eight
 recognized capability names can appear in the safe result.
+
+GET `/folders` authenticates under the current user request, sends LIST and returns
+scope, account revision/generation, safe status and `folders`. Each entry contains
+`name`, exact wire bytes encoded as unpadded base64url `wire_name`, nullable
+`delimiter`, server `attributes` and `selectable` (false for \Noselect). These are
+live transport bindings, not durable folder UUIDs or permissions; future message
+operations must bind their selectors to the account/generation. No folder cache,
+background session or migration is introduced.
+
+Accept atom/quoted/literal mailbox names, quoted/NIL delimiters and bounded
+attributes. IMAP4rev1 names decode modified UTF-7; IMAP4rev2 names decode UTF-8.
+UTF8=ACCEPT negotiation for rev1-only servers and extended LIST return data are
+not implemented. Reject malformed encodings, control characters and duplicate
+wire identities. Maximums are 64 folders, 1024 wire bytes/name, 32 attributes of
+64 characters, 256 total response lines for folder sessions and 128 KiB serialized
+folder data, within the existing 64 KiB aggregate server-input and 4096-byte line
+budgets. Error/limit results contain an empty list, never a success-shaped partial
+listing. Large accounts need a subsequent bounded discovery/cache design; this
+query has no pagination or silent truncation. Reauthorize `mail.read` and verify
+the account revision after network I/O, including for read-only grantees.
+
+Version 0.2.0 requires operator approval of the new artifact digest and exact
+`mail.personal.folders.list` / `rpc.mail.v1.personal.folders.list` read/check edge.
+The same operator destination and TLS policy applies; no production permission
+is widened automatically.
 
 Commands require `Idempotency-Key`. Current authorization precedes replay; retry
 the exact sealed request, since resealing changes its ciphertext/fingerprint.

@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "service": {
     "name": "mail",
-    "build_version": "0.1.0",
+    "build_version": "0.2.0",
     "api_major": 1
   },
   "resources": [
@@ -184,6 +184,35 @@
         "expose": true,
         "method": "POST",
         "path": "/api/v1/mail/personal/accounts/{acl_root_id}/check",
+        "success_status": 200,
+        "bindings": [
+          {
+            "source": "path",
+            "name": "acl_root_id",
+            "field": "acl_root_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "mail.personal.folders.list",
+      "subject": "rpc.mail.v1.personal.folders.list",
+      "kind": "query",
+      "request_schema": "schemas/scope.json",
+      "response_schema": "schemas/folders.json",
+      "auth": {
+        "mode": "resource",
+        "resource_type": "mail.personal",
+        "action": "mail.read",
+        "resource_from": "payload.acl_root_id"
+      },
+      "idempotency": "none",
+      "timeout_ms": 5000,
+      "http": {
+        "expose": true,
+        "method": "GET",
+        "path": "/api/v1/mail/personal/accounts/{acl_root_id}/folders",
         "success_status": 200,
         "bindings": [
           {
